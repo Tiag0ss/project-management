@@ -1,0 +1,303 @@
+import { Router, Response } from 'express';
+import { pool } from '../../config/database';
+import { RowDataPacket, ResultSetHeader } from '../../config/database';
+import { authenticateToken, AuthRequest } from '../../middleware/auth';
+import logger from '../../utils/logger';
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: TaskAttachments
+ *   description: File attachments for tasks
+ */
+
+const ALLOWED_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/zip',
+  'application/x-zip-compressed',
+  'text/plain',
+];
+
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+/**
+ * @swagger
+ * /api/task-attachments/task/{taskId}:
+ *   get:
+ *     summary: Get all attachments for a task
+ *     tags: [TaskAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachments retrieved successfully
+ */
+// Get attachments for a task
+router.get('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req.user?.userId;
+
+    // Verify access to task
+    const [tasks] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.*, p.OrganizationId 
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       WHERE t.Id = ?`,
+      [taskId]
+    );
+
+    if (tasks.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+
+    const task = tasks[0];
+
+    // Check if user is in organization
+    const [orgMembers] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [task.OrganizationId, userId]
+    );
+
+    if (orgMembers.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Get attachments (without FileData for listing)
+    const [attachments] = await pool.execute<RowDataPacket[]>(
+      `SELECT 
+        ta.Id, ta.TaskId, ta.UploadedByUserId, ta.FileName, ta.FileType, ta.FileSize, ta.CreatedAt,
+        u.FirstName, u.LastName, u.Username
+      FROM TaskAttachments ta
+      LEFT JOIN Users u ON ta.UploadedByUserId = u.Id
+      WHERE ta.TaskId = ?
+      ORDER BY ta.CreatedAt DESC`,
+      [taskId]
+    );
+
+    res.json({ success: true, data: attachments });
+  } catch (error) {
+    logger.error('Error fetching task attachments:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch attachments' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/task-attachments/{id}:
+ *   get:
+ *     summary: Get a specific attachment
+ *     tags: [TaskAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment retrieved successfully
+ *       404:
+ *         description: Attachment not found
+ */
+// Get single attachment with data
+router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId;
+
+    // Get attachment
+    const [attachments] = await pool.execute<RowDataPacket[]>(
+      `SELECT ta.*, p.OrganizationId
+      FROM TaskAttachments ta
+      JOIN Tasks t ON ta.TaskId = t.Id
+      JOIN Projects p ON t.ProjectId = p.Id
+      WHERE ta.Id = ?`,
+      [id]
+    );
+
+    if (attachments.length === 0) {
+      return res.status(404).json({ success: false, message: 'Attachment not found' });
+    }
+
+    const attachment = attachments[0];
+
+    // Check access
+    const [orgMembers] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [attachment.OrganizationId, userId]
+    );
+
+    if (orgMembers.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    res.json({ success: true, data: attachment });
+  } catch (error) {
+    logger.error('Error fetching attachment:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch attachment' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/task-attachments/task/{taskId}:
+ *   post:
+ *     summary: Upload an attachment to a task
+ *     tags: [TaskAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Attachment uploaded successfully
+ */
+// Upload attachment
+router.post('/task/:taskId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req.user?.userId;
+    const { fileName, fileType, fileSize, fileData } = req.body;
+
+    if (!fileName || !fileType || !fileSize || !fileData) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    // Validate file type
+    if (!ALLOWED_TYPES.includes(fileType)) {
+      return res.status(400).json({ success: false, message: 'File type not allowed' });
+    }
+
+    // Validate file size
+    if (fileSize > MAX_FILE_SIZE) {
+      return res.status(400).json({ success: false, message: 'File size exceeds 10MB limit' });
+    }
+
+    // Verify access to task
+    const [tasks] = await pool.execute<RowDataPacket[]>(
+      `SELECT t.*, p.OrganizationId 
+       FROM Tasks t
+       JOIN Projects p ON t.ProjectId = p.Id
+       WHERE t.Id = ?`,
+      [taskId]
+    );
+
+    if (tasks.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+
+    const task = tasks[0];
+
+    // Check access
+    const [orgMembers] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [task.OrganizationId, userId]
+    );
+
+    if (orgMembers.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Insert attachment
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO TaskAttachments (TaskId, UploadedByUserId, FileName, FileType, FileSize, FileData)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [taskId, userId, fileName, fileType, fileSize, fileData]
+    );
+
+    res.json({ success: true, attachmentId: result.insertId });
+  } catch (error) {
+    logger.error('Error uploading attachment:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload attachment' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/task-attachments/{id}:
+ *   delete:
+ *     summary: Delete an attachment
+ *     tags: [TaskAttachments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Attachment deleted successfully
+ *       404:
+ *         description: Attachment not found
+ */
+// Delete attachment
+router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId;
+    const isAdmin = req.user?.isAdmin;
+
+    // Get attachment
+    const [attachments] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM TaskAttachments WHERE Id = ?',
+      [id]
+    );
+
+    if (attachments.length === 0) {
+      return res.status(404).json({ success: false, message: 'Attachment not found' });
+    }
+
+    const attachment = attachments[0];
+
+    // Only uploader or admin can delete
+    if (!isAdmin && attachment.UploadedByUserId !== userId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await pool.execute('DELETE FROM TaskAttachments WHERE Id = ?', [id]);
+
+    res.json({ success: true, message: 'Attachment deleted successfully' });
+  } catch (error) {
+    logger.error('Error deleting attachment:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete attachment' });
+  }
+});
+
+export default router;

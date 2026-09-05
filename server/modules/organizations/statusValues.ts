@@ -1,0 +1,2309 @@
+import { Router, Response } from 'express';
+import { AuthRequest, authenticateToken } from '../../middleware/auth';
+import { pool } from '../../config/database';
+import { RowDataPacket, ResultSetHeader } from '../../config/database';
+import { cachedJson, ENTITY_TTL_SECONDS } from '../../utils/cachedJson';
+import { cacheKeys } from '../../services/cacheKeys';
+import { invalidateByEntity } from '../../services/cacheInvalidation';
+import logger from '../../utils/logger';
+import { ensureExpenseCategoryDefaults } from '../../utils/expenseCategoryDefaults';
+
+const router = Router();
+
+const hasGlobalOrganizationManagementPermission = async (userId?: number): Promise<boolean> => {
+  if (!userId) {
+    return false;
+  }
+
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT u.isAdmin,
+            COALESCE(MAX(CASE WHEN rp.CanManageOrganizations = 1 THEN 1 ELSE 0 END), 0) AS CanManageOrganizations
+     FROM Users u
+     LEFT JOIN RolePermissions rp ON
+       (u.IsDeveloper = 1 AND rp.RoleName = 'Developer') OR
+       (u.IsSupport = 1 AND rp.RoleName = 'Support') OR
+       (u.IsManager = 1 AND rp.RoleName = 'Manager')
+     WHERE u.Id = ?
+     GROUP BY u.Id, u.isAdmin`,
+    [userId]
+  );
+
+  if (rows.length === 0) {
+    return false;
+  }
+
+  return Number(rows[0].isAdmin) === 1 || Number(rows[0].CanManageOrganizations) === 1;
+};
+
+const canManageOrganizationSettings = async (organizationId: number | string, userId?: number): Promise<boolean> => {
+  if (!userId) {
+    return false;
+  }
+
+  const [globalManage, memberRows] = await Promise.all([
+    hasGlobalOrganizationManagementPermission(userId),
+    pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, COALESCE(pg.CanManageSettings, 0) AS CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    ),
+  ]);
+
+  const members = memberRows[0];
+  if (members.length === 0) {
+    return false;
+  }
+
+  return (
+    globalManage ||
+    members[0].Role === 'Owner' ||
+    members[0].Role === 'Admin' ||
+    Number(members[0].CanManageSettings) === 1
+  );
+};
+
+/**
+ * @swagger
+ * /api/status-values/project/{organizationId}:
+ *   get:
+ *     summary: Get project status values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of project status values
+ *       403:
+ *         description: Access denied
+ */
+/**
+ * @swagger
+ * tags:
+ *   name: StatusValues
+ *   description: Custom status and priority value management
+ */
+
+// Get project status values for an organization
+router.get('/project/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = req.params.orgId;
+
+    // Verify user has access
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied' 
+      });
+    }
+
+    const statuses = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'project'),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [statusCountResult] = await pool.execute<RowDataPacket[]>(
+          'SELECT COUNT(*) as Count FROM ProjectStatusValues WHERE OrganizationId = ?',
+          [orgId]
+        );
+
+        const statusCount = Number(statusCountResult[0]?.Count || 0);
+        if (statusCount === 0) {
+          const defaultProjectStatuses = [
+            { name: 'Active', color: '#10b981', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0 },
+            { name: 'On Hold', color: '#f59e0b', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0 },
+            { name: 'Completed', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 1, isCancelled: 0 },
+            { name: 'Cancelled', color: '#ef4444', order: 4, isDefault: 0, isClosed: 0, isCancelled: 1 },
+          ];
+
+          for (const status of defaultProjectStatuses) {
+            await pool.execute(
+              `INSERT INTO ProjectStatusValues 
+               (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                orgId,
+                status.name,
+                status.color,
+                status.order,
+                status.isDefault,
+                status.isClosed,
+                status.isCancelled,
+              ]
+            );
+          }
+        }
+
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          'SELECT * FROM ProjectStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
+          [orgId]
+        );
+
+        return rows;
+      }
+    );
+
+    res.json({
+      success: true,
+      statuses
+    });
+  } catch (error) {
+    logger.error('Get project status values error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch project status values' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/task/{organizationId}:
+ *   get:
+ *     summary: Get task status values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of task status values
+ *       403:
+ *         description: Access denied
+ */
+// Get task status values for an organization
+router.get('/task/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = req.params.orgId;
+
+    // Verify user has access
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied' 
+      });
+    }
+
+    const statuses = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'task'),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [statusCountResult] = await pool.execute<RowDataPacket[]>(
+          'SELECT COUNT(*) as Count FROM TaskStatusValues WHERE OrganizationId = ?',
+          [orgId]
+        );
+
+        const statusCount = Number(statusCountResult[0]?.Count || 0);
+        if (statusCount === 0) {
+          const defaultTaskStatuses = [
+            { name: 'To Do', color: '#6b7280', order: 1, isDefault: 1, isClosed: 0, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
+            { name: 'Backlog', color: '#94a3b8', order: 2, isDefault: 0, isClosed: 0, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 1 },
+            { name: 'In Progress', color: '#3b82f6', order: 3, isDefault: 0, isClosed: 0, isCancelled: 0, isInProgress: 1, hideFromPlanningAndStatistics: 0 },
+            { name: 'Done', color: '#10b981', order: 4, isDefault: 0, isClosed: 1, isCancelled: 0, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
+            { name: 'Cancelled', color: '#ef4444', order: 5, isDefault: 0, isClosed: 0, isCancelled: 1, isInProgress: 0, hideFromPlanningAndStatistics: 0 },
+          ];
+
+          for (const status of defaultTaskStatuses) {
+            await pool.execute(
+              `INSERT INTO TaskStatusValues 
+               (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled, IsInProgress, HideFromPlanningAndStatistics)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                orgId,
+                status.name,
+                status.color,
+                status.order,
+                status.isDefault,
+                status.isClosed,
+                status.isCancelled,
+                status.isInProgress,
+                status.hideFromPlanningAndStatistics,
+              ]
+            );
+          }
+        }
+
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          'SELECT * FROM TaskStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
+          [orgId]
+        );
+
+        return rows;
+      }
+    );
+
+    res.json({
+      success: true,
+      statuses
+    });
+  } catch (error) {
+    logger.error('Get task status values error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch task status values' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/project:
+ *   post:
+ *     summary: Create a project status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, statusName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               statusName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Project status value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
+// Create project status value
+router.post('/project', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, statusName, colorCode, sortOrder, isDefault, isClosed, isCancelled } = req.body;
+
+    if (!statusName || !organizationId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Status name and organization ID are required' 
+      });
+    }
+
+    if (!(await canManageOrganizationSettings(organizationId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    // If setting as default, unset other defaults
+    if (isDefault) {
+      await pool.execute(
+        'UPDATE ProjectStatusValues SET IsDefault = 0 WHERE OrganizationId = ?',
+        [organizationId]
+      );
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO ProjectStatusValues 
+       (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [organizationId, statusName, colorCode || null, sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0]
+    );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'project' });
+
+    res.status(201).json({
+      success: true,
+      message: 'Project status value created successfully',
+      statusId: result.insertId
+    });
+  } catch (error) {
+    logger.error('Create project status error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create project status value' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/task:
+ *   post:
+ *     summary: Create a task status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, statusName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               statusName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Task status value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
+// Create task status value
+router.post('/task', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, statusName, colorCode, sortOrder, isDefault, isClosed, isCancelled, isInProgress, hideFromPlanningAndStatistics } = req.body;
+
+    if (!statusName || !organizationId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Status name and organization ID are required' 
+      });
+    }
+
+    if (!(await canManageOrganizationSettings(organizationId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    // If setting as default, unset other defaults
+    if (isDefault) {
+      await pool.execute(
+        'UPDATE TaskStatusValues SET IsDefault = 0 WHERE OrganizationId = ?',
+        [organizationId]
+      );
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO TaskStatusValues 
+       (OrganizationId, StatusName, ColorCode, SortOrder, IsDefault, IsClosed, IsCancelled, IsInProgress, HideFromPlanningAndStatistics) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [organizationId, statusName, colorCode || null, sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, isInProgress ? 1 : 0, hideFromPlanningAndStatistics ? 1 : 0]
+    );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'task' });
+
+    res.status(201).json({
+      success: true,
+      message: 'Task status value created successfully',
+      statusId: result.insertId
+    });
+  } catch (error) {
+    logger.error('Create task status error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create task status value' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/project/{id}:
+ *   put:
+ *     summary: Update a project status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               statusName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Project status value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
+// Update project status value
+router.put('/project/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const statusId = req.params.id;
+    const { statusName, colorCode, sortOrder, isDefault, isClosed, isCancelled } = req.body;
+
+    // Get organization ID
+    const [statuses] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ProjectStatusValues WHERE Id = ?',
+      [statusId]
+    );
+
+    if (statuses.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Status not found' 
+      });
+    }
+
+    const orgId = statuses[0].OrganizationId;
+
+    if (!(await canManageOrganizationSettings(orgId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    // If setting as default, unset other defaults
+    if (isDefault) {
+      await pool.execute(
+        'UPDATE ProjectStatusValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?',
+        [orgId, statusId]
+      );
+    }
+
+    await pool.execute(
+      'UPDATE ProjectStatusValues SET StatusName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ?, IsClosed = ?, IsCancelled = ? WHERE Id = ?',
+      [statusName, colorCode, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, statusId]
+    );
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'project' });
+
+    res.json({
+      success: true,
+      message: 'Project status value updated successfully'
+    });
+  } catch (error) {
+    logger.error('Update project status error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to update project status value' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/task/{id}:
+ *   put:
+ *     summary: Update a task status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               statusName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Task status value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
+// Update task status value
+router.put('/task/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const statusId = req.params.id;
+    const { statusName, colorCode, sortOrder, isDefault, isClosed, isCancelled, isInProgress, hideFromPlanningAndStatistics } = req.body;
+
+    // Get organization ID
+    const [statuses] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM TaskStatusValues WHERE Id = ?',
+      [statusId]
+    );
+
+    if (statuses.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Status not found' 
+      });
+    }
+
+    const orgId = statuses[0].OrganizationId;
+
+    if (!(await canManageOrganizationSettings(orgId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    // If setting as default, unset other defaults
+    if (isDefault) {
+      await pool.execute(
+        'UPDATE TaskStatusValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?',
+        [orgId, statusId]
+      );
+    }
+
+    await pool.execute(
+      'UPDATE TaskStatusValues SET StatusName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ?, IsClosed = ?, IsCancelled = ?, IsInProgress = ?, HideFromPlanningAndStatistics = ? WHERE Id = ?',
+      [statusName, colorCode, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, isCancelled ? 1 : 0, isInProgress ? 1 : 0, hideFromPlanningAndStatistics ? 1 : 0, statusId]
+    );
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'task' });
+
+    res.json({
+      success: true,
+      message: 'Task status value updated successfully'
+    });
+  } catch (error) {
+    logger.error('Update task status error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to update task status value' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/project/{id}:
+ *   delete:
+ *     summary: Delete a project status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Project status value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
+// Delete project status value
+router.delete('/project/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const statusId = req.params.id;
+
+    // Get organization ID
+    const [statuses] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ProjectStatusValues WHERE Id = ?',
+      [statusId]
+    );
+
+    if (statuses.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Status not found' 
+      });
+    }
+
+    const orgId = statuses[0].OrganizationId;
+
+    if (!(await canManageOrganizationSettings(orgId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    await pool.execute('DELETE FROM ProjectStatusValues WHERE Id = ?', [statusId]);
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'project' });
+
+    res.json({
+      success: true,
+      message: 'Project status value deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Delete project status error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete project status value' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/task/{id}:
+ *   delete:
+ *     summary: Delete a task status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Task status value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
+// Delete task status value
+router.delete('/task/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const statusId = req.params.id;
+
+    // Get organization ID
+    const [statuses] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM TaskStatusValues WHERE Id = ?',
+      [statusId]
+    );
+
+    if (statuses.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Status not found' 
+      });
+    }
+
+    const orgId = statuses[0].OrganizationId;
+
+    if (!(await canManageOrganizationSettings(orgId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    await pool.execute('DELETE FROM TaskStatusValues WHERE Id = ?', [statusId]);
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'task' });
+
+    res.json({
+      success: true,
+      message: 'Task status value deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Delete task status error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete task status value' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/priority/{organizationId}:
+ *   get:
+ *     summary: Get task priority values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of task priority values
+ *       403:
+ *         description: Access denied
+ */
+// Get task priority values for an organization
+router.get('/priority/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = req.params.orgId;
+
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied' 
+      });
+    }
+
+    const priorities = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'priority'),
+      ENTITY_TTL_SECONDS,
+      async () => {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          'SELECT * FROM TaskPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
+          [orgId]
+        );
+
+        if (rows.length > 0) {
+          return rows;
+        }
+
+        const defaultTaskPriorities = [
+          { name: 'Low', color: '#6b7280', order: 1, isDefault: 0 },
+          { name: 'Medium', color: '#3b82f6', order: 2, isDefault: 1 },
+          { name: 'High', color: '#f59e0b', order: 3, isDefault: 0 },
+          { name: 'Critical', color: '#ef4444', order: 4, isDefault: 0 }
+        ];
+
+        for (const priority of defaultTaskPriorities) {
+          await pool.execute(
+            `INSERT INTO TaskPriorityValues 
+             (OrganizationId, PriorityName, ColorCode, SortOrder, IsDefault) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [orgId, priority.name, priority.color, priority.order, priority.isDefault]
+          );
+        }
+
+        const [newPriorities] = await pool.execute<RowDataPacket[]>(
+          'SELECT * FROM TaskPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
+          [orgId]
+        );
+
+        return newPriorities;
+      }
+    );
+
+    res.json({
+      success: true,
+      priorities
+    });
+  } catch (error) {
+    logger.error('Get task priority values error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch task priority values' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/priority:
+ *   post:
+ *     summary: Create a task priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, priorityName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               priorityName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Task priority value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
+// Create task priority value
+router.post('/priority', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, priorityName, statusName, colorCode, sortOrder, isDefault } = req.body;
+    const resolvedPriorityName = priorityName || statusName;
+
+    if (!organizationId || !resolvedPriorityName) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Organization ID and priority name are required' 
+      });
+    }
+
+    if (!(await canManageOrganizationSettings(organizationId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    if (isDefault) {
+      await pool.execute(
+        'UPDATE TaskPriorityValues SET IsDefault = 0 WHERE OrganizationId = ?',
+        [organizationId]
+      );
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO TaskPriorityValues (OrganizationId, PriorityName, ColorCode, SortOrder, IsDefault)
+       VALUES (?, ?, ?, ?, ?)`,
+      [organizationId, resolvedPriorityName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+    );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'priority' });
+
+    res.json({
+      success: true,
+      message: 'Task priority value created successfully',
+      priorityId: result.insertId
+    });
+  } catch (error) {
+    logger.error('Create task priority error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create task priority value' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/priority/{id}:
+ *   put:
+ *     summary: Update a task priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               priorityName:
+ *                 type: string
+ *               colorCode:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Task priority value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Priority not found
+ */
+// Update task priority value
+router.put('/priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const priorityId = req.params.id;
+    const { priorityName, statusName, colorCode, sortOrder, isDefault } = req.body;
+
+    const [priority] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId, PriorityName, ColorCode, SortOrder, IsDefault FROM TaskPriorityValues WHERE Id = ?',
+      [priorityId]
+    );
+
+    if (priority.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Priority value not found' 
+      });
+    }
+
+    const orgId = priority[0].OrganizationId;
+    const currentPriority = priority[0];
+
+    const nextPriorityName = priorityName ?? statusName ?? currentPriority.PriorityName;
+    const nextColorCode = colorCode ?? currentPriority.ColorCode ?? '#3b82f6';
+    const nextSortOrder = sortOrder ?? currentPriority.SortOrder ?? 0;
+    const nextIsDefault = typeof isDefault === 'boolean'
+      ? isDefault
+      : currentPriority.IsDefault === 1;
+
+    if (!(await canManageOrganizationSettings(orgId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    if (nextIsDefault) {
+      await pool.execute(
+        'UPDATE TaskPriorityValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?',
+        [orgId, priorityId]
+      );
+    }
+
+    await pool.execute(
+      `UPDATE TaskPriorityValues 
+       SET PriorityName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ?
+       WHERE Id = ?`,
+      [nextPriorityName, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, priorityId]
+    );
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'priority' });
+
+    res.json({
+      success: true,
+      message: 'Task priority value updated successfully'
+    });
+  } catch (error) {
+    logger.error('Update task priority error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to update task priority value' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/priority/{id}:
+ *   delete:
+ *     summary: Delete a task priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Task priority value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Priority not found
+ */
+// Delete task priority value
+router.delete('/priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const priorityId = req.params.id;
+
+    const [priority] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM TaskPriorityValues WHERE Id = ?',
+      [priorityId]
+    );
+
+    if (priority.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Priority value not found' 
+      });
+    }
+
+    const orgId = priority[0].OrganizationId;
+
+    if (!(await canManageOrganizationSettings(orgId, userId))) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Permission denied' 
+      });
+    }
+
+    await pool.execute('DELETE FROM TaskPriorityValues WHERE Id = ?', [priorityId]);
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'priority' });
+
+    res.json({
+      success: true,
+      message: 'Task priority value deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Delete task priority error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete task priority value' 
+    });
+  }
+});
+
+// ─── Ticket Status Values ────────────────────────────────────────────────────
+
+const DEFAULT_TICKET_STATUSES = [
+  { name: 'Open',              color: '#3b82f6', order: 1, isDefault: 1, isClosed: 0, statusType: 'open' },
+  { name: 'In Progress',      color: '#f59e0b', order: 2, isDefault: 0, isClosed: 0, statusType: 'in_progress' },
+  { name: 'With Developer',   color: '#8b5cf6', order: 3, isDefault: 0, isClosed: 0, statusType: 'in_progress' },
+  { name: 'Scheduled',        color: '#06b6d4', order: 4, isDefault: 0, isClosed: 0, statusType: 'in_progress' },
+  { name: 'Waiting Response', color: '#f97316', order: 5, isDefault: 0, isClosed: 0, statusType: 'waiting' },
+  { name: 'Resolved',         color: '#22c55e', order: 6, isDefault: 0, isClosed: 1, statusType: 'resolved' },
+  { name: 'Closed',           color: '#6b7280', order: 7, isDefault: 0, isClosed: 1, statusType: 'closed' },
+];
+
+const DEFAULT_TICKET_PRIORITIES = [
+  { name: 'Low',    color: '#6b7280', order: 1, isDefault: 0 },
+  { name: 'Medium', color: '#3b82f6', order: 2, isDefault: 1 },
+  { name: 'High',   color: '#f59e0b', order: 3, isDefault: 0 },
+  { name: 'Urgent', color: '#ef4444', order: 4, isDefault: 0 },
+];
+
+const ALLOWED_TASK_TYPE_ICONS = new Set([
+  'task', 'feature', 'bug', 'improvement', 'wrench', 'epic', 'story', 'subtask', 'spike', 'research',
+  'support', 'hotfix', 'blocker', 'idea', 'design', 'code', 'test', 'deploy', 'security', 'performance',
+  'refactor', 'document', 'meeting', 'email', 'phone', 'users', 'building', 'chart', 'clock', 'calendar',
+  'bell', 'link', 'flag', 'check-circle', 'star', 'heart', 'bookmark', 'trophy', 'rocket', 'target',
+  'milestone', 'puzzle', 'settings', 'shield', 'lightning', 'megaphone', 'clipboard', 'plus-circle', 'exclamation',
+]);
+
+const TASK_TYPE_NAME_ICON_DEFAULTS: Record<string, string> = {
+  feature: 'feature',
+  bug: 'bug',
+  improvement: 'improvement',
+  chore: 'wrench',
+  epic: 'epic',
+  story: 'story',
+  subtask: 'subtask',
+  spike: 'spike',
+  task: 'task',
+};
+
+const inferTaskTypeIconFromName = (typeName: string | null | undefined): string => {
+  const normalized = String(typeName || '').trim().toLowerCase();
+  return TASK_TYPE_NAME_ICON_DEFAULTS[normalized] || 'task';
+};
+
+const normalizeTaskTypeIcon = (iconSvg?: string, typeName?: string | null): string => {
+  const raw = String(iconSvg ?? '').trim().toLowerCase();
+  if (raw && ALLOWED_TASK_TYPE_ICONS.has(raw)) {
+    return raw;
+  }
+  if (typeName) {
+    return inferTaskTypeIconFromName(typeName);
+  }
+  return 'task';
+};
+
+async function backfillTaskTypeIcons(orgId: number): Promise<void> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT Id, TypeName, IconSvg
+     FROM TaskTypeValues
+     WHERE OrganizationId = ?`,
+    [orgId]
+  );
+
+  for (const row of rows) {
+    const current = String(row.IconSvg ?? '').trim().toLowerCase();
+    const inferred = inferTaskTypeIconFromName(row.TypeName);
+    const shouldBackfill =
+      !current ||
+      (current === 'task' && inferred !== 'task' && TASK_TYPE_NAME_ICON_DEFAULTS[String(row.TypeName || '').trim().toLowerCase()]);
+
+    if (shouldBackfill) {
+      await pool.execute('UPDATE TaskTypeValues SET IconSvg = ? WHERE Id = ?', [inferred, row.Id]);
+    }
+  }
+}
+
+const DEFAULT_TASK_TYPES = [
+  { name: 'Feature', color: '#3b82f6', icon: 'feature', order: 1, isDefault: 1 },
+  { name: 'Bug', color: '#ef4444', icon: 'bug', order: 2, isDefault: 0 },
+  { name: 'Improvement', color: '#f59e0b', icon: 'improvement', order: 3, isDefault: 0 },
+  { name: 'Chore', color: '#6b7280', icon: 'wrench', order: 4, isDefault: 0 },
+];
+
+const DEFAULT_MILESTONE_TYPES = [
+  { name: 'Release', color: '#3b82f6', icon: 'rocket', order: 1, isDefault: 1 },
+  { name: 'Delivery', color: '#10b981', icon: 'flag', order: 2, isDefault: 0 },
+  { name: 'Review', color: '#f59e0b', icon: 'target', order: 3, isDefault: 0 },
+  { name: 'Approval', color: '#8b5cf6', icon: 'check-circle', order: 4, isDefault: 0 },
+];
+
+async function ensureTaskTypes(orgId: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+    [orgId]
+  );
+
+  if (rows.length > 0) {
+    await backfillTaskTypeIcons(orgId);
+    const [updatedRows] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+      [orgId]
+    );
+    return updatedRows;
+  }
+
+  for (const t of DEFAULT_TASK_TYPES) {
+    await pool.execute(
+      'INSERT INTO TaskTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
+      [orgId, t.name, t.icon, t.color, t.order, t.isDefault]
+    );
+  }
+
+  const [newRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TaskTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+    [orgId]
+  );
+  return newRows;
+}
+
+async function ensureMilestoneTypes(orgId: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM MilestoneTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+    [orgId]
+  );
+
+  if (rows.length > 0) return rows;
+
+  for (const t of DEFAULT_MILESTONE_TYPES) {
+    await pool.execute(
+      'INSERT INTO MilestoneTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
+      [orgId, t.name, t.icon, t.color, t.order, t.isDefault]
+    );
+  }
+
+  const [newRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM MilestoneTypeValues WHERE OrganizationId = ? ORDER BY SortOrder, TypeName',
+    [orgId]
+  );
+  return newRows;
+}
+
+// GET task types (auto-creates defaults)
+router.get('/type/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const types = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'type'),
+      ENTITY_TTL_SECONDS,
+      () => ensureTaskTypes(orgId)
+    );
+    res.json({ success: true, types });
+  } catch (error) {
+    logger.error('Get task type values error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch task type values' });
+  }
+});
+
+// POST task type
+router.post('/type', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, typeName, statusName, colorCode, iconSvg, sortOrder, isDefault } = req.body;
+    const resolvedTypeName = typeName || statusName;
+
+    if (!organizationId || !resolvedTypeName) {
+      return res.status(400).json({ success: false, message: 'Organization ID and type name are required' });
+    }
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    if (isDefault) {
+      await pool.execute('UPDATE TaskTypeValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO TaskTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
+      [organizationId, resolvedTypeName, normalizeTaskTypeIcon(iconSvg, resolvedTypeName), colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+    );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'type' });
+
+    res.status(201).json({ success: true, typeId: result.insertId });
+  } catch (error) {
+    logger.error('Create task type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create task type value' });
+  }
+});
+
+// PUT task type
+router.put('/type/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const typeId = req.params.id;
+    const { typeName, statusName, colorCode, iconSvg, sortOrder, isDefault } = req.body;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault FROM TaskTypeValues WHERE Id = ?',
+      [typeId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task type value not found' });
+    }
+
+    const orgId = rows[0].OrganizationId;
+    const currentType = rows[0];
+
+    const nextTypeName = typeName ?? statusName ?? currentType.TypeName;
+    const nextIconSvg = iconSvg !== undefined
+      ? normalizeTaskTypeIcon(iconSvg, nextTypeName)
+      : normalizeTaskTypeIcon(currentType.IconSvg, currentType.TypeName);
+    const nextColorCode = colorCode ?? currentType.ColorCode ?? '#3b82f6';
+    const nextSortOrder = sortOrder ?? currentType.SortOrder ?? 0;
+    const nextIsDefault = typeof isDefault === 'boolean'
+      ? isDefault
+      : currentType.IsDefault === 1;
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    if (nextIsDefault) {
+      await pool.execute('UPDATE TaskTypeValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, typeId]);
+    }
+
+    await pool.execute(
+      'UPDATE TaskTypeValues SET TypeName = ?, IconSvg = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
+      [nextTypeName, nextIconSvg, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, typeId]
+    );
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'type' });
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Update task type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update task type value' });
+  }
+});
+
+// DELETE task type
+router.delete('/type/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const typeId = req.params.id;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM TaskTypeValues WHERE Id = ?',
+      [typeId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Task type value not found' });
+    }
+
+    const orgId = rows[0].OrganizationId;
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    await pool.execute('DELETE FROM TaskTypeValues WHERE Id = ?', [typeId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'type' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete task type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete task type value' });
+  }
+});
+
+// GET milestone types (auto-creates defaults)
+router.get('/milestone-type/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+
+    if (access.length === 0) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const types = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'milestone-type'),
+      ENTITY_TTL_SECONDS,
+      () => ensureMilestoneTypes(orgId)
+    );
+    res.json({ success: true, types });
+  } catch (error) {
+    logger.error('Get milestone type values error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch milestone type values' });
+  }
+});
+
+// POST milestone type
+router.post('/milestone-type', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, typeName, statusName, iconSvg, colorCode, sortOrder, isDefault } = req.body;
+    const resolvedTypeName = typeName || statusName;
+
+    if (!organizationId || !resolvedTypeName) {
+      return res.status(400).json({ success: false, message: 'Organization ID and type name are required' });
+    }
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    if (isDefault) {
+      await pool.execute('UPDATE MilestoneTypeValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    }
+
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO MilestoneTypeValues (OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?, ?)',
+      [organizationId, resolvedTypeName, iconSvg || 'flag', colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+    );
+
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'milestone-type' });
+
+    res.status(201).json({ success: true, typeId: result.insertId });
+  } catch (error) {
+    logger.error('Create milestone type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create milestone type value' });
+  }
+});
+
+// PUT milestone type
+router.put('/milestone-type/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const typeId = req.params.id;
+    const { typeName, statusName, iconSvg, colorCode, sortOrder, isDefault } = req.body;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId, TypeName, IconSvg, ColorCode, SortOrder, IsDefault FROM MilestoneTypeValues WHERE Id = ?',
+      [typeId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Milestone type value not found' });
+    }
+
+    const orgId = rows[0].OrganizationId;
+    const currentType = rows[0];
+
+    const nextTypeName = typeName ?? statusName ?? currentType.TypeName;
+    const nextIconSvg = iconSvg ?? currentType.IconSvg ?? 'flag';
+    const nextColorCode = colorCode ?? currentType.ColorCode ?? '#3b82f6';
+    const nextSortOrder = sortOrder ?? currentType.SortOrder ?? 0;
+    const nextIsDefault = typeof isDefault === 'boolean'
+      ? isDefault
+      : currentType.IsDefault === 1;
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    if (nextIsDefault) {
+      await pool.execute('UPDATE MilestoneTypeValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, typeId]);
+    }
+
+    await pool.execute(
+      'UPDATE MilestoneTypeValues SET TypeName = ?, IconSvg = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
+      [nextTypeName, nextIconSvg, nextColorCode, nextSortOrder, nextIsDefault ? 1 : 0, typeId]
+    );
+
+    await invalidateByEntity('statusValue', { orgId, statusType: 'milestone-type' });
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Update milestone type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update milestone type value' });
+  }
+});
+
+// DELETE milestone type
+router.delete('/milestone-type/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const typeId = req.params.id;
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM MilestoneTypeValues WHERE Id = ?',
+      [typeId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Milestone type value not found' });
+    }
+
+    const orgId = rows[0].OrganizationId;
+
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings
+       FROM OrganizationMembers om
+       LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+       WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+
+    if (member.length === 0 || (member[0].Role !== 'Owner' && member[0].Role !== 'Admin' && !member[0].CanManageSettings)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    await pool.execute('DELETE FROM MilestoneTypeValues WHERE Id = ?', [typeId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'milestone-type' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete milestone type error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete milestone type value' });
+  }
+});
+
+async function ensureTicketStatuses(orgId: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TicketStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
+    [orgId]
+  );
+  if (rows.length > 0) return rows;
+  for (const s of DEFAULT_TICKET_STATUSES) {
+    await pool.execute(
+      'INSERT INTO TicketStatusValues (OrganizationId, StatusName, Color, IsDefault, IsClosed, SortOrder, StatusType) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [orgId, s.name, s.color, s.isDefault, s.isClosed, s.order, s.statusType]
+    );
+  }
+  const [newRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TicketStatusValues WHERE OrganizationId = ? ORDER BY SortOrder, StatusName',
+    [orgId]
+  );
+  return newRows;
+}
+
+async function ensureTicketPriorities(orgId: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TicketPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
+    [orgId]
+  );
+  if (rows.length > 0) return rows;
+  for (const p of DEFAULT_TICKET_PRIORITIES) {
+    await pool.execute(
+      'INSERT INTO TicketPriorityValues (OrganizationId, PriorityName, Color, IsDefault, SortOrder) VALUES (?, ?, ?, ?, ?)',
+      [orgId, p.name, p.color, p.isDefault, p.order]
+    );
+  }
+  const [newRows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM TicketPriorityValues WHERE OrganizationId = ? ORDER BY SortOrder, PriorityName',
+    [orgId]
+  );
+  return newRows;
+}
+
+/**
+ * @swagger
+ * /api/status-values/ticket/{organizationId}:
+ *   get:
+ *     summary: Get ticket status values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of ticket status values
+ *       403:
+ *         description: Access denied
+ */
+// GET ticket statuses (auto-creates defaults)
+router.get('/ticket/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+    if (access.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
+    const statuses = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'ticket'),
+      ENTITY_TTL_SECONDS,
+      () => ensureTicketStatuses(orgId)
+    );
+    res.json({ success: true, statuses });
+  } catch (error) {
+    logger.error('Get ticket status values error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch ticket status values' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/ticket:
+ *   post:
+ *     summary: Create a ticket status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, statusName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               statusName:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Ticket status value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
+// POST ticket status
+router.post('/ticket', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, statusName, color, sortOrder, isDefault, isClosed, statusType } = req.body;
+    if (!statusName || !organizationId) return res.status(400).json({ success: false, message: 'Status name and organization ID are required' });
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    if (isDefault) await pool.execute('UPDATE TicketStatusValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO TicketStatusValues (OrganizationId, StatusName, Color, SortOrder, IsDefault, IsClosed, StatusType) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [organizationId, statusName, color || '#6b7280', sortOrder || 0, isDefault ? 1 : 0, isClosed ? 1 : 0, statusType || 'other']
+    );
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'ticket' });
+    res.status(201).json({ success: true, statusId: result.insertId });
+  } catch (error) {
+    logger.error('Create ticket status error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create ticket status' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/ticket/{id}:
+ *   put:
+ *     summary: Update a ticket status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               statusName:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket status value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
+// PUT ticket status
+router.put('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const statusId = req.params.id;
+    const { statusName, color, sortOrder, isDefault, isClosed, statusType } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId FROM TicketStatusValues WHERE Id = ?', [statusId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Status not found' });
+    const orgId = rows[0].OrganizationId;
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    if (isDefault) await pool.execute('UPDATE TicketStatusValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, statusId]);
+    await pool.execute(
+      'UPDATE TicketStatusValues SET StatusName = ?, Color = ?, SortOrder = ?, IsDefault = ?, IsClosed = ?, StatusType = ? WHERE Id = ?',
+      [statusName, color, sortOrder, isDefault ? 1 : 0, isClosed ? 1 : 0, statusType || 'other', statusId]
+    );
+    await invalidateByEntity('statusValue', { orgId, statusType: 'ticket' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Update ticket status error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update ticket status' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/ticket/{id}:
+ *   delete:
+ *     summary: Delete a ticket status value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket status value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Status not found
+ */
+// DELETE ticket status
+router.delete('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const statusId = req.params.id;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId FROM TicketStatusValues WHERE Id = ?', [statusId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Status not found' });
+    const orgId = rows[0].OrganizationId;
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    await pool.execute('DELETE FROM TicketStatusValues WHERE Id = ?', [statusId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'ticket' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete ticket status error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete ticket status' });
+  }
+});
+
+// ─── Ticket Priority Values ───────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/status-values/ticket-priority/{organizationId}:
+ *   get:
+ *     summary: Get ticket priority values for an organization
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: organizationId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of ticket priority values
+ *       403:
+ *         description: Access denied
+ */
+// GET ticket priorities (auto-creates defaults)
+router.get('/ticket-priority/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+    if (access.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
+    const priorities = await cachedJson(
+      cacheKeys.orgStatusValues(String(orgId), 'ticket-priority'),
+      ENTITY_TTL_SECONDS,
+      () => ensureTicketPriorities(orgId)
+    );
+    res.json({ success: true, priorities });
+  } catch (error) {
+    logger.error('Get ticket priority values error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch ticket priority values' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/ticket-priority:
+ *   post:
+ *     summary: Create a ticket priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId, priorityName]
+ *             properties:
+ *               organizationId:
+ *                 type: integer
+ *               priorityName:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Ticket priority value created
+ *       400:
+ *         description: Bad request
+ *       403:
+ *         description: Permission denied
+ */
+// POST ticket priority
+router.post('/ticket-priority', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, priorityName, statusName, color, sortOrder, isDefault } = req.body;
+    const resolvedPriorityName = priorityName || statusName;
+    if (!resolvedPriorityName || !organizationId) return res.status(400).json({ success: false, message: 'Priority name and organization ID are required' });
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [organizationId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    if (isDefault) await pool.execute('UPDATE TicketPriorityValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO TicketPriorityValues (OrganizationId, PriorityName, Color, SortOrder, IsDefault) VALUES (?, ?, ?, ?, ?)',
+      [organizationId, resolvedPriorityName, color || '#6b7280', sortOrder || 0, isDefault ? 1 : 0]
+    );
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'ticket-priority' });
+    res.status(201).json({ success: true, priorityId: result.insertId });
+  } catch (error) {
+    logger.error('Create ticket priority error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create ticket priority' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/ticket-priority/{id}:
+ *   put:
+ *     summary: Update a ticket priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               priorityName:
+ *                 type: string
+ *               color:
+ *                 type: string
+ *               isDefault:
+ *                 type: boolean
+ *               sortOrder:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket priority value updated
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Priority not found
+ */
+// PUT ticket priority
+router.put('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const priorityId = req.params.id;
+    const { priorityName, statusName, color, sortOrder, isDefault } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId, PriorityName, Color, SortOrder, IsDefault FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Priority not found' });
+    const orgId = rows[0].OrganizationId;
+    const currentPriority = rows[0];
+    const nextPriorityName = priorityName ?? statusName ?? currentPriority.PriorityName;
+    const nextColor = color ?? currentPriority.Color ?? '#6b7280';
+    const nextSortOrder = sortOrder ?? currentPriority.SortOrder ?? 0;
+    const nextIsDefault = typeof isDefault === 'boolean' ? isDefault : currentPriority.IsDefault === 1;
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    if (nextIsDefault) await pool.execute('UPDATE TicketPriorityValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, priorityId]);
+    await pool.execute(
+      'UPDATE TicketPriorityValues SET PriorityName = ?, Color = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?',
+      [nextPriorityName, nextColor, nextSortOrder, nextIsDefault ? 1 : 0, priorityId]
+    );
+    await invalidateByEntity('statusValue', { orgId, statusType: 'ticket-priority' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Update ticket priority error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update ticket priority' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/status-values/ticket-priority/{id}:
+ *   delete:
+ *     summary: Delete a ticket priority value
+ *     tags: [StatusValues]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Ticket priority value deleted
+ *       403:
+ *         description: Permission denied
+ *       404:
+ *         description: Priority not found
+ */
+// DELETE ticket priority
+router.delete('/ticket-priority/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const priorityId = req.params.id;
+    const [rows] = await pool.execute<RowDataPacket[]>('SELECT OrganizationId FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
+    if (rows.length === 0) return res.status(404).json({ success: false, message: 'Priority not found' });
+    const orgId = rows[0].OrganizationId;
+    const [member] = await pool.execute<RowDataPacket[]>(
+      `SELECT om.Role, pg.CanManageSettings FROM OrganizationMembers om LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id WHERE om.OrganizationId = ? AND om.UserId = ?`,
+      [orgId, userId]
+    );
+    if (member.length === 0 || (member[0].Role !== 'Owner' && !member[0].CanManageSettings)) return res.status(403).json({ success: false, message: 'Permission denied' });
+    await pool.execute('DELETE FROM TicketPriorityValues WHERE Id = ?', [priorityId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'ticket-priority' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete ticket priority error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete ticket priority' });
+  }
+});
+
+// ---- Expense category groups & categories (org-scoped) ----
+
+const canManageOrgExpenseTaxonomy = async (orgId: number, userId: number | undefined): Promise<boolean> => {
+  if (!userId) return false;
+  const [admin] = await pool.execute<RowDataPacket[]>('SELECT isAdmin FROM Users WHERE Id = ?', [userId]);
+  if (admin[0]?.isAdmin) return true;
+  const [member] = await pool.execute<RowDataPacket[]>(
+    `SELECT om.Role, pg.CanManageSettings, pg.CanManageExpenses
+     FROM OrganizationMembers om
+     LEFT JOIN PermissionGroups pg ON om.PermissionGroupId = pg.Id
+     WHERE om.OrganizationId = ? AND om.UserId = ?`,
+    [orgId, userId]
+  );
+  if (!member.length) return false;
+  const m = member[0];
+  return m.Role === 'Owner' || m.Role === 'Admin' || !!m.CanManageSettings || !!m.CanManageExpenses;
+};
+
+router.get('/expense-category-group/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+    if (access.length === 0 && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await ensureExpenseCategoryDefaults(orgId);
+
+    const [groups] = await pool.execute<RowDataPacket[]>(
+      `SELECT g.*,
+        (SELECT COUNT(*) FROM ExpenseCategoryValues c WHERE c.GroupId = g.Id) AS CategoryCount
+       FROM ExpenseCategoryGroups g
+       WHERE g.OrganizationId = ?
+       ORDER BY g.SortOrder, g.GroupName`,
+      [orgId]
+    );
+    res.json({ success: true, groups });
+  } catch (error) {
+    logger.error('Get expense category groups error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch expense category groups' });
+  }
+});
+
+router.post('/expense-category-group', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, groupName, colorCode, sortOrder, isDefault } = req.body;
+    if (!organizationId || !groupName) {
+      return res.status(400).json({ success: false, message: 'Organization ID and group name are required' });
+    }
+    if (!(await canManageOrgExpenseTaxonomy(organizationId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    if (isDefault) {
+      await pool.execute('UPDATE ExpenseCategoryGroups SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    }
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO ExpenseCategoryGroups (OrganizationId, GroupName, ColorCode, SortOrder, IsDefault)
+       VALUES (?, ?, ?, ?, ?)`,
+      [organizationId, groupName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0]
+    );
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'expense' });
+    res.status(201).json({ success: true, groupId: result.insertId });
+  } catch (error) {
+    logger.error('Create expense category group error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create expense category group' });
+  }
+});
+
+router.put('/expense-category-group/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const groupId = Number(req.params.id);
+    const { groupName, colorCode, sortOrder, isDefault } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ExpenseCategoryGroups WHERE Id = ?',
+      [groupId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Group not found' });
+    const orgId = rows[0].OrganizationId;
+    if (!(await canManageOrgExpenseTaxonomy(orgId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    if (isDefault) {
+      await pool.execute('UPDATE ExpenseCategoryGroups SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, groupId]);
+    }
+    await pool.execute(
+      `UPDATE ExpenseCategoryGroups SET GroupName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ? WHERE Id = ?`,
+      [groupName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0, groupId]
+    );
+    await invalidateByEntity('statusValue', { orgId, statusType: 'expense' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Update expense category group error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update expense category group' });
+  }
+});
+
+router.delete('/expense-category-group/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const groupId = Number(req.params.id);
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ExpenseCategoryGroups WHERE Id = ?',
+      [groupId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Group not found' });
+    const orgId = rows[0].OrganizationId;
+    if (!(await canManageOrgExpenseTaxonomy(orgId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    const [cats] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM ExpenseCategoryValues WHERE GroupId = ? LIMIT 1',
+      [groupId]
+    );
+    if (cats.length) {
+      return res.status(400).json({ success: false, message: 'Cannot delete a group that still has categories' });
+    }
+    await pool.execute('DELETE FROM ExpenseCategoryGroups WHERE Id = ?', [groupId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'expense' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete expense category group error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete expense category group' });
+  }
+});
+
+router.get('/expense-category/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const orgId = parseInt(req.params.orgId as string);
+    const [access] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
+      [orgId, userId]
+    );
+    if (access.length === 0 && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await ensureExpenseCategoryDefaults(orgId);
+
+    const [categories] = await pool.execute<RowDataPacket[]>(
+      `SELECT c.*, g.GroupName, g.ColorCode AS GroupColorCode, g.SortOrder AS GroupSortOrder
+       FROM ExpenseCategoryValues c
+       INNER JOIN ExpenseCategoryGroups g ON c.GroupId = g.Id
+       WHERE c.OrganizationId = ?
+       ORDER BY g.SortOrder, g.GroupName, c.SortOrder, c.CategoryName`,
+      [orgId]
+    );
+    res.json({ success: true, categories });
+  } catch (error) {
+    logger.error('Get expense categories error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch expense categories' });
+  }
+});
+
+router.post('/expense-category', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { organizationId, groupId, categoryName, colorCode, sortOrder, isDefault, maxReimbursementAmount } = req.body;
+    if (!organizationId || !groupId || !categoryName) {
+      return res.status(400).json({ success: false, message: 'Organization ID, group ID and category name are required' });
+    }
+    if (!(await canManageOrgExpenseTaxonomy(organizationId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    const [groups] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM ExpenseCategoryGroups WHERE Id = ? AND OrganizationId = ?',
+      [groupId, organizationId]
+    );
+    if (!groups.length) {
+      return res.status(400).json({ success: false, message: 'Invalid group for organization' });
+    }
+    if (isDefault) {
+      await pool.execute('UPDATE ExpenseCategoryValues SET IsDefault = 0 WHERE OrganizationId = ?', [organizationId]);
+    }
+    const maxReimb =
+      maxReimbursementAmount === null || maxReimbursementAmount === undefined || maxReimbursementAmount === ''
+        ? null
+        : Number(maxReimbursementAmount);
+    if (maxReimb !== null && (!Number.isFinite(maxReimb) || maxReimb < 0)) {
+      return res.status(400).json({ success: false, message: 'Invalid max reimbursement amount' });
+    }
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO ExpenseCategoryValues (OrganizationId, GroupId, CategoryName, ColorCode, SortOrder, IsDefault, MaxReimbursementAmount)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [organizationId, groupId, categoryName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0, maxReimb]
+    );
+    await invalidateByEntity('statusValue', { orgId: organizationId, statusType: 'expense' });
+    res.status(201).json({ success: true, categoryId: result.insertId });
+  } catch (error) {
+    logger.error('Create expense category error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create expense category' });
+  }
+});
+
+router.put('/expense-category/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const categoryId = Number(req.params.id);
+    const { groupId, categoryName, colorCode, sortOrder, isDefault, maxReimbursementAmount } = req.body;
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ExpenseCategoryValues WHERE Id = ?',
+      [categoryId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Category not found' });
+    const orgId = rows[0].OrganizationId;
+    if (!(await canManageOrgExpenseTaxonomy(orgId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    if (groupId) {
+      const [groups] = await pool.execute<RowDataPacket[]>(
+        'SELECT Id FROM ExpenseCategoryGroups WHERE Id = ? AND OrganizationId = ?',
+        [groupId, orgId]
+      );
+      if (!groups.length) {
+        return res.status(400).json({ success: false, message: 'Invalid group for organization' });
+      }
+    }
+    if (isDefault) {
+      await pool.execute('UPDATE ExpenseCategoryValues SET IsDefault = 0 WHERE OrganizationId = ? AND Id != ?', [orgId, categoryId]);
+    }
+    const maxReimb =
+      maxReimbursementAmount === null || maxReimbursementAmount === undefined || maxReimbursementAmount === ''
+        ? null
+        : Number(maxReimbursementAmount);
+    if (maxReimb !== null && (!Number.isFinite(maxReimb) || maxReimb < 0)) {
+      return res.status(400).json({ success: false, message: 'Invalid max reimbursement amount' });
+    }
+    await pool.execute(
+      `UPDATE ExpenseCategoryValues SET GroupId = ?, CategoryName = ?, ColorCode = ?, SortOrder = ?, IsDefault = ?, MaxReimbursementAmount = ? WHERE Id = ?`,
+      [groupId, categoryName, colorCode || '#3b82f6', sortOrder || 0, isDefault ? 1 : 0, maxReimb, categoryId]
+    );
+    await invalidateByEntity('statusValue', { orgId, statusType: 'expense' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Update expense category error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update expense category' });
+  }
+});
+
+router.delete('/expense-category/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const categoryId = Number(req.params.id);
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT OrganizationId FROM ExpenseCategoryValues WHERE Id = ?',
+      [categoryId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Category not found' });
+    const orgId = rows[0].OrganizationId;
+    if (!(await canManageOrgExpenseTaxonomy(orgId, userId))) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+    const [used] = await pool.execute<RowDataPacket[]>(
+      'SELECT Id FROM Expenses WHERE CategoryId = ? LIMIT 1',
+      [categoryId]
+    );
+    if (used.length) {
+      return res.status(400).json({ success: false, message: 'Cannot delete a category that is used by expenses' });
+    }
+    await pool.execute('DELETE FROM ExpenseCategoryValues WHERE Id = ?', [categoryId]);
+    await invalidateByEntity('statusValue', { orgId, statusType: 'expense' });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Delete expense category error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete expense category' });
+  }
+});
+
+export default router;

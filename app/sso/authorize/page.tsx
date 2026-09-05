@@ -57,8 +57,8 @@ function SsoAuthorizeInner() {
   }, [router, searchParams]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
-      <p className="text-gray-700 dark:text-gray-200">{message}</p>
+    <div className="flex min-h-screen items-center justify-center bg-[var(--pm-bg)] px-4">
+      <p className="text-sm text-[var(--pm-muted)]">{message}</p>
     </div>
   );
 }
@@ -67,8 +67,8 @@ export default function SsoAuthorizePage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
-          <p className="text-gray-700 dark:text-gray-200">Loading…</p>
+        <div className="flex min-h-screen items-center justify-center bg-[var(--pm-bg)]">
+          <p className="text-sm text-[var(--pm-muted)]">Loading…</p>
         </div>
       }
     >

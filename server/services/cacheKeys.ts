@@ -44,7 +44,7 @@ export const cacheKeys = {
   projectTasksSummary: (projectId: number | string | string[]) => `project:${keyPart(projectId)}:tasks-summary`,
   projectSprints: (projectId: number | string | string[]) => `project:${keyPart(projectId)}:sprints`,
   projectMilestones: (projectId: number | string | string[]) => `project:${keyPart(projectId)}:milestones`,
-  projectBurndown: (projectId: number | string | string[]) => `project:${keyPart(projectId)}:burndown`,
+  projectBurndown: (projectId: number | string | string[]) => `project:${keyPart(projectId)}:burndown:v2`,
   projectFlowMetrics: (projectId: number | string | string[]) => `project:${keyPart(projectId)}:flow-metrics`,
 
   task: (taskId: number | string | string[]) => `task:${keyPart(taskId)}`,

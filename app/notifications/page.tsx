@@ -1,12 +1,14 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'next/navigation';
-import Navbar from '@/components/Navbar';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { tasksApi, Task } from '@/lib/api/tasks';
@@ -49,7 +51,7 @@ export default function NotificationsPage() {
   // Check authentication - only redirect if not loading and no token
   useEffect(() => {
     if (!authLoading && !token) {
-      router.push('/login');
+      router.push(oldPath('/login'));
     }
   }, [authLoading, token, router]);
 
@@ -233,19 +235,14 @@ export default function NotificationsPage() {
 
   // Show loading while auth is loading
   if (authLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!user) return null;
 
   return (
     <>
-      <Navbar />
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="w-full">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-6">

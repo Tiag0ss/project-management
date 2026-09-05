@@ -11,7 +11,9 @@ import {
   listReimbursements,
   updateExpense,
   deleteExpense,
+  getExpenseApprovalKpis,
   ExpenseReimbursementPayment,
+  ExpenseApprovalKpis,
 } from '@/lib/api/expenses';
 
 const formatMoney = (value: number | string | null | undefined) => {
@@ -58,6 +60,8 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
   const isAdmin = !!user?.isAdmin;
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [kpis, setKpis] = useState<ExpenseApprovalKpis | null>(null);
+  const [kpisLoading, setKpisLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [filterStatus, setFilterStatus] = useState<ApprovalFilter>('pending');
@@ -82,6 +86,18 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
     paidBy: 'employee' as 'employee' | 'company',
   });
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
+
+  const loadKpis = useCallback(async () => {
+    setKpisLoading(true);
+    try {
+      const data = await getExpenseApprovalKpis(token);
+      setKpis(data);
+    } catch {
+      setKpis(null);
+    } finally {
+      setKpisLoading(false);
+    }
+  }, [token]);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -109,6 +125,14 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
     load();
   }, [load]);
 
+  useEffect(() => {
+    loadKpis();
+  }, [loadKpis]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([load(), loadKpis()]);
+  }, [load, loadKpis]);
+
   const pending = expenses.filter((e) => e.ApprovalStatus === 'pending');
 
   const toggleSelect = (id: number) => {
@@ -126,7 +150,7 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
       for (const id of selectedIds) {
         await approveExpense(token, id, status);
       }
-      await load();
+      await refreshAll();
     } catch (err: any) {
       setError(err.message || 'Batch approval failed');
     } finally {
@@ -160,7 +184,7 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
         settleRemaining: settleRemaining || undefined,
       });
       setReimburseExpense(null);
-      await load();
+      await refreshAll();
     } catch (err: any) {
       setError(err.message || 'Reimbursement failed');
     } finally {
@@ -195,7 +219,7 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
         paidBy: adminForm.paidBy,
       });
       setAdminEdit(null);
-      await load();
+      await refreshAll();
     } catch (err: any) {
       setError(err.message || 'Failed to update expense');
     } finally {
@@ -205,6 +229,42 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
 
   return (
     <div className="space-y-4">
+      {!kpisLoading && kpis && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">⏳ Pending</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{kpis.pendingCount}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">expenses awaiting approval</div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div className="text-sm text-green-600 dark:text-green-400 font-medium">✓ Approved</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{kpis.approvedCount}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              of {kpis.totalCount} total
+              {kpis.rejectedCount > 0 ? ` · ${kpis.rejectedCount} rejected` : ''}
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div className="text-sm text-amber-600 dark:text-amber-400 font-medium">💸 To reimburse</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+              {formatMoney(kpis.remainingToReimburse)}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {kpis.needsReimbursementCount} expense{kpis.needsReimbursementCount !== 1 ? 's' : ''} outstanding
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">💰 Total Amount</div>
+            <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+              {formatMoney(kpis.totalAmount)}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              across all expenses in your scope
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <select
@@ -342,7 +402,7 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
                                 type="button"
                                 title="Approve"
                                 aria-label="Approve"
-                                onClick={() => approveExpense(token, e.Id, 'approved').then(load)}
+                                onClick={() => approveExpense(token, e.Id, 'approved').then(refreshAll)}
                                 className="p-1.5 text-gray-400 rounded hover:text-green-600"
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
@@ -351,7 +411,7 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
                                 type="button"
                                 title="Reject"
                                 aria-label="Reject"
-                                onClick={() => approveExpense(token, e.Id, 'rejected').then(load)}
+                                onClick={() => approveExpense(token, e.Id, 'rejected').then(refreshAll)}
                                 className="p-1.5 text-gray-400 rounded hover:text-red-600"
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -374,7 +434,7 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
                               type="button"
                               title="Revert to pending"
                               aria-label="Revert to pending"
-                              onClick={() => approveExpense(token, e.Id, 'pending').then(load)}
+                              onClick={() => approveExpense(token, e.Id, 'pending').then(refreshAll)}
                               className="p-1.5 text-gray-400 rounded hover:text-amber-600"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
@@ -624,7 +684,7 @@ export default function ExpenseApprovalsPanel({ token }: Props) {
           try {
             await deleteExpense(token, deleteTarget.Id);
             setDeleteTarget(null);
-            await load();
+            await refreshAll();
           } catch (err: any) {
             setError(err.message || 'Failed to delete');
             setDeleteTarget(null);

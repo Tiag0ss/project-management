@@ -35,6 +35,14 @@ export interface Project {
   BudgetSpent?: number;
   ApplicationIds?: number[];
   ApplicationNames?: string[];
+  Applications?: Array<{
+    Id: number;
+    Name: string;
+    RepositoryUrl?: string | null;
+    GitHubIntegrationId?: number | null;
+    GiteaIntegrationId?: number | null;
+    BitbucketIntegrationId?: number | null;
+  }>;
   CreatedBy: number;
   CreatorName?: string;
   CreatedAt: string;

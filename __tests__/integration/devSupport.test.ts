@@ -18,7 +18,7 @@ let app: express.Application;
 
 beforeAll(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const devSupportRouter = require('../../server/routes/devSupport').default;
+  const devSupportRouter = require('../../server/modules/users/devSupport').default;
   app = express();
   app.use(express.json());
   app.use('/api/dev-support', devSupportRouter);

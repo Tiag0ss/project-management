@@ -1,8 +1,8 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import { useAuth } from '@/contexts/AuthContext';
@@ -17,6 +17,7 @@ import { reportingApi, ReportingAccessInfo, DeltaMetric } from '@/lib/api/report
 import { defaultReportingRange, formatDelta, previousPeriod } from '@/lib/reporting/period';
 import { EXTRACT_DATASETS, EXTRACT_FILTER_CONFIG } from '@/lib/reporting/extractDatasets';
 import { downloadCsv, toCsv } from '@/lib/csv';
+import { stripHtml } from '@/lib/stripHtml';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { WebReportsExplorer } from '@/app/web-reports/page';
 import { OrganizationCharts } from '@/components/reporting/OrganizationCharts';
@@ -142,6 +143,10 @@ function renderExtractCell(row: Record<string, unknown>, key: string) {
         </Link>
       );
     }
+  }
+
+  if (/description|notes/i.test(key)) {
+    return stripHtml(text);
   }
 
   return text;
@@ -561,7 +566,16 @@ function ReportingHubInner() {
   const exportExtractCsv = () => {
     if (!extractRecords.length) return;
     const keys = Object.keys(extractRecords[0]);
-    downloadCsv(toCsv(extractRecords, keys), `extract-${extractDataset}.csv`);
+    const rows = extractRecords.map((row) => {
+      const next: Record<string, unknown> = { ...row };
+      for (const key of keys) {
+        if (/description|notes/i.test(key) && typeof next[key] === 'string') {
+          next[key] = stripHtml(next[key] as string);
+        }
+      }
+      return next;
+    });
+    downloadCsv(toCsv(rows, keys), `extract-${extractDataset}.csv`);
   };
 
   const exportQualityCsv = (rows: any[], name: string) => {
@@ -591,8 +605,7 @@ function ReportingHubInner() {
   if (isCustomerUser) {
     return (
       <CustomerUserGuard>
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-          <Navbar />
+        <div className="w-full">
           <main className="w-full p-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg p-8 text-center text-gray-700 dark:text-gray-200">
               Reporting is not available for customer portal users.
@@ -606,8 +619,7 @@ function ReportingHubInner() {
   if (permissionsLoading || !access) {
     return (
       <CustomerUserGuard>
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-          <Navbar />
+        <div className="w-full">
           <main className="w-full p-6 text-gray-600 dark:text-gray-300">Loading reporting…</main>
         </div>
       </CustomerUserGuard>
@@ -617,8 +629,7 @@ function ReportingHubInner() {
   if (!access.canAccessHub && !permissions?.canViewReports && !user?.isAdmin) {
     return (
       <CustomerUserGuard>
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-          <Navbar />
+        <div className="w-full">
           <main className="w-full p-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg p-8 text-center">
               <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Access denied</h1>
@@ -645,8 +656,7 @@ function ReportingHubInner() {
 
   return (
     <CustomerUserGuard>
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
-        <Navbar />
+      <div className="w-full flex flex-col">
         <main className="w-full flex-1 flex flex-col min-h-0">
           <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -1937,7 +1947,7 @@ export default function ReportingPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-300 p-6">
+        <div className="w-full text-gray-600 dark:text-gray-300 p-6">
           Loading reporting…
         </div>
       }

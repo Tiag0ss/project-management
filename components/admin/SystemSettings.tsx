@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
+import PageTabs from '@/components/PageTabs';
 // Complete list of IANA timezones
 const TIMEZONES = [
   { value: '', label: 'Use browser/system default' },
@@ -148,12 +149,40 @@ interface Customer {
   Name: string;
 }
 
-type SettingsTab = 'branding' | 'email' | 'access' | 'features' | 'maintenance';
+type SettingsTab = 'branding' | 'email' | 'access' | 'features' | 'ai' | 'maintenance';
 
-export default function SystemSettings() {
+export type SystemSettingsActionsState = {
+  saving: boolean;
+  canSave: boolean;
+  onSave: () => void;
+  showSyncAiViews: boolean;
+  syncingAiViews: boolean;
+  onSyncAiViews: () => void;
+};
+
+type SystemSettingsProps = {
+  /** Use `none` when the parent owns PageStickyActions (Administration). */
+  actionsPlacement?: 'embedded' | 'none';
+  onActionsStateChange?: (state: SystemSettingsActionsState | null) => void;
+};
+
+const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
+  { id: 'branding', label: 'Branding' },
+  { id: 'email', label: 'Email (SMTP)' },
+  { id: 'access', label: 'Access & Auth' },
+  { id: 'features', label: 'Features' },
+  { id: 'ai', label: 'AI' },
+  { id: 'maintenance', label: 'Maintenance' },
+];
+
+export default function SystemSettings({
+  actionsPlacement = 'embedded',
+  onActionsStateChange,
+}: SystemSettingsProps) {
   const { token } = useAuth();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<SettingsTab>('branding');
+  const formRef = useRef<HTMLFormElement>(null);
   const [settings, setSettings] = useState<SystemSettings>({
     companyName: 'Project Management',
     companyLogoUrl: '',
@@ -430,8 +459,29 @@ export default function SystemSettings() {
   };
 
   const handleChange = (field: keyof SystemSettings, value: string) => {
-    setSettings(prev => ({ ...prev, [field]: value }));
+    setSettings((prev) => ({ ...prev, [field]: value }));
   };
+
+  useEffect(() => {
+    if (!onActionsStateChange) return;
+    if (isLoading) {
+      onActionsStateChange(null);
+      return;
+    }
+    onActionsStateChange({
+      saving: isSaving,
+      canSave: activeTab !== 'maintenance',
+      onSave: () => {
+        formRef.current?.requestSubmit();
+      },
+      showSyncAiViews: activeTab === 'ai',
+      syncingAiViews: isSyncingAiViews,
+      onSyncAiViews: () => {
+        void handleSyncAiViews();
+      },
+    });
+    return () => onActionsStateChange(null);
+  }, [onActionsStateChange, isLoading, isSaving, activeTab, isSyncingAiViews]);
 
   const handleBrandingUpload = async (kind: 'logo' | 'favicon', file: File | null) => {
     if (!token || !file) return;
@@ -479,69 +529,44 @@ export default function SystemSettings() {
 
   if (isLoading) {
     return (
-      <div className="p-6 flex justify-center items-center">
-        <div className="text-gray-600 dark:text-gray-400">Loading settings...</div>
+      <div className="flex h-40 items-center justify-center text-sm text-[var(--pm-muted)]">
+        Loading settings…
       </div>
     );
   }
 
-  const TABS: { id: SettingsTab; label: string; icon: string }[] = [
-    { id: 'branding',      label: 'Branding',       icon: '🏷️' },
-    { id: 'email',         label: 'Email (SMTP)',    icon: '📧' },
-    { id: 'access',        label: 'Access & Auth',   icon: '🔐' },
-    { id: 'features',      label: 'Features & AI',   icon: '🤖' },
-    { id: 'maintenance',   label: 'Maintenance',     icon: '🔧' },
-  ];
-
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          System Settings
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400">
-          Configure global system settings and integrations
-        </p>
-      </div>
+    <div className="space-y-3 p-4 sm:p-6">
+      <p className="text-xs text-[var(--pm-muted)]">
+        Configure branding, email, access, features, AI, and maintenance utilities.
+      </p>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
+        <div className="rounded border border-red-400 bg-red-100 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           {error}
         </div>
       )}
+      {success && (
+        <div className="rounded border border-green-400 bg-green-100 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400">
+          {success}
+        </div>
+      )}
 
-      {/* Tab bar */}
-      <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
-        <nav className="-mb-px flex gap-1 overflow-x-auto">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`whitespace-nowrap flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-              }`}
-            >
-              <span>{tab.icon}</span>
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+      <PageTabs
+        tabs={SETTINGS_TABS}
+        activeId={activeTab}
+        onChange={(id) => setActiveTab(id as SettingsTab)}
+      />
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <form ref={formRef} id="system-settings-form" onSubmit={handleSubmit} className="space-y-3">
 
-        {/* â”€â”€ BRANDING â”€â”€ */}
+        
         {activeTab === 'branding' && (
-          <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              🏷️ Branding
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">Branding</h3>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   Company Name
                 </label>
                 <input
@@ -549,12 +574,12 @@ export default function SystemSettings() {
                   value={settings.companyName || ''}
                   onChange={(e) => handleChange('companyName', e.target.value)}
                   placeholder="Project Management"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   Company Logo URL
                 </label>
                 <input
@@ -563,7 +588,7 @@ export default function SystemSettings() {
                   value={settings.companyLogoUrl || ''}
                   onChange={(e) => handleChange('companyLogoUrl', e.target.value)}
                   placeholder="https://example.com/logo.png or /uploads/branding/…"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <input
@@ -577,7 +602,7 @@ export default function SystemSettings() {
                     type="button"
                     onClick={() => logoFileInputRef.current?.click()}
                     disabled={isUploadingBranding === 'logo'}
-                    className="h-9 px-3 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50"
+                    className="h-8 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-xs font-medium text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)] disabled:opacity-50"
                   >
                     {isUploadingBranding === 'logo' ? 'Uploading…' : 'Upload logo'}
                   </button>
@@ -589,7 +614,7 @@ export default function SystemSettings() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   Favicon URL
                 </label>
                 <input
@@ -598,7 +623,7 @@ export default function SystemSettings() {
                   value={settings.faviconUrl || ''}
                   onChange={(e) => handleChange('faviconUrl', e.target.value)}
                   placeholder="https://example.com/favicon.ico or /uploads/branding/…"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <input
@@ -612,7 +637,7 @@ export default function SystemSettings() {
                     type="button"
                     onClick={() => faviconFileInputRef.current?.click()}
                     disabled={isUploadingBranding === 'favicon'}
-                    className="h-9 px-3 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50"
+                    className="h-8 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-xs font-medium text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)] disabled:opacity-50"
                   >
                     {isUploadingBranding === 'favicon' ? 'Uploading…' : 'Upload favicon'}
                   </button>
@@ -626,15 +651,13 @@ export default function SystemSettings() {
           </div>
         )}
 
-        {/* â”€â”€ EMAIL / SMTP â”€â”€ */}
+        
         {activeTab === 'email' && (
-          <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              📧 SMTP Configuration
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">SMTP Configuration</h3>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   SMTP Host
                 </label>
                 <input
@@ -642,12 +665,12 @@ export default function SystemSettings() {
                   value={settings.smtpHost}
                   onChange={(e) => handleChange('smtpHost', e.target.value)}
                   placeholder="smtp.example.com"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   SMTP Port
                 </label>
                 <input
@@ -655,12 +678,12 @@ export default function SystemSettings() {
                   value={settings.smtpPort}
                   onChange={(e) => handleChange('smtpPort', e.target.value)}
                   placeholder="587"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   SMTP User
                 </label>
                 <input
@@ -668,12 +691,12 @@ export default function SystemSettings() {
                   value={settings.smtpUser}
                   onChange={(e) => handleChange('smtpUser', e.target.value)}
                   placeholder="user@example.com"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   SMTP Password
                 </label>
                 <PasswordInput
@@ -683,13 +706,13 @@ export default function SystemSettings() {
                   autoComplete="new-password"
                   preventAutofill
                 />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                   Leave blank to keep the existing password. Only fill in to change it.
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   From Email
                 </label>
                 <input
@@ -697,12 +720,12 @@ export default function SystemSettings() {
                   value={settings.smtpFrom}
                   onChange={(e) => handleChange('smtpFrom', e.target.value)}
                   placeholder="noreply@example.com"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   From Name
                 </label>
                 <input
@@ -710,18 +733,18 @@ export default function SystemSettings() {
                   value={settings.smtpFromName}
                   onChange={(e) => handleChange('smtpFromName', e.target.value)}
                   placeholder="Project Management System"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                   Use TLS/SSL
                 </label>
                 <select
                   value={settings.smtpSecure}
                   onChange={(e) => handleChange('smtpSecure', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 >
                   <option value="true">Yes (TLS/SSL)</option>
                   <option value="false">No (Plain)</option>
@@ -730,21 +753,19 @@ export default function SystemSettings() {
             </div>
 
             <div className="mt-8 border-t border-gray-200 dark:border-gray-600 pt-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                📅 Outlook Calendar Integration
-              </h3>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">Outlook Calendar Integration</h3>
 
-              <div className="space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer">
+              <div className="space-y-3">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.outlookCalendarEnabled === 'true'}
                     onChange={(e) => handleChange('outlookCalendarEnabled', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">Enable Outlook Calendar Sync</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">Enable Outlook Calendar Sync</div>
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       Adds Outlook events to the in-app calendar. Managers/admins can include team members in the same organization.
                     </div>
                   </div>
@@ -753,7 +774,7 @@ export default function SystemSettings() {
                 {settings.outlookCalendarEnabled === 'true' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-0 md:ml-8">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                         Azure Tenant ID
                       </label>
                       <input
@@ -761,12 +782,12 @@ export default function SystemSettings() {
                         value={settings.outlookTenantId || ''}
                         onChange={(e) => handleChange('outlookTenantId', e.target.value)}
                         placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                         Azure Client ID
                       </label>
                       <input
@@ -774,12 +795,12 @@ export default function SystemSettings() {
                         value={settings.outlookClientId || ''}
                         onChange={(e) => handleChange('outlookClientId', e.target.value)}
                         placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                       />
                     </div>
 
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                         Azure Client Secret
                       </label>
                       <PasswordInput
@@ -789,22 +810,22 @@ export default function SystemSettings() {
                         autoComplete="new-password"
                         preventAutofill
                       />
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                         Leave empty and save to clear the stored Outlook client secret.
                       </p>
                     </div>
 
                     <div className="md:col-span-2">
-                      <label className="flex items-center gap-3 cursor-pointer">
+                      <label className="flex cursor-pointer items-start gap-2">
                         <input
                           type="checkbox"
                           checked={settings.outlookIncludeTeamEventsForManagers !== 'false'}
                           onChange={(e) => handleChange('outlookIncludeTeamEventsForManagers', e.target.checked ? 'true' : 'false')}
-                          className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                         />
                         <div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">Managers/Admins see team Outlook events</div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                          <div className="text-sm font-medium text-[var(--pm-text)]">Managers/Admins see team Outlook events</div>
+                          <div className="text-[11px] text-[var(--pm-muted)]">
                             Uses users in the same organization with valid email addresses.
                           </div>
                         </div>
@@ -817,27 +838,25 @@ export default function SystemSettings() {
           </div>
         )}
 
-        {/* â”€â”€ ACCESS & AUTH â”€â”€ */}
+        
         {activeTab === 'access' && (
-          <div className="space-y-6">
-            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                🔐 Registration Settings
-              </h3>
-              <div className="space-y-4">
+          <div className="space-y-3">
+            <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">Registration Settings</h3>
+              <div className="space-y-3">
                 <div>
-                  <label className="flex items-center gap-3 cursor-pointer">
+                  <label className="flex cursor-pointer items-start gap-2">
                     <input
                       type="checkbox"
                       checked={settings.allowPublicRegistration === 'true'}
                       onChange={(e) => handleChange('allowPublicRegistration', e.target.checked ? 'true' : 'false')}
-                      className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                     />
                     <div>
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      <div className="text-sm font-medium text-[var(--pm-text)]">
                         Allow Public Registration
                       </div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                      <div className="text-[11px] text-[var(--pm-muted)]">
                         Allow users to register from the frontpage without an invitation
                       </div>
                     </div>
@@ -847,19 +866,19 @@ export default function SystemSettings() {
                 {settings.allowPublicRegistration === 'true' && (
                   <div className="ml-8 mt-4 space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                         Registration Type *
                       </label>
                       <select
                         value={settings.publicRegistrationType}
                         onChange={(e) => handleChange('publicRegistrationType', e.target.value)}
                         required={settings.allowPublicRegistration === 'true'}
-                        className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                       >
                         <option value="internal">Internal User</option>
                         <option value="customer">Customer User</option>
                       </select>
-                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                      <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                         {settings.publicRegistrationType === 'internal'
                           ? 'New users will be created as internal users'
                           : 'New users will be created as customer users (linked to a specific customer)'}
@@ -868,14 +887,14 @@ export default function SystemSettings() {
 
                     {settings.publicRegistrationType === 'customer' && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                           Default Customer *
                         </label>
                         <select
                           value={settings.defaultCustomerId}
                           onChange={(e) => handleChange('defaultCustomerId', e.target.value)}
                           required={settings.publicRegistrationType === 'customer'}
-                          className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                         >
                           <option value="">Select a customer...</option>
                           {customers.map((customer) => (
@@ -884,7 +903,7 @@ export default function SystemSettings() {
                             </option>
                           ))}
                         </select>
-                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                           New users will be linked to this customer
                         </p>
                       </div>
@@ -894,25 +913,23 @@ export default function SystemSettings() {
               </div>
             </div>
 
-            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                🌍 Timezone Settings
-              </h3>
-              <div className="space-y-4">
+            <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">Timezone Settings</h3>
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                     Default System Timezone
                   </label>
                   <select
                     value={settings.defaultTimezone}
                     onChange={(e) => handleChange('defaultTimezone', e.target.value)}
-                    className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                   >
                     {TIMEZONES.map(tz => (
                       <option key={tz.value} value={tz.value}>{tz.label}</option>
                     ))}
                   </select>
-                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                     This timezone will be used as the default for all users who have not set their own timezone preference.
                   </p>
                 </div>
@@ -921,195 +938,195 @@ export default function SystemSettings() {
           </div>
         )}
 
-        {/* â”€â”€ FEATURES & AI â”€â”€ */}
+        
         {activeTab === 'features' && (
-          <div className="space-y-6">
-            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                🧩 Feature Toggles
-              </h3>
-              <div className="space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer">
+          <div className="space-y-3">
+            <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">Feature Toggles</h3>
+              <div className="space-y-3">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.frontpageEnabled !== 'false'}
                     onChange={(e) => handleChange('frontpageEnabled', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Enable Front Page
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       When disabled, visiting the root URL redirects directly to the login page.
                     </div>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.internalTicketsEnabled === 'true'}
                     onChange={(e) => handleChange('internalTicketsEnabled', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Enable Internal Ticket System
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       Shows/hides internal tickets module globally. Does not disable ticket integration used in tasks.
                     </div>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.memosEnabled === 'true'}
                     onChange={(e) => handleChange('memosEnabled', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Enable Memos Menu
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       Only controls visibility of Memos in the navbar.
                     </div>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.expensesEnabled === 'true'}
                     onChange={(e) => handleChange('expensesEnabled', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Enable Expenses Module
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       Shows/hides the project expenses module globally. When disabled, expense APIs return 403.
                     </div>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.autoApproveExpenses === 'true'}
                     onChange={(e) => handleChange('autoApproveExpenses', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Auto-approve Expenses
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       When enabled, new expenses are created as approved instead of pending.
                     </div>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.autoApproveTimeEntries === 'true'}
                     onChange={(e) => handleChange('autoApproveTimeEntries', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Auto-approve Time Entries
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       New time entries are created as approved and approved entries remain editable.
                     </div>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.autoApproveVacations === 'true'}
                     onChange={(e) => handleChange('autoApproveVacations', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Auto-approve Vacations
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       New vacation requests are immediately approved.
                     </div>
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.autoApproveOutOfOffice === 'true'}
                     onChange={(e) => handleChange('autoApproveOutOfOffice', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Auto-approve Out Of Office
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       New out-of-office requests are immediately approved.
                     </div>
                   </div>
                 </label>
               </div>
             </div>
+          </div>
+        )}
 
-            <div className="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                🤖 AI Assistant
-              </h3>
-              <div className="space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer">
+        {activeTab === 'ai' && (
+          <div className="space-y-3">
+            <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">AI Assistant</h3>
+              <div className="space-y-3">
+                <label className="flex cursor-pointer items-start gap-2">
                   <input
                     type="checkbox"
                     checked={settings.aiAssistantEnabled === 'true'}
                     onChange={(e) => handleChange('aiAssistantEnabled', e.target.checked ? 'true' : 'false')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                   />
                   <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="text-sm font-medium text-[var(--pm-text)]">
                       Enable AI Assistant
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-[11px] text-[var(--pm-muted)]">
                       Shows/hides AI features globally. Configure OpenAI or Ollama below.
                     </div>
                   </div>
                 </label>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                     AI Provider
                   </label>
                   <select
                     value={settings.aiProvider === 'ollama' ? 'ollama' : 'openai'}
                     onChange={(e) => handleChange('aiProvider', e.target.value)}
-                    className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                   >
                     <option value="openai">OpenAI</option>
                     <option value="ollama">Ollama (local / self-hosted)</option>
                   </select>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                     Used by the assistant widget, task translate/summarize, and patch-notes improvement.
                   </p>
                 </div>
 
                 {settings.aiProvider === 'ollama' ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                         Ollama Base URL
                       </label>
                       <input
@@ -1117,14 +1134,14 @@ export default function SystemSettings() {
                         value={settings.ollamaBaseUrl || 'http://127.0.0.1:11434'}
                         onChange={(e) => handleChange('ollamaBaseUrl', e.target.value)}
                         placeholder="http://127.0.0.1:11434"
-                        className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                       />
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                         From Docker on Linux, try <code className="font-mono">http://172.17.0.1:11434</code> or host networking.
                       </p>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                         Ollama Model
                       </label>
                       <input
@@ -1132,9 +1149,9 @@ export default function SystemSettings() {
                         value={settings.ollamaModel || 'llama3.2'}
                         onChange={(e) => handleChange('ollamaModel', e.target.value)}
                         placeholder="llama3.2"
-                        className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                       />
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                         Must already be pulled (`ollama pull llama3.2`).
                       </p>
                     </div>
@@ -1142,7 +1159,7 @@ export default function SystemSettings() {
                 ) : (
                   <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                     OpenAI API Key
                   </label>
                   <PasswordInput
@@ -1151,29 +1168,29 @@ export default function SystemSettings() {
                     placeholder="sk-..."
                     autoComplete="new-password"
                     preventAutofill
-                    className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                   />
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                     Leave blank to keep the existing key. Only fill in to change it.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                       OpenAI Model
                     </label>
                     <select
                       value={settings.openAIModel || 'gpt-4o-mini'}
                       onChange={(e) => handleChange('openAIModel', e.target.value)}
-                      className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                     >
                       <option value="gpt-4o-mini">gpt-4o-mini (default)</option>
                       <option value="gpt-4.1-mini">gpt-4.1-mini</option>
                       <option value="gpt-4.1">gpt-4.1</option>
                       <option value="o4-mini">o4-mini</option>
                     </select>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                       Select the model used by the AI assistant backend.
                     </p>
                   </div>
@@ -1182,7 +1199,7 @@ export default function SystemSettings() {
                 )}
 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                       Assistant Behavior
                     </label>
                     <textarea
@@ -1192,7 +1209,7 @@ export default function SystemSettings() {
                       placeholder="Example: Be concise, use bullet points, and include actionable next steps."
                       className="w-full px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                       Optional custom instruction appended to assistant system behavior.
                     </p>
                 </div>
@@ -1208,19 +1225,19 @@ export default function SystemSettings() {
                       type="checkbox"
                       checked={settings.aiViewsAutoCreate === 'true'}
                       onChange={(e) => handleChange('aiViewsAutoCreate', e.target.checked ? 'true' : 'false')}
-                      className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                     />
                     <div>
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      <div className="text-sm font-medium text-[var(--pm-text)]">
                         Auto-create/sync AI Views on Server Startup
                       </div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                      <div className="text-[11px] text-[var(--pm-muted)]">
                         When enabled, startup ensures AI views exist and applies the SQL definitions below.
                       </div>
                     </div>
                   </label>
 
-                  <div className="grid grid-cols-1 gap-4">
+                  <div className="grid grid-cols-1 gap-3">
                     {(
                       [
                         { key: 'aiViewSql_vAI_ProjectOpenTasks', label: 'vAI_ProjectOpenTasks' },
@@ -1230,40 +1247,30 @@ export default function SystemSettings() {
                       ] as { key: keyof SystemSettings; label: string }[]
                     ).map(({ key, label }) => (
                       <div key={key}>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          SQL for <code className="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">{label}</code>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
+                          SQL for <code className="rounded bg-[var(--pm-panel)] px-1 font-mono text-[11px]">{label}</code>
                         </label>
                         <textarea
                           value={(settings[key] as string) || ''}
                           onChange={(e) => handleChange(key, e.target.value)}
                           rows={5}
-                          placeholder="Leave empty to use the built-in default SELECTâ€¦"
-                          className="w-full px-4 py-2 font-mono text-xs border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          placeholder="Leave empty to use the built-in default SELECT…"
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 font-mono text-xs text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                         />
                       </div>
                     ))}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-4">
-                    <button
-                      type="button"
-                      onClick={handleSyncAiViews}
-                      disabled={isSyncingAiViews}
-                      className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white"
-                    >
-                      {isSyncingAiViews ? (
-                        <>
-                          <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          Syncing...
-                        </>
-                      ) : '🔄 Sync AI Views Now'}
-                    </button>
-                    {aiViewsSyncMessage && <span className="text-sm text-green-600 dark:text-green-400">{aiViewsSyncMessage}</span>}
-                    {aiViewsSyncError   && <span className="text-sm text-red-600 dark:text-red-400">{aiViewsSyncError}</span>}
-                  </div>
+                  {(aiViewsSyncMessage || aiViewsSyncError) && (
+                    <div className="mt-2 space-y-1">
+                      {aiViewsSyncMessage && (
+                        <p className="text-sm text-green-600 dark:text-green-400">{aiViewsSyncMessage}</p>
+                      )}
+                      {aiViewsSyncError && (
+                        <p className="text-sm text-red-600 dark:text-red-400">{aiViewsSyncError}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1271,75 +1278,64 @@ export default function SystemSettings() {
           </div>
         )}
 
-        {/* â”€â”€ MAINTENANCE â”€â”€ */}
         {activeTab === 'maintenance' && (
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 p-6 rounded-lg border border-yellow-200 dark:border-yellow-800">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
-              🔧 Maintenance
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Administrative utilities for data consistency and migrations.
-            </p>
+          <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+            <div>
+              <h3 className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">
+                Maintenance
+              </h3>
+              <p className="text-[11px] text-[var(--pm-muted)]">
+                Administrative utilities for data consistency and migrations.
+              </p>
+            </div>
 
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-start gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="flex-1">
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-1">Create System Permission Groups</h4>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Creates the default Developer, Support, and Manager permission groups for any organization that is missing them.
-                    Safe to run multiple times â€” existing groups are not modified.
+            <div className="flex flex-col gap-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3 sm:flex-row sm:items-start">
+              <div className="min-w-0 flex-1">
+                <h4 className="text-sm font-medium text-[var(--pm-text)]">Create System Permission Groups</h4>
+                <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
+                  Creates the default Developer, Support, and Manager permission groups for any organization that is missing them.
+                  Safe to run multiple times — existing groups are not modified.
+                </p>
+                {migrationResult && (
+                  <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+                    Done: {migrationResult.created} groups created, {migrationResult.skipped} already existed.
                   </p>
-                  {migrationResult && (
-                    <p className="mt-2 text-sm text-green-600 dark:text-green-400">
-                      âœ… Done: {migrationResult.created} groups created, {migrationResult.skipped} already existed.
-                    </p>
-                  )}
-                  {migrationError && (
-                    <p className="mt-2 text-sm text-red-600 dark:text-red-400">âŒ {migrationError}</p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleMigrateSystemGroups}
-                  disabled={isMigrating}
-                  className="flex-shrink-0 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
-                >
-                  {isMigrating ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Running...
-                    </>
-                  ) : (
-                    '🔄 Run Migration'
-                  )}
-                </button>
+                )}
+                {migrationError && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">{migrationError}</p>
+                )}
               </div>
+              <button
+                type="button"
+                onClick={handleMigrateSystemGroups}
+                disabled={isMigrating}
+                className="h-10 shrink-0 rounded-lg bg-amber-600 px-4 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:bg-amber-400"
+              >
+                {isMigrating ? 'Running…' : 'Run Migration'}
+              </button>
             </div>
           </div>
         )}
 
-        {/* Save Button â€” hidden on Maintenance tab (no form fields there) */}
-        {activeTab !== 'maintenance' && (
-          <div className="flex justify-end">
+        {/* Save — embedded fallback when parent does not own PageStickyActions */}
+        {actionsPlacement === 'embedded' && activeTab !== 'maintenance' && (
+          <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap justify-end gap-2 border-t border-[var(--pm-border)] bg-[var(--pm-panel)] px-4 py-3 sm:-mx-6 sm:px-6">
+            {activeTab === 'ai' && (
+              <button
+                type="button"
+                onClick={() => void handleSyncAiViews()}
+                disabled={isSyncingAiViews || isSaving}
+                className="h-10 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-surface)] px-4 text-sm font-medium text-[var(--pm-text)] transition-colors hover:bg-[var(--pm-surface-2)] disabled:opacity-50"
+              >
+                {isSyncingAiViews ? 'Syncing…' : 'Sync AI Views Now'}
+              </button>
+            )}
             <button
               type="submit"
               disabled={isSaving}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+              className="h-10 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-blue-400"
             >
-              {isSaving ? (
-                <>
-                  <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Saving...
-                </>
-              ) : (
-                <>💾 Save Settings</>
-              )}
+              {isSaving ? 'Saving…' : 'Save Settings'}
             </button>
           </div>
         )}

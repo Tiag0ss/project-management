@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Backend — Express routes & services
 
-Full reference: [.github/copilot-instructions.md](../../.github/copilot-instructions.md) · Skill: [skill-backend-route.prompt.md](../../.github/prompts/skill-backend-route.prompt.md)
+Skill: [.cursor/skills/backend-route/SKILL.md](../skills/backend-route/SKILL.md) · Prefer `server/modules/**` for new work
 
 ## Route handler template
 

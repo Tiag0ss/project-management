@@ -1,4 +1,5 @@
 import { getApiUrl } from './config';
+import { parseAuthResponseJson } from '@/lib/auth/parseAuthResponse';
 
 const API_BASE_URL = getApiUrl();
 
@@ -79,9 +80,9 @@ export const prepareAuthEncryptionSession = async (forceRefresh = false): Promis
     },
   });
 
-  const data: EncryptionSessionResponse = await response.json();
+  const data: EncryptionSessionResponse = await parseAuthResponseJson(response);
   if (!response.ok || !data.success || !data.sessionToken || !data.publicKey) {
-    throw new Error('Failed to initialize encryption session');
+    throw new Error(data.message || 'Failed to initialize encryption session');
   }
 
   cachedEncryptionSession = {
@@ -93,7 +94,7 @@ export const prepareAuthEncryptionSession = async (forceRefresh = false): Promis
 
 const encryptAuthPayload = async (payload: object): Promise<EncryptedAuthPayload> => {
   if (!supportsAuthEncryption()) {
-    throw new Error('Auth encryption is not supported in this browser context');
+    throw new Error('Secure login requires Web Crypto. Please use a modern browser over HTTPS.');
   }
 
   await prepareAuthEncryptionSession();
@@ -208,24 +209,17 @@ export interface ValidateResetTokenResponse {
 
 export const authApi = {
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    let encryptedPayload: EncryptedAuthPayload | null = null;
-    if (supportsAuthEncryption()) {
-      try {
-        encryptedPayload = await encryptAuthPayload(credentials);
-      } catch {
-        encryptedPayload = null;
-      }
-    }
+    const encryptedPayload = await encryptAuthPayload(credentials);
 
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(encryptedPayload ? { encryptedPayload } : credentials),
+      body: JSON.stringify({ encryptedPayload }),
     });
 
-    const data = await response.json();
+    const data = await parseAuthResponseJson(response);
     
     if (!response.ok) {
       throw new Error(data.message || 'Login failed');
@@ -235,24 +229,17 @@ export const authApi = {
   },
 
   async register(userData: RegisterData): Promise<AuthResponse> {
-    let encryptedPayload: EncryptedAuthPayload | null = null;
-    if (supportsAuthEncryption()) {
-      try {
-        encryptedPayload = await encryptAuthPayload(userData);
-      } catch {
-        encryptedPayload = null;
-      }
-    }
+    const encryptedPayload = await encryptAuthPayload(userData);
 
     const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(encryptedPayload ? { encryptedPayload } : userData),
+      body: JSON.stringify({ encryptedPayload }),
     });
 
-    const data = await response.json();
+    const data = await parseAuthResponseJson(response);
     
     if (!response.ok) {
       throw new Error(data.message || 'Registration failed');
@@ -288,7 +275,7 @@ export const authApi = {
       body: JSON.stringify({ email }),
     });
 
-    const data = await response.json();
+    const data = await parseAuthResponseJson(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to request password reset');
@@ -305,7 +292,7 @@ export const authApi = {
       },
     });
 
-    const data = await response.json();
+    const data = await parseAuthResponseJson(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to validate reset token');
@@ -323,7 +310,7 @@ export const authApi = {
       body: JSON.stringify({ token, newPassword }),
     });
 
-    const data = await response.json();
+    const data = await parseAuthResponseJson(response);
 
     if (!response.ok) {
       throw new Error(data.message || 'Failed to reset password');

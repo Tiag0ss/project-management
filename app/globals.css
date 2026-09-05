@@ -113,3 +113,275 @@ table.grid-density-compact td {
   outline-offset: -1px;
   animation: timer-glow-pulse-other 1.6s ease-in-out infinite;
 }
+
+/* Synapse tokens — available on all routes (auth/frontpage are outside AppShell) */
+:root {
+  --pm-bg: #0a0e13;
+  --pm-bg-glow: #12202e;
+  --pm-panel: #111820;
+  --pm-surface: #0e141c;
+  --pm-surface-2: #1a2430;
+  --pm-border: #243041;
+  --pm-border-strong: #334155;
+  --pm-text: #e8eef6;
+  --pm-muted: #8b98a8;
+  --pm-accent: #14b8a6;
+  --pm-accent-fg: #042f2e;
+  --pm-accent-soft: #5eead4;
+  --pm-danger: #f87171;
+  --pm-warn: #fbbf24;
+  --pm-radius: 0.75rem;
+  --pm-radius-sm: 0.5rem;
+  --pm-font-sans: var(--font-dm-sans), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --pm-font-mono: var(--font-ibm-plex-mono), var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* New AppShell (Synapse) — scoped under .pm-app; source: pm-synapse/app/globals.css */
+.pm-app {
+  color-scheme: dark;
+  font-family: var(--pm-font-sans);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(1200px 600px at 12% -10%, color-mix(in srgb, var(--pm-bg-glow) 70%, transparent), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, color-mix(in srgb, #0f3d3a 35%, transparent), transparent 50%),
+    var(--pm-bg);
+  color: var(--pm-text);
+}
+
+.pm-app .font-mono {
+  font-family: var(--pm-font-mono);
+}
+
+/* New shell owns rail offset — never apply legacy body padding inside .pm-app */
+body:has(.pm-app).nav-left-fixed-expanded,
+body:has(.pm-app).nav-left-fixed-collapsed {
+  padding-left: 0 !important;
+}
+
+/*
+ * Synapse color remaps for copied page chrome under .pm-app.
+ */
+.pm-app .bg-gray-100,
+.pm-app .dark\:bg-gray-900 {
+  background-color: var(--pm-bg) !important;
+}
+.pm-app .bg-white,
+.pm-app .dark\:bg-gray-800,
+.pm-app .bg-gray-50,
+.pm-app .dark\:bg-gray-700\/50 {
+  background-color: var(--pm-panel) !important;
+}
+.pm-app .dark\:bg-gray-700,
+.pm-app .bg-gray-200 {
+  background-color: var(--pm-surface-2) !important;
+}
+.pm-app .text-gray-900,
+.pm-app .dark\:text-white,
+.pm-app .text-gray-800,
+.pm-app .dark\:text-gray-100 {
+  color: var(--pm-text) !important;
+}
+.pm-app .text-gray-600,
+.pm-app .text-gray-500,
+.pm-app .text-gray-400,
+.pm-app .dark\:text-gray-400,
+.pm-app .dark\:text-gray-300,
+.pm-app .dark\:text-gray-500 {
+  color: var(--pm-muted) !important;
+}
+.pm-app .border-gray-200,
+.pm-app .border-gray-300,
+.pm-app .dark\:border-gray-700,
+.pm-app .dark\:border-gray-600 {
+  border-color: var(--pm-border) !important;
+}
+.pm-app .bg-blue-600,
+.pm-app .hover\:bg-blue-700:hover,
+.pm-app .dark\:bg-blue-600 {
+  background-color: var(--pm-accent) !important;
+  color: var(--pm-accent-fg) !important;
+}
+.pm-app .text-blue-600,
+.pm-app .dark\:text-blue-400,
+.pm-app .hover\:text-blue-600:hover,
+.pm-app .dark\:hover\:text-blue-400:hover {
+  color: var(--pm-accent-soft) !important;
+}
+.pm-app .ring-blue-500,
+.pm-app .focus\:ring-blue-500:focus,
+.pm-app .focus\:border-blue-500:focus {
+  --tw-ring-color: var(--pm-accent);
+  border-color: var(--pm-accent);
+}
+.pm-app .shadow,
+.pm-app .shadow-lg,
+.pm-app .shadow-xl,
+.pm-app .shadow-sm {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+/*
+ * Synapse density remaps — page content only (.pm-density on AppShell main).
+ * Brings legacy Tailwind spacing/type scale closer to pm-synapse controls.
+ * Shell rail/header stay outside .pm-density so their h-12 / icon sizes stay intact.
+ */
+.pm-density {
+  --pm-control-h: 2rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+/* Full-bleed pages — legacy max-w-* wrappers fight the rebuild layout rule */
+.pm-density .max-w-7xl,
+.pm-density .max-w-6xl,
+.pm-density .max-w-5xl {
+  max-width: none !important;
+}
+
+/* Keep dialog/overlay widths — density unwrap must not stretch fixed modals */
+.pm-density .fixed .max-w-5xl {
+  max-width: 64rem !important;
+}
+.pm-density .fixed .max-w-6xl {
+  max-width: 72rem !important;
+}
+.pm-density .fixed .max-w-7xl {
+  max-width: 80rem !important;
+}
+
+.pm-density .text-4xl {
+  font-size: 1.375rem !important;
+  line-height: 1.3 !important;
+  letter-spacing: -0.02em;
+}
+.pm-density .text-3xl {
+  font-size: 1.2rem !important;
+  line-height: 1.3 !important;
+  letter-spacing: -0.02em;
+}
+.pm-density .text-2xl {
+  font-size: 1.05rem !important;
+  line-height: 1.35 !important;
+  letter-spacing: -0.015em;
+}
+.pm-density .text-xl {
+  font-size: 0.975rem !important;
+  line-height: 1.35 !important;
+}
+.pm-density .text-lg {
+  font-size: 0.925rem !important;
+  line-height: 1.4 !important;
+}
+
+.pm-density .p-8 { padding: 1rem !important; }
+.pm-density .p-6 { padding: 0.875rem !important; }
+.pm-density .p-5 { padding: 0.75rem !important; }
+.pm-density .p-4 { padding: 0.65rem !important; }
+.pm-density .px-8 { padding-left: 1rem !important; padding-right: 1rem !important; }
+.pm-density .px-6 { padding-left: 0.875rem !important; padding-right: 0.875rem !important; }
+.pm-density .px-5 { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+.pm-density .px-4 { padding-left: 0.65rem !important; padding-right: 0.65rem !important; }
+.pm-density .py-8 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+.pm-density .py-6 { padding-top: 0.875rem !important; padding-bottom: 0.875rem !important; }
+.pm-density .py-4 { padding-top: 0.55rem !important; padding-bottom: 0.55rem !important; }
+.pm-density .py-3 { padding-top: 0.4rem !important; padding-bottom: 0.4rem !important; }
+
+.pm-density .space-y-8 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem !important; }
+.pm-density .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.875rem !important; }
+.pm-density .space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem !important; }
+.pm-density .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.65rem !important; }
+.pm-density .gap-8 { gap: 1rem !important; }
+.pm-density .gap-6 { gap: 0.875rem !important; }
+.pm-density .gap-5 { gap: 0.75rem !important; }
+.pm-density .gap-4 { gap: 0.65rem !important; }
+.pm-density .mb-8 { margin-bottom: 1rem !important; }
+.pm-density .mb-6 { margin-bottom: 0.875rem !important; }
+.pm-density .mb-4 { margin-bottom: 0.65rem !important; }
+.pm-density .mt-8 { margin-top: 1rem !important; }
+.pm-density .mt-6 { margin-top: 0.875rem !important; }
+.pm-density .mt-4 { margin-top: 0.65rem !important; }
+
+@media (min-width: 640px) {
+  .pm-density .sm\:p-6 { padding: 0.875rem !important; }
+  .pm-density .sm\:px-6 { padding-left: 0.875rem !important; padding-right: 0.875rem !important; }
+  .pm-density .sm\:px-8 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .pm-density .sm\:py-6 { padding-top: 0.875rem !important; padding-bottom: 0.875rem !important; }
+  .pm-density .sm\:text-2xl {
+    font-size: 1.05rem !important;
+    line-height: 1.35 !important;
+  }
+}
+@media (min-width: 1024px) {
+  .pm-density .lg\:px-8 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .pm-density .lg\:p-8 { padding: 1rem !important; }
+}
+
+.pm-density .rounded-2xl { border-radius: var(--pm-radius) !important; }
+.pm-density .rounded-xl,
+.pm-density .rounded-lg { border-radius: var(--pm-radius-sm) !important; }
+
+.pm-density button.h-12,
+.pm-density a.h-12,
+.pm-density button.h-11,
+.pm-density a.h-11,
+.pm-density button.h-10,
+.pm-density a.h-10,
+.pm-density .h-10.px-4,
+.pm-density .h-10.px-3,
+.pm-density .h-10.inline-flex,
+.pm-density .h-11.inline-flex,
+.pm-density .h-12.inline-flex {
+  height: var(--pm-control-h) !important;
+  min-height: var(--pm-control-h);
+  padding-left: 0.85rem !important;
+  padding-right: 0.85rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 600;
+  border-radius: var(--pm-radius-sm) !important;
+}
+
+.pm-density input.h-10,
+.pm-density input.h-11,
+.pm-density input.h-12,
+.pm-density select.h-10,
+.pm-density select.h-11,
+.pm-density select.h-12 {
+  height: var(--pm-control-h) !important;
+  min-height: var(--pm-control-h);
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  font-size: 0.875rem !important;
+  border-radius: var(--pm-radius-sm) !important;
+}
+
+.pm-density input:not([type='checkbox']):not([type='radio']):not([type='range']),
+.pm-density select,
+.pm-density textarea {
+  border-radius: var(--pm-radius-sm);
+  font-size: 0.875rem;
+}
+
+.pm-density table th,
+.pm-density table td {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+  font-size: 0.8125rem;
+}
+
+.pm-density table.grid-density-compact th,
+.pm-density table.grid-density-compact td {
+  padding-top: 0.28rem !important;
+  padding-bottom: 0.28rem !important;
+  font-size: 0.75rem !important;
+}
+
+/* Nested legacy <main> chrome still used by copied pages */
+.pm-density > main,
+.pm-density main.max-w-7xl,
+.pm-density main.mx-auto {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  max-width: none !important;
+}

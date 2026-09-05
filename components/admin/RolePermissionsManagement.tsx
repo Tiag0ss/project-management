@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getRolePermissions, updateRolePermission, RolePermission } from '@/lib/api/rolePermissions';
 import { useToast } from '@/contexts/ToastContext';
 
-const ROLE_NAMES = ['Developer', 'Support', 'Manager'];
+const ROLE_NAMES = ['Developer', 'Support', 'Manager'] as const;
 
 const PERMISSION_CATEGORIES = [
   {
@@ -17,15 +17,11 @@ const PERMISSION_CATEGORIES = [
       'CanViewTasks',
       'CanViewReports',
       'CanViewBudgetInfo',
-    ]
+    ],
   },
   {
     name: 'Project Management',
-    permissions: [
-      'CanManageProjects',
-      'CanCreateProjects',
-      'CanDeleteProjects',
-    ]
+    permissions: ['CanManageProjects', 'CanCreateProjects', 'CanDeleteProjects'],
   },
   {
     name: 'Task Management',
@@ -36,20 +32,15 @@ const PERMISSION_CATEGORIES = [
       'CanAssignTasks',
       'CanPlanTasks',
       'CanViewOthersPlanning',
-    ]
+    ],
   },
   {
     name: 'Time Tracking',
-    permissions: [
-      'CanManageTimeEntries',
-    ]
+    permissions: ['CanManageTimeEntries'],
   },
   {
     name: 'Administration',
-    permissions: [
-      'CanManageOrganizations',
-      'CanManageUsers',
-    ]
+    permissions: ['CanManageOrganizations', 'CanManageUsers'],
   },
   {
     name: 'Customer Management',
@@ -58,7 +49,7 @@ const PERMISSION_CATEGORIES = [
       'CanManageCustomers',
       'CanCreateCustomers',
       'CanDeleteCustomers',
-    ]
+    ],
   },
   {
     name: 'Ticket Management',
@@ -68,7 +59,7 @@ const PERMISSION_CATEGORIES = [
       'CanDeleteTickets',
       'CanAssignTickets',
       'CanCreateTaskFromTicket',
-    ]
+    ],
   },
   {
     name: 'Expense Management',
@@ -77,11 +68,11 @@ const PERMISSION_CATEGORIES = [
       'CanCreateExpenses',
       'CanManageExpenses',
       'CanApproveExpenses',
-    ]
+    ],
   },
-];
+] as const;
 
-const PERMISSION_LABELS: { [key: string]: string } = {
+const PERMISSION_LABELS: Record<string, string> = {
   CanViewDashboard: 'View Dashboard',
   CanViewPlanning: 'View Planning',
   CanViewProjects: 'View Projects',
@@ -115,7 +106,22 @@ const PERMISSION_LABELS: { [key: string]: string } = {
   CanApproveExpenses: 'Approve Expenses',
 };
 
-export default function RolePermissionsManagement() {
+export type RolePermissionsActionsState = {
+  saving: boolean;
+  canSave: boolean;
+  onSave: () => void;
+};
+
+type RolePermissionsManagementProps = {
+  /** Use `none` when the parent owns PageStickyActions (Administration). */
+  actionsPlacement?: 'embedded' | 'none';
+  onActionsStateChange?: (state: RolePermissionsActionsState | null) => void;
+};
+
+export default function RolePermissionsManagement({
+  actionsPlacement = 'embedded',
+  onActionsStateChange,
+}: RolePermissionsManagementProps) {
   const { token } = useAuth();
   const { showToast } = useToast();
   const [permissions, setPermissions] = useState<RolePermission[]>([]);
@@ -123,14 +129,10 @@ export default function RolePermissionsManagement() {
   const [error, setError] = useState('');
   const [selectedRole, setSelectedRole] = useState<string>('Developer');
   const [isSaving, setIsSaving] = useState(false);
-  const [modalMessage, setModalMessage] = useState<{ type: 'alert'; title: string; message: string } | null>(null);
-
-  const showAlert = (title: string, message: string) => {
-    setModalMessage({ type: 'alert', title, message });
-  };
 
   useEffect(() => {
-    loadPermissions();
+    void loadPermissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const loadPermissions = async () => {
@@ -142,60 +144,64 @@ export default function RolePermissionsManagement() {
     try {
       const data = await getRolePermissions(token);
       setPermissions(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load permissions');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load permissions');
     } finally {
       setIsLoading(false);
     }
   };
 
   const getCurrentRolePermissions = (): RolePermission | null => {
-    return permissions.find(p => p.RoleName === selectedRole) || null;
+    return permissions.find((p) => p.RoleName === selectedRole) || null;
   };
 
   const handlePermissionChange = (permissionKey: string, value: boolean) => {
-    setPermissions(prev => {
-      const existing = prev.find(p => p.RoleName === selectedRole);
-      
+    setPermissions((prev) => {
+      const existing = prev.find((p) => p.RoleName === selectedRole);
+
       if (existing) {
-        return prev.map(p => 
-          p.RoleName === selectedRole 
-            ? { ...p, [permissionKey]: value }
-            : p
+        return prev.map((p) =>
+          p.RoleName === selectedRole ? { ...p, [permissionKey]: value } : p
         );
-      } else {
-        // Create new permission entry for this role
-        const newPermission: any = {
-          Id: 0,
-          RoleName: selectedRole,
-          CanViewDashboard: false,
-          CanViewPlanning: false,
-          CanViewProjects: false,
-          CanManageProjects: false,
-          CanCreateProjects: false,
-          CanDeleteProjects: false,
-          CanViewTasks: false,
-          CanManageTasks: false,
-          CanCreateTasks: false,
-          CanDeleteTasks: false,
-          CanAssignTasks: false,
-          CanManageTimeEntries: false,
-          CanViewReports: false,
-          CanViewBudgetInfo: false,
-          CanManageOrganizations: false,
-          CanViewCustomers: false,
-          CanManageCustomers: false,
-          CanCreateCustomers: false,
-          CanDeleteCustomers: false,
-          CanManageUsers: false,
-          CanManageTickets: false,
-          CanCreateTickets: false,
-          CanDeleteTickets: false,
-          CanAssignTickets: false,
-          [permissionKey]: value,
-        };
-        return [...prev, newPermission];
       }
+
+      const newPermission: RolePermission = {
+        Id: 0,
+        RoleName: selectedRole,
+        CanViewDashboard: false,
+        CanViewPlanning: false,
+        CanViewProjects: false,
+        CanManageProjects: false,
+        CanCreateProjects: false,
+        CanDeleteProjects: false,
+        CanViewTasks: false,
+        CanManageTasks: false,
+        CanCreateTasks: false,
+        CanDeleteTasks: false,
+        CanAssignTasks: false,
+        CanManageTimeEntries: false,
+        CanViewReports: false,
+        CanViewBudgetInfo: false,
+        CanManageOrganizations: false,
+        CanViewCustomers: false,
+        CanManageCustomers: false,
+        CanCreateCustomers: false,
+        CanDeleteCustomers: false,
+        CanManageUsers: false,
+        CanManageTickets: false,
+        CanCreateTickets: false,
+        CanDeleteTickets: false,
+        CanAssignTickets: false,
+        CanCreateTaskFromTicket: false,
+        CanPlanTasks: false,
+        CanViewOthersPlanning: false,
+        CanViewExpenses: false,
+        CanCreateExpenses: false,
+        CanManageExpenses: false,
+        CanApproveExpenses: false,
+        [permissionKey]: value,
+      } as RolePermission;
+      return [...prev, newPermission];
     });
   };
 
@@ -245,58 +251,57 @@ export default function RolePermissionsManagement() {
 
       await loadPermissions();
       showToast({ type: 'success', title: 'Permissions Saved', message: 'Permissions saved successfully' });
-    } catch (err: any) {
-      setError(err.message || 'Failed to save permissions');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save permissions');
     } finally {
       setIsSaving(false);
     }
   };
 
+  useEffect(() => {
+    if (!onActionsStateChange) return;
+    if (isLoading) {
+      onActionsStateChange(null);
+      return;
+    }
+    onActionsStateChange({
+      saving: isSaving,
+      canSave: !!getCurrentRolePermissions(),
+      onSave: () => {
+        void handleSave();
+      },
+    });
+    return () => onActionsStateChange(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, isSaving, selectedRole, permissions]);
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-600 dark:text-gray-400">Loading permissions...</div>
+      <div className="flex h-40 items-center justify-center text-sm text-[var(--pm-muted)]">
+        Loading permissions…
       </div>
     );
   }
 
   const currentPerms = getCurrentRolePermissions();
+  const showEmbeddedActions = actionsPlacement === 'embedded';
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Role Permissions
-        </h2>
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:bg-gray-400"
-        >
-          {isSaving ? 'Saving...' : 'Save Changes'}
-        </button>
-      </div>
-
-      {error && (
-        <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
-          {error}
-        </div>
-      )}
-
-      {/* Role Selection */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Select Role
-        </label>
-        <div className="flex gap-2">
-          {ROLE_NAMES.map(roleName => (
+    <div className="space-y-3 p-4 sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-[var(--pm-muted)]">
+          Configure what each role can do. Permissions from multiple roles are combined.
+        </p>
+        <div className="inline-flex items-center rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-0.5">
+          {ROLE_NAMES.map((roleName) => (
             <button
               key={roleName}
+              type="button"
               onClick={() => setSelectedRole(roleName)}
-              className={`px-4 py-2 rounded-lg transition-colors ${
+              className={`h-8 rounded px-3 text-sm font-medium transition-colors ${
                 selectedRole === roleName
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  ? 'bg-[var(--pm-accent)] text-[var(--pm-bg)]'
+                  : 'text-[var(--pm-muted)] hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-text)]'
               }`}
             >
               {roleName}
@@ -305,82 +310,64 @@ export default function RolePermissionsManagement() {
         </div>
       </div>
 
-      {/* Permissions by Category */}
-      <div className="space-y-6">
+      {error && (
+        <div className="rounded border border-red-400 bg-red-100 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-3">
         {PERMISSION_CATEGORIES.map((category) => (
-          <div key={category.name} className="bg-white dark:bg-gray-800 rounded-lg shadow">
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                <span className="w-1 h-6 bg-blue-600 rounded mr-3"></span>
+          <div
+            key={category.name}
+            className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)]"
+          >
+            <div className="border-b border-[var(--pm-border)] px-3 py-1.5">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">
                 {category.name}
               </h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {category.permissions.map((key) => {
-                  const label = PERMISSION_LABELS[key];
-                  const isChecked = currentPerms ? !!(currentPerms as any)[key] : false;
-                  
-                  return (
-                    <div
-                      key={key}
-                      className="flex items-center p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                    >
-                      <input
-                        type="checkbox"
-                        id={`${selectedRole}-${key}`}
-                        checked={isChecked}
-                        onChange={(e) => handlePermissionChange(key, e.target.checked)}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                      />
-                      <label
-                        htmlFor={`${selectedRole}-${key}`}
-                        className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer"
-                      >
-                        {label}
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-1 p-2 sm:grid-cols-2 lg:grid-cols-3">
+              {category.permissions.map((key) => {
+                const label = PERMISSION_LABELS[key];
+                const isChecked = currentPerms ? !!(currentPerms as Record<string, unknown>)[key] : false;
+
+                return (
+                  <label
+                    key={key}
+                    htmlFor={`${selectedRole}-${key}`}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--pm-panel)]"
+                  >
+                    <input
+                      type="checkbox"
+                      id={`${selectedRole}-${key}`}
+                      checked={isChecked}
+                      onChange={(e) => handlePermissionChange(key, e.target.checked)}
+                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
+                    />
+                    <span className="text-sm text-[var(--pm-text)]">{label}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         ))}
       </div>
 
-      {/* Info Section */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">
-          ℹ️ About Role Permissions
-        </h4>
-        <ul className="text-sm text-blue-800 dark:text-blue-400 space-y-1">
-          <li>• Users can have multiple roles (Developer, Support, Manager)</li>
-          <li>• Permissions are combined: if ANY role grants a permission, the user has it</li>
-          <li>• Admins always have all permissions regardless of roles</li>
-          <li>• Changes take effect immediately after saving</li>
-        </ul>
-      </div>
+      <p className="text-[11px] text-[var(--pm-muted)]">
+        Admins always have all permissions. Changes apply immediately after saving.
+      </p>
 
-      {/* Modal de Alerta */}
-      {modalMessage && modalMessage.type === 'alert' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="p-6">
-              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
-                {modalMessage.title}
-              </h3>
-              <p className="text-gray-700 dark:text-gray-300 mb-6">
-                {modalMessage.message}
-              </p>
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setModalMessage(null)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                >
-                  OK
-                </button>
-              </div>
-            </div>
-          </div>
+      {showEmbeddedActions && (
+        <div className="sticky bottom-0 z-10 -mx-4 flex justify-end border-t border-[var(--pm-border)] bg-[var(--pm-panel)] px-4 py-3 sm:-mx-6 sm:px-6">
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={isSaving || !currentPerms}
+            className="h-10 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-gray-400"
+          >
+            {isSaving ? 'Saving…' : 'Save Changes'}
+          </button>
         </div>
       )}
     </div>

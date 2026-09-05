@@ -1,5 +1,6 @@
 import { dbProvider, pool, RowDataPacket } from '../config/database';
 import logger from './logger';
+import { migrateVcsIntegrationsToMultiInstance } from './vcsIntegrationMigration';
 
 const isMssql = dbProvider === 'mssql';
 
@@ -523,6 +524,7 @@ export async function runMigrations(): Promise<void> {
     await migrateDescriptionToMediumtext();
     await migrateTaskAllocationHeadersBackfill();
     await migrateActiveTimersForMixedTimerTypes();
+    await migrateVcsIntegrationsToMultiInstance();
     logger.info('=== Migrations Complete ===');
   } catch (error) {
     logger.error('Migration error:', error);

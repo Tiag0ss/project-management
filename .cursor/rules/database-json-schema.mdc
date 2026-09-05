@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Database JSON schema
 
-Skill: [skill-db-schema-json.prompt.md](../../.github/prompts/skill-db-schema-json.prompt.md)
+Skill: [.cursor/skills/db-schema-json/SKILL.md](../skills/db-schema-json/SKILL.md)
 
 ## Source of truth
 

@@ -12,7 +12,7 @@ export type PasswordInputProps = Omit<
 };
 
 const defaultInputClass =
-  'w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white';
+  'w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none placeholder:text-[var(--pm-muted)] focus:border-[var(--pm-accent)]';
 
 /** Uncontrolled password field — secret is not kept in React state (not visible in React DevTools). */
 const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(function PasswordInput(

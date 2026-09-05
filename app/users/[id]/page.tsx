@@ -1,11 +1,12 @@
 'use client';
 
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import ChangeHistory from '@/components/ChangeHistory';
 import SearchableSelect from '@/components/SearchableSelect';
@@ -101,7 +102,7 @@ export default function UserDetailPage() {
 
   useEffect(() => {
     if (!isLoading && (!currentUser || !currentUser.isAdmin)) {
-      router.push('/dashboard');
+      router.push(oldPath('/dashboard'));
     }
   }, [currentUser, isLoading, router]);
 
@@ -429,9 +430,7 @@ export default function UserDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
@@ -440,7 +439,6 @@ export default function UserDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
         </div>
@@ -451,13 +449,12 @@ export default function UserDetailPage() {
   if (error && !user) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
         <div className="max-w-4xl mx-auto py-12 px-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
             <div className="text-4xl mb-4">😕</div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{error}</h2>
             <button
-              onClick={() => router.push('/users')}
+              onClick={() => router.push(oldPath('/users'))}
               className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
             >
               Back to Users
@@ -472,13 +469,12 @@ export default function UserDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
 
       <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
           <button
-            onClick={() => router.push('/users')}
+            onClick={() => router.push(oldPath('/users'))}
             className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

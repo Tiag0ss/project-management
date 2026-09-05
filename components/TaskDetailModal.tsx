@@ -17,6 +17,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import CommitMessage from '@/components/CommitMessage';
+import PageTabs from '@/components/PageTabs';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
@@ -1963,6 +1964,26 @@ export default function TaskDetailModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- visibleHoursSubTabKey captures sub-tab set changes
   }, [hoursSubTab, visibleHoursSubTabKey]);
 
+  const mainPageTabs = visibleTabs.map((tab) => ({
+    id: tab,
+    label:
+      tab === 'details' ? 'Details' :
+      tab === 'checklist' ? `Checklist (${checklists.length})` :
+      tab === 'hours' ? 'Plan' :
+      tab === 'comments' ? `Comments (${taskComments.length})` :
+      tab === 'attachments' ? `Files (${taskAttachments.length})` :
+      tab === 'commits' ? 'Commits' :
+      'History',
+  }));
+
+  const hoursPageTabs = visibleHoursSubTabs.map((tab) => ({
+    id: tab,
+    label:
+      tab === 'planning' ? 'Planning & Dependencies' :
+      tab === 'allocations' ? 'Planned Allocations' :
+      'Time Entries',
+  }));
+
   const handleExportTaskPdf = async () => {
     if (!task?.Id) {
       showAlert('Print Error', 'Task must be saved before printing.');
@@ -2272,183 +2293,21 @@ export default function TaskDetailModal({
   return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center p-0 sm:p-4 z-[100]">
       <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-lg shadow-xl max-w-4xl w-full h-[100dvh] sm:h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
-          <div className="flex justify-between items-start gap-2">
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white line-clamp-2">
-                {task?.Id ? (
-                  <>
-                    <span className="text-gray-500 dark:text-gray-400 font-semibold mr-2">#{task.Id}</span>
-                    {task.TaskName}
-                  </>
-                ) : (
-                  'Create New Task'
-                )}
-              </h2>
-              {task?.Id && (
-                (project?.Id && isFieldVisible('headerProject'))
-                || (headerCustomerName && isFieldVisible('headerCustomer'))
-                || (task.SynapseNoteUrl && isFieldVisible('headerSynapse'))
-              ) && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {project?.Id && isFieldVisible('headerProject') && (
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/projects/${project.Id}`)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 transition-colors"
-                      title={`Open project ${project.ProjectName}`}
-                    >
-                      <span>📁</span>
-                      <span>{project.ProjectName}</span>
-                      <span aria-hidden="true">↗</span>
-                    </button>
-                  )}
-
-                  {headerCustomerName && isFieldVisible('headerCustomer') && (
-                    <span
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300"
-                      title={`Customer: ${headerCustomerName}`}
-                    >
-                      <span>🏢</span>
-                      <span>{headerCustomerName}</span>
-                    </span>
-                  )}
-
-                  {task.SynapseNoteUrl && isFieldVisible('headerSynapse') && (
-                    <a
-                      href={task.SynapseNoteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-cyan-100 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:hover:bg-cyan-900/50 text-cyan-800 dark:text-cyan-300 transition-colors"
-                      title="Open linked Synapse note"
-                    >
-                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                      </svg>
-                      <span>Synapse</span>
-                      <span aria-hidden="true">↗</span>
-                    </a>
-                  )}
-                </div>
+        {/* Header — compact, aligned rows */}
+        <div className="px-3 pt-3 sm:px-4 sm:pt-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          {/* Row 1: title + chrome actions */}
+          <div className="flex items-start gap-3">
+            <h2 className="min-w-0 flex-1 text-base sm:text-lg font-bold leading-snug text-gray-900 dark:text-white line-clamp-2">
+              {task?.Id ? (
+                <>
+                  <span className="text-gray-500 dark:text-gray-400 font-semibold mr-1.5">#{task.Id}</span>
+                  {task.TaskName}
+                </>
+              ) : (
+                'Create New Task'
               )}
-              {task?.Id && (
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className="px-2 py-1 text-xs font-semibold rounded-full" style={pillStyle(task.StatusColor, { alpha: '20' })}>
-                    {task.StatusName || 'Unknown'}
-                  </span>
-                  {task.PriorityName && (
-                    <span className="px-2 py-1 text-xs font-semibold rounded-full" style={pillStyle(task.PriorityColor, { alpha: '20' })}>
-                      {task.PriorityName}
-                    </span>
-                  )}
-                  {/* Timer widget */}
-                  {isFieldVisible('headerTimer') && (
-                  <div className="flex items-center gap-1 ml-auto">
-                    {activeTimer && activeTimer.TaskId === task.Id ? (
-                      <>
-                        <span className="text-xs font-mono bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 rounded animate-pulse">
-                          ⏱ {formatElapsed(timerSeconds)}
-                        </span>
-                        <button
-                          onClick={handleStopTimer}
-                          title="Stop timer and save time entry"
-                          className="text-xs px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
-                        >
-                          ⏹ Stop
-                        </button>
-                        <button
-                          onClick={handleDiscardTimer}
-                          title="Discard timer without saving"
-                          className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded transition-colors"
-                        >
-                          ✕
-                        </button>
-                      </>
-                    ) : activeTimer ? (
-                      <>
-                        <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded">
-                          ⏱ Running: {activeTimer.TaskName}
-                        </span>
-                        <button
-                          onClick={handleStartTimer}
-                          title="Save current timer and switch to this task"
-                          className="text-xs px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
-                        >
-                          ↩ Switch &amp; Save
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={handleStartTimer}
-                        title="Start timer for this task"
-                        className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded transition-colors"
-                      >
-                        ▶ Start Timer
-                      </button>
-                    )}
-                  </div>
-                  )}
-                </div>
-              )}
-              {task?.Id && isFieldVisible('headerHoursSummary') && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                  <div className="px-3 py-1.5 rounded bg-purple-50 dark:bg-purple-900/20">
-                    <div className="text-[11px] text-gray-600 dark:text-gray-400">Estimated</div>
-                    <div className="text-sm font-bold text-purple-600 dark:text-purple-400">{decimalHoursToHMS(parseFloat(task.EstimatedHours as any || 0))}</div>
-                  </div>
-                  <div className="px-3 py-1.5 rounded bg-blue-50 dark:bg-blue-900/20">
-                    <div className="text-[11px] text-gray-600 dark:text-gray-400">Allocated</div>
-                    <div className="text-sm font-bold text-blue-600 dark:text-blue-400">{decimalHoursToHMS(totalAllocated)}</div>
-                  </div>
-                  <div className="px-3 py-1.5 rounded bg-green-50 dark:bg-green-900/20">
-                    <div className="text-[11px] text-gray-600 dark:text-gray-400">Worked</div>
-                    <div className="text-sm font-bold text-green-600 dark:text-green-400">{decimalHoursToHMS(totalWorked)}</div>
-                  </div>
-                  <div className="px-3 py-1.5 rounded bg-gray-50 dark:bg-gray-700/40">
-                    <div className="text-[11px] text-gray-600 dark:text-gray-400">Completion</div>
-                    <div className="text-sm font-bold text-gray-900 dark:text-white">{completionPercentage}%</div>
-                  </div>
-                </div>
-              )}
-              {/* Tags */}
-              {task?.Id && isFieldVisible('headerTags') && (
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  {taskTags.map((tag) => renderTaskTagBadge(tag))}
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowTagSelector(!showTagSelector)}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                    >
-                      + Add Tag
-                    </button>
-                    {showTagSelector && (
-                      <div className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 z-10">
-                        <div className="p-2 max-h-48 overflow-y-auto">
-                          {availableTags.filter(t => !taskTags.find((tt) => tt.Id === t.Id)).length === 0 ? (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 text-center py-2">No more tags available</p>
-                          ) : (
-                            availableTags
-                              .filter(t => !taskTags.find((tt) => tt.Id === t.Id))
-                              .map((tag) => (
-                                <button
-                                  key={tag.Id}
-                                  onClick={() => handleAddTag(tag.Id)}
-                                  className="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
-                                >
-                                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: mapColor(tag.Color) }} />
-                                  {tag.Name}
-                                </button>
-                              ))
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div ref={taskActionsMenuRef} className="relative ml-2 sm:ml-4 flex items-center gap-1 sm:gap-2 flex-wrap justify-end shrink-0">
+            </h2>
+            <div ref={taskActionsMenuRef} className="relative flex shrink-0 items-center gap-0.5">
               {task?.Id && (
                 <>
                   <button
@@ -2526,7 +2385,7 @@ export default function TaskDetailModal({
                   </button>
                   )}
                   {isFieldVisible('headerTaskActions') && showTaskActionsMenu && (
-                    <div className="absolute right-10 top-0 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 py-1">
+                    <div className="absolute right-8 top-8 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 py-1">
                       <button
                         type="button"
                         onClick={async () => {
@@ -2615,43 +2474,180 @@ export default function TaskDetailModal({
             </div>
           </div>
 
+          {task?.Id && (
+            <>
+              {/* Row 2: context + status + timer */}
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                {project?.Id && isFieldVisible('headerProject') && (
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/projects/${project.Id}`)}
+                    className="inline-flex h-7 max-w-[14rem] items-center gap-1 truncate rounded-md bg-blue-100 px-2 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50"
+                    title={`Open project ${project.ProjectName}`}
+                  >
+                    <span aria-hidden>📁</span>
+                    <span className="truncate">{project.ProjectName}</span>
+                    <span aria-hidden>↗</span>
+                  </button>
+                )}
+
+                {headerCustomerName && isFieldVisible('headerCustomer') && (
+                  <span
+                    className="inline-flex h-7 max-w-[12rem] items-center gap-1 truncate rounded-md bg-teal-100 px-2 text-xs font-medium text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
+                    title={`Customer: ${headerCustomerName}`}
+                  >
+                    <span aria-hidden>🏢</span>
+                    <span className="truncate">{headerCustomerName}</span>
+                  </span>
+                )}
+
+                {task.SynapseNoteUrl && isFieldVisible('headerSynapse') && (
+                  <a
+                    href={task.SynapseNoteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-cyan-100 px-2 text-xs font-medium text-cyan-800 transition-colors hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-300 dark:hover:bg-cyan-900/50"
+                    title="Open linked Synapse note"
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                    <span>Synapse</span>
+                    <span aria-hidden>↗</span>
+                  </a>
+                )}
+
+                <span className="inline-flex h-7 items-center rounded-md px-2 text-xs font-semibold" style={pillStyle(task.StatusColor, { alpha: '20' })}>
+                  {task.StatusName || 'Unknown'}
+                </span>
+                {task.PriorityName && (
+                  <span className="inline-flex h-7 items-center rounded-md px-2 text-xs font-semibold" style={pillStyle(task.PriorityColor, { alpha: '20' })}>
+                    {task.PriorityName}
+                  </span>
+                )}
+
+                {isFieldVisible('headerTimer') && (
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+                    {activeTimer && activeTimer.TaskId === task.Id ? (
+                      <>
+                        <span className="inline-flex h-7 items-center rounded-md bg-green-100 px-2 font-mono text-xs text-green-700 animate-pulse dark:bg-green-900/30 dark:text-green-300">
+                          ⏱ {formatElapsed(timerSeconds)}
+                        </span>
+                        <button
+                          onClick={handleStopTimer}
+                          title="Stop timer and save time entry"
+                          className="inline-flex h-7 items-center rounded-md bg-red-500 px-2 text-xs text-white transition-colors hover:bg-red-600"
+                        >
+                          ⏹ Stop
+                        </button>
+                        <button
+                          onClick={handleDiscardTimer}
+                          title="Discard timer without saving"
+                          className="inline-flex h-7 items-center rounded-md bg-gray-200 px-2 text-xs text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : activeTimer ? (
+                      <>
+                        <span className="inline-flex h-7 max-w-[12rem] items-center truncate rounded-md bg-amber-50 px-2 text-xs text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
+                          ⏱ {activeTimer.TaskName}
+                        </span>
+                        <button
+                          onClick={handleStartTimer}
+                          title="Save current timer and switch to this task"
+                          className="inline-flex h-7 items-center rounded-md bg-blue-500 px-2 text-xs text-white transition-colors hover:bg-blue-600"
+                        >
+                          ↩ Switch &amp; Save
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={handleStartTimer}
+                        title="Start timer for this task"
+                        className="inline-flex h-7 items-center rounded-md bg-blue-100 px-2 text-xs text-blue-700 transition-colors hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/60"
+                      >
+                        ▶ Start Timer
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Row 3: hours summary + tags */}
+              <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+                {isFieldVisible('headerHoursSummary') && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <span className="inline-flex items-baseline gap-1">
+                      <span className="text-gray-500 dark:text-gray-400">Est</span>
+                      <span className="font-semibold tabular-nums text-purple-600 dark:text-purple-400">{decimalHoursToHMS(parseFloat(task.EstimatedHours as any || 0))}</span>
+                    </span>
+                    <span className="inline-flex items-baseline gap-1">
+                      <span className="text-gray-500 dark:text-gray-400">Alloc</span>
+                      <span className="font-semibold tabular-nums text-blue-600 dark:text-blue-400">{decimalHoursToHMS(totalAllocated)}</span>
+                    </span>
+                    <span className="inline-flex items-baseline gap-1">
+                      <span className="text-gray-500 dark:text-gray-400">Worked</span>
+                      <span className="font-semibold tabular-nums text-green-600 dark:text-green-400">{decimalHoursToHMS(totalWorked)}</span>
+                    </span>
+                    <span className="inline-flex items-baseline gap-1">
+                      <span className="text-gray-500 dark:text-gray-400">Done</span>
+                      <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{completionPercentage}%</span>
+                    </span>
+                  </div>
+                )}
+
+                {isFieldVisible('headerTags') && (
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                    {taskTags.map((tag) => renderTaskTagBadge(tag))}
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowTagSelector(!showTagSelector)}
+                        className="inline-flex h-7 items-center gap-1 rounded-md bg-gray-100 px-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                      >
+                        + Add Tag
+                      </button>
+                      {showTagSelector && (
+                        <div className="absolute top-full left-0 z-10 mt-1 w-48 rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                          <div className="max-h-48 overflow-y-auto p-2">
+                            {availableTags.filter(t => !taskTags.find((tt) => tt.Id === t.Id)).length === 0 ? (
+                              <p className="py-2 text-center text-xs text-gray-500 dark:text-gray-400">No more tags available</p>
+                            ) : (
+                              availableTags
+                                .filter(t => !taskTags.find((tt) => tt.Id === t.Id))
+                                .map((tag) => (
+                                  <button
+                                    key={tag.Id}
+                                    onClick={() => handleAddTag(tag.Id)}
+                                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  >
+                                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: mapColor(tag.Color) }} />
+                                    {tag.Name}
+                                  </button>
+                                ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           {/* Tabs */}
-          <div className="mt-3 border-b border-gray-200 dark:border-gray-700 -mb-3 sm:-mb-4 overflow-x-auto">
-            <div className="flex gap-1 min-w-max">
-            {visibleTabs.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`shrink-0 px-3 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
-                  activeTab === tab
-                    ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-                title={
-                  tab === 'details' ? 'Details' :
-                  tab === 'checklist' ? `Checklist (${checklists.length})` :
-                  tab === 'hours' ? `Plan & Deps (${decimalHoursToHMS(totalWorked)})` :
-                  tab === 'comments' ? `Comments (${taskComments.length})` :
-                  tab === 'attachments' ? `Files (${taskAttachments.length})` :
-                  tab === 'commits' ? 'Commits' :
-                  `History (${taskHistory.length})`
-                }
-              >
-                {tab === 'details' && '📝 Details'}
-                {tab === 'checklist' && `✅ Checklist (${checklists.length})`}
-                {tab === 'hours' && `📅 Plan`}
-                {tab === 'comments' && `💬 Comments (${taskComments.length})`}
-                {tab === 'attachments' && `📎 Files (${taskAttachments.length})`}
-                {tab === 'history' && `📜 History`}
-                {tab === 'commits' && '🔗 Commits'}
-              </button>
-            ))}
-            </div>
+          <div className="mt-3">
+            <PageTabs
+              tabs={mainPageTabs}
+              activeId={activeTab}
+              onChange={(id) => setActiveTab(id as 'details' | 'history' | 'comments' | 'attachments' | 'hours' | 'checklist' | 'commits')}
+            />
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && (
             <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
               {error}
@@ -2660,7 +2656,7 @@ export default function TaskDetailModal({
 
           {/* Details Tab (Edit Form) */}
           {activeTab === 'details' && (
-            <form onSubmit={handleSubmit} className="space-y-3">
+            <form onSubmit={handleSubmit} className="space-y-4">
               {showSectionLabels && (
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
                 Basic Information
@@ -3487,49 +3483,13 @@ export default function TaskDetailModal({
                 )}
               </div>
             ) : (
-            <div className="space-y-6">
+            <div className="space-y-5">
               {visibleHoursSubTabs.length > 0 ? (
-              <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-3">
-                {showHoursPlanningSubTab && (
-                <button
-                  type="button"
-                  onClick={() => setHoursSubTab('planning')}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                    hoursSubTab === 'planning'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  Planning & Dependencies
-                </button>
-                )}
-                {showHoursAllocationsSubTab && (
-                <button
-                  type="button"
-                  onClick={() => setHoursSubTab('allocations')}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                    hoursSubTab === 'allocations'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  Planned Allocations
-                </button>
-                )}
-                {showHoursTimeSubTab && (
-                <button
-                  type="button"
-                  onClick={() => setHoursSubTab('time')}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                    hoursSubTab === 'time'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  Time Entries
-                </button>
-                )}
-              </div>
+              <PageTabs
+                tabs={hoursPageTabs}
+                activeId={hoursSubTab}
+                onChange={(id) => setHoursSubTab(id as 'planning' | 'allocations' | 'time')}
+              />
               ) : (
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   All Hours sections are hidden for this organization.
@@ -3537,15 +3497,15 @@ export default function TaskDetailModal({
               )}
 
               {hoursSubTab === 'planning' && showHoursPlanningSubTab && (
-                <>
+                <div className="space-y-4">
               {showSectionLabels && (isFieldVisible('parentTask') || isFieldVisible('dependsOn')) && (
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2 pt-2">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
                 Plan & Dependencies
               </h3>
               )}
               {isFieldVisible('parentTask') && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                   Parent Task (Optional)
                 </label>
                 <SearchableSelect
@@ -3555,7 +3515,7 @@ export default function TaskDetailModal({
                   placeholder="No Parent (Top-level task)"
                   emptyMessage="No tasks available"
                 />
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                   Select a parent task to create a subtask (supports multi-level hierarchy)
                 </p>
               </div>
@@ -3563,7 +3523,7 @@ export default function TaskDetailModal({
 
               {isFieldVisible('dependsOn') && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                   Depends On (Optional)
                 </label>
                 <SearchableSelect
@@ -3629,15 +3589,15 @@ export default function TaskDetailModal({
               </div>
               )}
 
-                </>
+                </div>
               )}
 
               {/* Allocations */}
               {hoursSubTab === 'allocations' && showHoursAllocationsSubTab && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Planned Allocations</h3>
-                  <div className="flex items-center gap-2">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Planned Allocations</h3>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     {!hasChildren && canShowAddManualAllocation && (
                       <button
                         onClick={() => setManualAllocationModal({ 
@@ -3648,7 +3608,7 @@ export default function TaskDetailModal({
                           allocatedHours: '', 
                           mode: 'add' 
                         })}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors flex items-center gap-1"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-sm font-medium text-white transition-colors hover:bg-blue-700"
                       >
                         <span>+</span>
                         <span>Add Manual Allocation</span>
@@ -3657,7 +3617,7 @@ export default function TaskDetailModal({
                     {showRemovePlanning && taskAllocations.length > 0 && onRemovePlanning && (
                       <button
                         onClick={onRemovePlanning}
-                        className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors flex items-center gap-1"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-md bg-red-600 px-3 text-sm font-medium text-white transition-colors hover:bg-red-700"
                         title="Remove all planned allocations for this task"
                       >
                         <span>🗑️</span>
@@ -3901,8 +3861,8 @@ export default function TaskDetailModal({
 
               {/* Time Entries */}
               {hoursSubTab === 'time' && showHoursTimeSubTab && (
-              <div>
-                <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Time Entries</h3>
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Time Entries</h3>
                 {loadingData ? (
                   <p className="text-gray-500 dark:text-gray-400">Loading...</p>
                 ) : timeEntries.length === 0 ? (

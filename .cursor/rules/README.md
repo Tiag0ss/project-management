@@ -1,6 +1,6 @@
 # Cursor rules index
 
-Rules in this folder guide Cursor agents. They complement [.github/copilot-instructions.md](../.github/copilot-instructions.md).
+Rules in this folder guide Cursor agents. See [AGENTS.md](../../AGENTS.md) and [docs/REBUILD_ROADMAP.md](../../docs/REBUILD_ROADMAP.md).
 
 ## Always active
 
@@ -27,6 +27,4 @@ When project conventions change (new pattern, Redis entity, validation rule):
 
 1. Update the relevant scoped `.mdc` file.
 2. If global, update `project-management.mdc` and [AGENTS.md](../AGENTS.md).
-3. Keep [.github/copilot-instructions.md](../.github/copilot-instructions.md) in sync for Copilot/VS Code users.
-
-Do not duplicate entire copilot-instructions into rules — rules should be **actionable checklists** with pointers to the full doc.
+3. Prefer `.cursor/skills/` for task templates. Do not maintain a parallel Copilot instructions file.

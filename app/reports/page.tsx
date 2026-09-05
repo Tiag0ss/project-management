@@ -1,3 +1,4 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { useEffect } from 'react';
@@ -11,7 +12,7 @@ export default function ReportsRedirectPage() {
   }, [router]);
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center text-gray-600 dark:text-gray-300">
+    <div className="w-full flex items-center justify-center text-gray-600 dark:text-gray-300">
       Redirecting to Reporting…
     </div>
   );

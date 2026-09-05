@@ -1,13 +1,16 @@
 'use client';
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
@@ -124,7 +127,6 @@ export default function TicketsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showMyTicketsOnly, setShowMyTicketsOnly] = useState(true);
   const [showClosed, setShowClosed] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
   
   // Create Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -153,7 +155,7 @@ export default function TicketsPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
     }
   }, [user, isLoading, router]);
 
@@ -199,9 +201,10 @@ export default function TicketsPage() {
     if (createForm.priority) return;
     if (ticketPriorities.length === 0) return;
 
-    const defaultPriority = ticketPriorities.find((priority) => priority.IsDefault)?.PriorityName || ticketPriorities[0]?.PriorityName || '';
+    const defaultPriority =
+      ticketPriorities.find((priority) => priority.IsDefault)?.Id ?? ticketPriorities[0]?.Id;
     if (defaultPriority) {
-      setCreateForm((prev) => ({ ...prev, priority: defaultPriority }));
+      setCreateForm((prev) => ({ ...prev, priority: String(defaultPriority) }));
     }
   }, [showCreateModal, createForm.priority, ticketPriorities]);
 
@@ -543,7 +546,7 @@ export default function TicketsPage() {
             projectId: isCustomerUser ? null : (createForm.projectId ? parseInt(createForm.projectId) : null),
             title: createForm.title.trim(),
             description: createForm.description || null,
-            priority: createForm.priority,
+            priority: parseInt(createForm.priority, 10),
             category: createForm.category,
             externalTicketId: createForm.externalTicketId || null,
             customFields: createForm.customFields,
@@ -605,7 +608,7 @@ export default function TicketsPage() {
         projectId: '',
         title: '',
         description: '',
-        priority: ticketPriorities.find(p => p.IsDefault)?.PriorityName || ticketPriorities[0]?.PriorityName || '',
+        priority: String(ticketPriorities.find(p => p.IsDefault)?.Id || ticketPriorities[0]?.Id || ''),
         category: 'Support',
         externalTicketId: '',
         customFields: {},
@@ -696,9 +699,7 @@ export default function TicketsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
@@ -706,16 +707,13 @@ export default function TicketsPage() {
 
   if (!featureFlagsLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
   if (!internalTicketsEnabled) {
     return (
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
+      <div className="w-full">
         <main className="w-full mx-auto py-12 px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-200 dark:border-gray-700">
             <div className="text-4xl mb-3">🎫</div>
@@ -728,21 +726,51 @@ export default function TicketsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
+    <div className="w-full">
 
-      <main className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {isCustomerUser ? 'My Tickets' : 'Support Tickets'}
-            </h1>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {isCustomerUser 
-                ? 'View and manage your support requests'
-                : 'Manage all support tickets across organizations'}
-            </p>
+      <main className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">
+                {isCustomerUser ? 'My Tickets' : 'Support Tickets'}
+              </h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {isCustomerUser
+                  ? 'View and manage your support requests'
+                  : 'Manage support tickets across organizations'}
+              </p>
+            </div>
+            {stats && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-gray-900 dark:text-white">{stats.total}</span> total
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-blue-600 dark:text-blue-400">{stats.open}</span> open
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-purple-600 dark:text-purple-400">{stats.inProgress}</span> in progress
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-yellow-600 dark:text-yellow-400">{stats.waiting}</span> waiting
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-green-600 dark:text-green-400">{stats.resolved}</span> resolved
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-red-600 dark:text-red-400">
+                    {Number(stats.urgent || 0) + Number(stats.high || 0)}
+                  </span>{' '}
+                  high priority
+                </span>
+              </div>
+            )}
           </div>
           {permissions?.canCreateTickets && (
             <button
@@ -757,71 +785,39 @@ export default function TicketsPage() {
           )}
         </div>
 
-        {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Total</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-blue-500">
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.open}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Open</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-purple-500">
-              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{stats.inProgress}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">In Progress</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-yellow-500">
-              <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats.waiting}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Waiting</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-green-500">
-              <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.resolved}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">Resolved</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border-l-4 border-red-500">
-              <div className="text-2xl font-bold text-red-600 dark:text-red-400">{Number(stats.urgent || 0) + Number(stats.high || 0)}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">High Priority</div>
-            </div>
-          </div>
-        )}
-
-        {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 mb-6">
-          <button
-            type="button"
-            onClick={() => setShowFilters(prev => !prev)}
-            className="w-full flex items-center justify-between px-6 py-4 text-left"
-          >
-            <span className="text-sm font-semibold text-gray-900 dark:text-white">Ticket Filters</span>
-            <span className="inline-flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium">
-              {showFilters ? 'Hide Filters' : 'Show Filters'}
-              <svg
-                className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </span>
-          </button>
-
-          {showFilters && (
-          <div className="space-y-4 p-6 border-t border-gray-200 dark:border-gray-700">
+        <CollapsibleFilterPanel
+          className="mb-2"
+          title="Ticket filters"
+          activeCount={[
+            searchQuery.trim() ? 1 : 0,
+            filterOrg ? 1 : 0,
+            filterStatus ? 1 : 0,
+            filterPriority ? 1 : 0,
+            filterCategory ? 1 : 0,
+            filterAssignee ? 1 : 0,
+            filterDeveloper ? 1 : 0,
+            filterCustomer ? 1 : 0,
+            filterCreatedFrom ? 1 : 0,
+            filterCreatedTo ? 1 : 0,
+            filterScheduledFrom ? 1 : 0,
+            filterScheduledTo ? 1 : 0,
+            !showMyTicketsOnly ? 1 : 0,
+            showClosed ? 1 : 0,
+          ].reduce((a, b) => a + b, 0)}
+        >
+          <div className="space-y-3">
             {/* Search Row */}
             <div className="w-full">
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Search</label>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Search</label>
               <div className="relative">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by ticket number, title, or description..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
                 />
-                <svg className="absolute left-3 top-3 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
@@ -829,15 +825,15 @@ export default function TicketsPage() {
 
             {/* Main Filters Row */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Filters</label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">Filters</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
 
               {/* Organization Filter (not for customer users) */}
               {!isCustomerUser && (
                 <select
                   value={filterOrg}
                   onChange={(e) => setFilterOrg(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
                 >
                   <option value="">All Organizations</option>
                   {organizations.map(org => (
@@ -850,7 +846,7 @@ export default function TicketsPage() {
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
               >
                 <option value="">All Statuses</option>
                 {ticketStatuses.map(s => (
@@ -862,7 +858,7 @@ export default function TicketsPage() {
               <select
                 value={filterPriority}
                 onChange={(e) => setFilterPriority(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
               >
                 <option value="">All Priorities</option>
                 {ticketPriorities.map(p => (
@@ -874,14 +870,14 @@ export default function TicketsPage() {
               <select
                 value={filterCategory}
                 onChange={(e) => setFilterCategory(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
               >
                 <option value="">All Categories</option>
                 {CATEGORIES.map(category => (
                   <option key={category} value={category}>{category}</option>
                 ))}
               </select>
-            </div>
+              </div>
             </div>
 
             {/* People & Customer Filters Row */}
@@ -1035,8 +1031,7 @@ export default function TicketsPage() {
               )}
             </div>
           </div>
-          )}
-        </div>
+        </CollapsibleFilterPanel>
 
         {/* Error Message */}
         {error && (
@@ -1347,10 +1342,15 @@ export default function TicketsPage() {
                                   onClick={() => {
                                     const mapPriority = (jiraPriority: string) => {
                                       const lower = jiraPriority?.toLowerCase() || '';
-                                      if (lower.includes('highest') || lower.includes('critical')) return 'High';
-                                      if (lower.includes('high')) return 'High';
-                                      if (lower.includes('low') || lower.includes('lowest')) return 'Low';
-                                      return 'Medium';
+                                      let name = 'Medium';
+                                      if (lower.includes('highest') || lower.includes('critical')) name = 'High';
+                                      else if (lower.includes('high')) name = 'High';
+                                      else if (lower.includes('low') || lower.includes('lowest')) name = 'Low';
+                                      const match =
+                                        ticketPriorities.find((p) => p.PriorityName === name) ||
+                                        ticketPriorities.find((p) => p.IsDefault) ||
+                                        ticketPriorities[0];
+                                      return match ? String(match.Id) : '';
                                     };
 
                                     const mapCategory = (issueType: string) => {
@@ -1486,7 +1486,7 @@ export default function TicketsPage() {
                       >
                         <option value="">Select priority...</option>
                         {ticketPriorities.map(p => (
-                          <option key={p.Id} value={p.PriorityName}>{p.PriorityName}</option>
+                          <option key={p.Id} value={p.Id}>{p.PriorityName}</option>
                         ))}
                       </select>
                     </div>

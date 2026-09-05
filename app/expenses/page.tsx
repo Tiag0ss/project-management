@@ -1,11 +1,14 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { useRouter } from 'next/navigation';
-import Navbar from '@/components/Navbar';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import { getApiUrl } from '@/lib/api/config';
@@ -147,7 +150,7 @@ export default function ExpensesPage() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && !user) router.push('/login');
+    if (!authLoading && !user) router.push(oldPath('/login'));
   }, [user, authLoading, router]);
 
   useEffect(() => {
@@ -540,23 +543,17 @@ export default function ExpensesPage() {
   };
 
   if (authLoading || expensesEnabled === null || permissionsLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
-        <div className="w-full p-6 text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Navbar />
-      <div className="w-full p-4 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Expenses</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Track project and internal expenses with invoice attachments and reimbursements.
+    <div className="w-full">
+      <div className="w-full p-4 sm:p-6 space-y-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Expenses</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Track project and internal expenses with invoices and reimbursements.
             </p>
           </div>
           {canCreate && (
@@ -570,7 +567,23 @@ export default function ExpensesPage() {
           )}
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <CollapsibleFilterPanel
+          className="mb-2"
+          title="Expense filters"
+          activeCount={[
+            filterDateFrom ? 1 : 0,
+            filterDateTo ? 1 : 0,
+            filterOrg ? 1 : 0,
+            filterProject ? 1 : 0,
+            filterGroup ? 1 : 0,
+            filterCategory ? 1 : 0,
+            filterApproval ? 1 : 0,
+            filterInternalOnly ? 1 : 0,
+            filterReimbursement ? 1 : 0,
+          ].reduce((a, b) => a + b, 0)}
+          bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">
           <label className="block text-sm lg:col-span-1">
             <span className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">From</span>
             <input
@@ -660,7 +673,8 @@ export default function ExpensesPage() {
             <option value="reimbursed">Reimbursed</option>
             <option value="not_required">Not required</option>
           </select>
-        </div>
+          </div>
+        </CollapsibleFilterPanel>
 
         {totalsByGroup.length > 0 && (
           <div className="flex flex-wrap gap-2">

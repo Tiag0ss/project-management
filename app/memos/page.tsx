@@ -1,12 +1,15 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import RichTextEditor from '@/components/RichTextEditor';
 import { getMemos, createMemo, updateMemo, deleteMemo, Memo } from '@/lib/api/memos';
-import { useRouter } from 'next/navigation';
-import Navbar from '@/components/Navbar';
+import { recordRecentNavAccess } from '@/lib/recentNavAccess';
+import { useRouter, useSearchParams } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 
 const MEMO_CALENDAR_LOCALE = 'en-US';
@@ -15,8 +18,18 @@ const MEMO_CALENDAR_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const normalizeMemoTag = (tag: string): string => tag.trim().replace(/\s+/g, ' ');
 
 export default function MemosPage() {
+  return (
+    <Suspense fallback={<PageLoadingSkeleton />}>
+      <MemosPageContent />
+    </Suspense>
+  );
+}
+
+function MemosPageContent() {
   const { user, token, isLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const memoIdFromUrl = Number(searchParams.get('memoId'));
   const [memos, setMemos] = useState<Memo[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [error, setError] = useState('');
@@ -29,6 +42,7 @@ export default function MemosPage() {
   const [filterVisibility, setFilterVisibility] = useState<'all' | 'private' | 'organizations' | 'public'>('all');
   const [filterText, setFilterText] = useState('');
   const [focusedMemoId, setFocusedMemoId] = useState<number | null>(null);
+  const deepLinkedMemoRef = useRef<number | null>(null);
 
   // Form state
   const [memoForm, setMemoForm] = useState({
@@ -47,7 +61,7 @@ export default function MemosPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
     } else if (user && token) {
       loadMemos();
     }
@@ -85,14 +99,31 @@ export default function MemosPage() {
     });
     setSelectedMemo(memo);
     setShowMemoModal(true);
+    recordRecentNavAccess(
+      'memos',
+      { id: memo.Id, label: memo.Title || `Memo #${memo.Id}`, href: `/memos?memoId=${memo.Id}` },
+      user?.id
+    );
+    router.replace(`/memos?memoId=${memo.Id}`, { scroll: false });
   };
 
   const handleOpenMemo = (memoId: number) => {
+    deepLinkedMemoRef.current = memoId;
     setEnableDateFilter(false);
     setFilterTag(null);
     setFilterVisibility('all');
     setFilterText('');
     setFocusedMemoId(memoId);
+
+    const memo = memos.find((entry) => entry.Id === memoId);
+    if (memo) {
+      recordRecentNavAccess(
+        'memos',
+        { id: memo.Id, label: memo.Title || `Memo #${memo.Id}`, href: `/memos?memoId=${memo.Id}` },
+        user?.id
+      );
+    }
+    router.replace(`/memos?memoId=${memoId}`, { scroll: false });
 
     setTimeout(() => {
       const targetElement = document.getElementById(`memo-${memoId}`);
@@ -105,6 +136,16 @@ export default function MemosPage() {
       setFocusedMemoId((current) => (current === memoId ? null : current));
     }, 2600);
   };
+
+  useEffect(() => {
+    if (isLoadingData || memos.length === 0) return;
+    if (!Number.isFinite(memoIdFromUrl) || memoIdFromUrl <= 0) return;
+    if (deepLinkedMemoRef.current === memoIdFromUrl) return;
+    if (!memos.some((memo) => memo.Id === memoIdFromUrl)) return;
+    deepLinkedMemoRef.current = memoIdFromUrl;
+    handleOpenMemo(memoIdFromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open when memoId query changes
+  }, [isLoadingData, memos, memoIdFromUrl]);
 
   const handleSaveMemo = async () => {
     if (!token || !memoForm.title.trim()) {
@@ -286,8 +327,7 @@ export default function MemosPage() {
 
   return (
     <>
-      <Navbar />
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-3 sm:p-6">
+      <div className="w-full p-3 sm:p-6">
       <div className="w-full mx-auto">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">

@@ -1,16 +1,19 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { getApiUrl } from '@/lib/api/config';
 import { useRouter } from 'next/navigation';
 import RichTextEditor from '@/components/RichTextEditor';
 import { useFormatHours } from '@/lib/useFormatHours';
 import ApprovalStatusBadge from '@/components/ApprovalStatusBadge';
 import ExpenseApprovalsPanel from '@/components/ExpenseApprovalsPanel';
+import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 
 interface PendingEntry {
   Id: number;
@@ -671,77 +674,78 @@ export default function ApprovalsPage() {
   const totalVacationDays = sortedVacationRequests.reduce((sum, request) => sum + getLeaveDayWeight(request), 0);
   const uniqueVacationUsers = new Set(sortedVacationRequests.map((r) => r.UserId)).size;
 
-  return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
-      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  const defaultTimesheetDateFrom = useMemo(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  }, []);
+  const defaultTimesheetDateTo = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
 
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+  const timesheetFilterActiveCount = [
+    filterStatus !== 'pending' ? 1 : 0,
+    filterUserId ? 1 : 0,
+    filterProjectId ? 1 : 0,
+    filterDateFrom !== defaultTimesheetDateFrom ? 1 : 0,
+    filterDateTo !== defaultTimesheetDateTo ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
+
+  const vacationFilterActiveCount = [
+    vacationYear !== currentYear ? 1 : 0,
+    selectedMemberId ? 1 : 0,
+    vacationStatusFilter !== 'pending' ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PageStickyChrome>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold leading-tight text-[var(--pm-text)]">
             {expensesEnabled ? 'Approvals & Expenses' : 'Approvals'}
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-xs text-[var(--pm-muted)]">
             Review and manage team approvals in one place.
           </p>
         </div>
 
-        <div className="mb-6 flex items-center gap-2">
-          <button
-            onClick={() => {
-              setActiveTab('time');
-              router.replace('/approvals?tab=time');
-            }}
-            disabled={!canApproveTime}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'time'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
-          >
-            Time Entries
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('vacations');
-              router.replace('/approvals?tab=vacations');
-            }}
-            disabled={!canApproveVacations && !user?.isAdmin}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'vacations'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
-          >
-            Vacations
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('outOfOffice');
-              router.replace('/approvals?tab=out-of-office');
-            }}
-            disabled={!canApproveOutOfOffice && !user?.isAdmin}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'outOfOffice'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
-          >
-            Out Of Office
-          </button>
-          {expensesEnabled && (
-            <button
-              onClick={() => {
-                setActiveTab('expenses');
-                router.replace('/approvals?tab=expenses');
-              }}
-              disabled={!canApproveExpenses}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'expenses'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'} disabled:opacity-50`}
-            >
-              Expenses
-            </button>
-          )}
-        </div>
+        <PageTabs
+          tabs={[
+            { id: 'time', label: 'Time Entries', disabled: !canApproveTime },
+            {
+              id: 'vacations',
+              label: 'Vacations',
+              disabled: !canApproveVacations && !user?.isAdmin,
+            },
+            {
+              id: 'outOfOffice',
+              label: 'Out Of Office',
+              disabled: !canApproveOutOfOffice && !user?.isAdmin,
+            },
+            ...(expensesEnabled
+              ? [{ id: 'expenses', label: 'Expenses', disabled: !canApproveExpenses }]
+              : []),
+          ]}
+          activeId={activeTab}
+          onChange={(id) => {
+            const next = id as typeof activeTab;
+            setActiveTab(next);
+            const query =
+              next === 'outOfOffice'
+                ? 'out-of-office'
+                : next === 'vacations'
+                  ? 'vacations'
+                  : next === 'expenses'
+                    ? 'expenses'
+                    : 'time';
+            router.replace(`/approvals?tab=${query}`);
+          }}
+        />
+      </PageStickyChrome>
 
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
         {!canApproveTime && !canApproveVacations && !canApproveOutOfOffice && !canApproveExpenses && (
           <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 rounded-lg">
-            You don't currently have approval scope for time entries, vacations, out-of-office, or expenses.
+            You don&apos;t currently have approval scope for time entries, vacations, out-of-office, or expenses.
           </div>
         )}
 
@@ -778,8 +782,13 @@ export default function ApprovalsPage() {
         )}
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <CollapsibleFilterPanel
+          className="mb-2"
+          title="Timesheet filters"
+          activeCount={timesheetFilterActiveCount}
+          bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Status</label>
               <select
@@ -875,7 +884,7 @@ export default function ApprovalsPage() {
               </div>
             )}
           </div>
-        </div>
+        </CollapsibleFilterPanel>
 
         {/* Content */}
         {isLoading ? (
@@ -1277,8 +1286,13 @@ export default function ApprovalsPage() {
             ) : canApproveCurrentLeave ? (
               <>
                 {/* Filters */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <CollapsibleFilterPanel
+                  className="mb-2"
+                  title={`${leaveLabel} filters`}
+                  activeCount={vacationFilterActiveCount}
+                  bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     <div>
                       <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Year</label>
                       <input
@@ -1353,7 +1367,7 @@ export default function ApprovalsPage() {
                       )}
                     </div>
                   </div>
-                </div>
+                </CollapsibleFilterPanel>
 
                 {/* Table — top action bar */}
                 <div className="flex items-center justify-between gap-3 mb-3">

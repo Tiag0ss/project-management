@@ -1,65 +1,63 @@
 ---
-description: Jest tests, CI, Zod validation patterns, and quality checks
+description: Jest unit tests, CI, Zod validation patterns, and quality checks
 globs: __tests__/**/*,.github/workflows/**/*
 alwaysApply: false
 ---
 
 # Testing & quality
 
-Catalog: [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md) · CI: `.github/workflows/ci.yml`
+Catalog: [TESTING_SCENARIOS.md](../../TESTING_SCENARIOS.md) · Roadmap: [docs/REBUILD_ROADMAP.md](../../docs/REBUILD_ROADMAP.md) · CI: `.github/workflows/ci.yml`
 
 ## Commands
 
 ```bash
-npm test              # Jest (unit + integration)
-npm run test:integration
-npm run lint
-npm run build         # next build + server tsc
+pnpm run test:unit     # unit tests only (gate requirement)
+pnpm test              # unit + integration
+pnpm run test:integration
+pnpm run lint
+pnpm run build
 npx tsc --project server/tsconfig.json
 ```
+
+## Unit tests (required for new domain logic)
+
+Place under `__tests__/unit/`. Cover:
+
+- Zod schemas / validators
+- Pure mappers, hour aggregation, date/period helpers
+- Cache key / `delKeyFamily` / invalidate helpers
+- Reporting transforms and permission helpers
+
+Prefer extracting testable functions into `server/shared`, `server/modules/<domain>/`, or `lib/`.
+
+When changing `server/utils/validation.ts`, update `__tests__/unit/validation.test.ts`.
 
 ## Test layout
 
 ```
 __tests__/
-  unit/           # validation.test.ts, cacheInvalidation.test.ts
-  integration/    # health, auth, tasks, projects, timeEntries
-  setup.ts        # loads .env.test, sets JWT_SECRET
+  unit/           # gate requirement for rebuild phases
+  integration/    # optional; not required for phase gates
+  setup.ts
 ```
 
-## Health tests
+## CI
 
-Use real handler from `server/health.ts` (`registerHealthRoute`, `buildHealthPayload`) — mock `testConnection` / Redis, not a fake endpoint.
+`.github/workflows/ci.yml` runs lint + **unit** Jest on PR/push. Keep that job green.
 
-## Auth tests
+## Integration tests (optional)
 
-Supertest against minimal Express app + `authenticateToken` middleware; mock `pool.execute` for user lookup.
+- Mock DB at `pool.execute`; use supertest.
+- Not required to complete a rebuild phase gate.
 
-## Validation tests
+## Before PR / phase gate
 
-When changing `server/utils/validation.ts`, update `__tests__/unit/validation.test.ts`:
-
-- Task create requires `status` + `priority` as **int FK IDs**.
-- Login/register schema bounds.
-
-## Cache tests
-
-`delKeyFamily` must delete exact key + prefix family — see `cacheInvalidation.test.ts`.
-
-## Writing new integration tests
-
-- Mock DB at `pool.execute` level unless CI has MySQL service.
-- Use supertest; avoid booting full Next+Express unless necessary.
-- Test: 401 without token, 403 without permission, happy path shape `{ success: true }`.
-
-## Before PR / commit
-
-1. `npm test`
-2. `npm run build`
-3. Manual smoke for touched flows (see TESTING_SCENARIOS IDs if applicable)
+1. `pnpm run test:unit`
+2. Manual smoke from `docs/REBUILD_ROADMAP.md`
+3. Update roadmap status checkbox/row
 
 ## Do not
 
 - Commit `.env` secrets.
-- Skip server-side permission tests when adding new mutations.
-- Add tests that depend on production DB without skip guard.
+- Skip unit tests for new pure logic in `server/modules` / `server/shared`.
+- Block gates on expanding integration/e2e suites.

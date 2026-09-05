@@ -4,7 +4,6 @@ import next from 'next';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { promises as fsPromises } from 'fs';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -17,76 +16,86 @@ import { runMigrations } from './utils/migrations';
 import { swaggerSpec } from './config/swagger';
 import logger from './utils/logger';
 import { getBrandFaviconFilePath, getDefaultFaviconPath, resolveFaviconTarget } from './utils/favicon';
-import authRoutes from './routes/auth';
-import userRoutes from './routes/user';
-import projectsRoutes from './routes/projects';
-import usersRoutes from './routes/users';
-import tasksRoutes from './routes/tasks';
-import organizationsRoutes from './routes/organizations';
-import permissionGroupsRoutes from './routes/permissionGroups';
-import statusValuesRoutes from './routes/statusValues';
-import taskAllocationsRoutes from './routes/taskAllocations';
-import taskChildAllocationsRoutes from './routes/taskChildAllocations';
-import timeEntriesRoutes from './routes/timeEntries';
-import callRecordsRoutes from './routes/callRecords';
-import taskCommentsRoutes from './routes/taskComments';
-import taskAttachmentsRoutes from './routes/taskAttachments';
-import ticketAttachmentsRoutes from './routes/ticketAttachments';
-import projectAttachmentsRoutes from './routes/projectAttachments';
-import customerAttachmentsRoutes from './routes/customerAttachments';
-import organizationAttachmentsRoutes from './routes/organizationAttachments';
-import notificationsRoutes from './routes/notifications';
-import taskHistoryRoutes from './routes/taskHistory';
-import tagsRoutes from './routes/tags';
-import searchRoutes from './routes/search';
-import customersRoutes from './routes/customers';
-import statisticsRoutes from './routes/statistics';
-import dashboardKpisRoutes from './routes/dashboardKpis';
-import ticketsRoutes from './routes/tickets';
-import taskImportRoutes from './routes/taskImport';
-import rolePermissionsRoutes from './routes/rolePermissions';
-import systemSettingsRoutes from './routes/systemSettings';
-import activityLogsRoutes from './routes/activityLogs';
-import changeHistoryRoutes from './routes/changeHistory';
-import emailPreferencesRoutes from './routes/emailPreferences';
-import gridPreferencesRoutes from './routes/gridPreferences';
-import installRoutes from './routes/install';
-import savedReportsRoutes from './routes/savedReports';
-import dynamicReportsRoutes from './routes/dynamicReports';
-import memosRoutes from './routes/memos';
-import expensesRoutes from './routes/expenses';
-import expenseAttachmentsRoutes from './routes/expenseAttachments';
-import jiraIntegrationsRoutes from './routes/jiraIntegrations';
-import githubIntegrationsRoutes from './routes/githubIntegrations';
-import giteaIntegrationsRoutes from './routes/giteaIntegrations';
-import bitbucketIntegrationsRoutes from './routes/bitbucketIntegrations';
-import recurringAllocationsRoutes from './routes/recurringAllocations';
-import taskChecklistsRoutes from './routes/taskChecklists';
-import timersRoutes from './routes/timers';
-import taskTemplatesRoutes from './routes/taskTemplates';
-import slaRulesRoutes from './routes/slaRules';
-import sprintsRoutes from './routes/sprints';
-import projectMilestonesRoutes from './routes/projectMilestones';
-import portalRoutes from './routes/portal';
-import applicationsRoutes from './routes/applications';
-import projectReportSchedulesRoutes from './routes/projectReportSchedules';
-import retrospectiveActionsRoutes from './routes/retrospectiveActions';
-import workflowTransitionPoliciesRoutes from './routes/workflowTransitionPolicies';
-import taskFieldVisibilityRoutes from './routes/taskFieldVisibility';
-import holidaysRoutes from './routes/holidays';
-import vacationsRoutes from './routes/vacations';
-import outOfOfficeRoutes from './routes/outOfOffice';
-import devSupportRoutes from './routes/devSupport';
-import pdfExportsRoutes from './routes/pdfExports';
-import planningImportRoutes from './routes/planningImport';
-import allocationSnapshotsRoutes from './routes/allocationSnapshots';
-import aiAssistantRoutes from './routes/aiAssistant';
-import outlookCalendarRoutes from './routes/outlookCalendar';
-import emailTaskQueueRoutes, { webhookRouter as emailTaskQueueWebhookRoutes } from './routes/emailTaskQueue';
-import apiTokensRoutes from './routes/apiTokens';
-import reportsRoutes from './routes/reports';
-import reportingRoutes from './routes/reporting';
-import ssoRoutes from './routes/sso';
+import {
+  findLatestDesktopInstaller,
+  findLatestIdeExtension,
+  getDownloadsCatalog,
+  getTampermonkeyScriptPath,
+  TAMPERMONKEY_SCRIPT_FILE_NAME,
+  TAMPERMONKEY_SCRIPT_URL_PATH,
+  type DesktopPlatform,
+  type IdeExtensionKind,
+} from './utils/downloads';
+import authRoutes from './modules/auth/auth';
+import userRoutes from './modules/users/user';
+import projectsRoutes from './modules/projects/projects';
+import usersRoutes from './modules/users/users';
+import tasksRoutes from './modules/projects/tasks';
+import organizationsRoutes from './modules/organizations/organizations';
+import permissionGroupsRoutes from './modules/organizations/permissionGroups';
+import statusValuesRoutes from './modules/organizations/statusValues';
+import taskAllocationsRoutes from './modules/planning/taskAllocations';
+import taskChildAllocationsRoutes from './modules/planning/taskChildAllocations';
+import timeEntriesRoutes from './modules/time/timeEntries';
+import callRecordsRoutes from './modules/time/callRecords';
+import taskCommentsRoutes from './modules/projects/taskComments';
+import taskAttachmentsRoutes from './modules/projects/taskAttachments';
+import ticketAttachmentsRoutes from './modules/tickets/ticketAttachments';
+import projectAttachmentsRoutes from './modules/projects/projectAttachments';
+import customerAttachmentsRoutes from './modules/customers/customerAttachments';
+import organizationAttachmentsRoutes from './modules/organizations/organizationAttachments';
+import notificationsRoutes from './modules/notifications/notifications';
+import taskHistoryRoutes from './modules/projects/taskHistory';
+import tagsRoutes from './modules/projects/tags';
+import searchRoutes from './modules/search/search';
+import customersRoutes from './modules/customers/customers';
+import statisticsRoutes from './modules/reporting/statistics';
+import dashboardKpisRoutes from './modules/dashboard/dashboardKpis';
+import ticketsRoutes from './modules/tickets/tickets';
+import taskImportRoutes from './modules/projects/taskImport';
+import rolePermissionsRoutes from './modules/admin/rolePermissions';
+import systemSettingsRoutes from './modules/admin/systemSettings';
+import activityLogsRoutes from './modules/admin/activityLogs';
+import changeHistoryRoutes from './modules/admin/changeHistory';
+import emailPreferencesRoutes from './modules/users/emailPreferences';
+import gridPreferencesRoutes from './modules/users/gridPreferences';
+import installRoutes from './modules/auth/install';
+import savedReportsRoutes from './modules/reporting/savedReports';
+import dynamicReportsRoutes from './modules/reporting/dynamicReports';
+import memosRoutes from './modules/notifications/memos';
+import expensesRoutes from './modules/expenses/expenses';
+import expenseAttachmentsRoutes from './modules/expenses/expenseAttachments';
+import jiraIntegrationsRoutes from './modules/integrations/jiraIntegrations';
+import githubIntegrationsRoutes from './modules/integrations/githubIntegrations';
+import giteaIntegrationsRoutes from './modules/integrations/giteaIntegrations';
+import bitbucketIntegrationsRoutes from './modules/integrations/bitbucketIntegrations';
+import recurringAllocationsRoutes from './modules/planning/recurringAllocations';
+import taskChecklistsRoutes from './modules/projects/taskChecklists';
+import timersRoutes from './modules/time/timers';
+import taskTemplatesRoutes from './modules/projects/taskTemplates';
+import slaRulesRoutes from './modules/tickets/slaRules';
+import sprintsRoutes from './modules/projects/sprints';
+import projectMilestonesRoutes from './modules/projects/projectMilestones';
+import portalRoutes from './modules/portal/portal';
+import applicationsRoutes from './modules/applications/applications';
+import projectReportSchedulesRoutes from './modules/projects/projectReportSchedules';
+import retrospectiveActionsRoutes from './modules/projects/retrospectiveActions';
+import workflowTransitionPoliciesRoutes from './modules/projects/workflowTransitionPolicies';
+import taskFieldVisibilityRoutes from './modules/admin/taskFieldVisibility';
+import holidaysRoutes from './modules/admin/holidays';
+import vacationsRoutes from './modules/time/vacations';
+import outOfOfficeRoutes from './modules/time/outOfOffice';
+import devSupportRoutes from './modules/users/devSupport';
+import pdfExportsRoutes from './modules/reporting/pdfExports';
+import planningImportRoutes from './modules/planning/planningImport';
+import allocationSnapshotsRoutes from './modules/planning/allocationSnapshots';
+import aiAssistantRoutes from './modules/integrations/aiAssistant';
+import outlookCalendarRoutes from './modules/planning/outlookCalendar';
+import emailTaskQueueRoutes, { webhookRouter as emailTaskQueueWebhookRoutes } from './modules/integrations/emailTaskQueue';
+import apiTokensRoutes from './modules/admin/apiTokens';
+import reportsRoutes from './modules/reporting/reports';
+import reportingRoutes from './modules/reporting/reporting';
+import ssoRoutes from './modules/auth/sso';
 import { ensureAiAssistantViews } from './utils/aiAssistantViews';
 import { startWorkSummaryScheduler } from './utils/workSummaryScheduler';
 import { startDueDateReminderScheduler } from './utils/dueDateReminderScheduler';
@@ -95,8 +104,8 @@ import { startSlaAutoTransitionScheduler } from './utils/slaAutoTransitionSchedu
 import { startReportingSchedulers } from './utils/reportingSchedulers';
 import { initSocketHub } from './utils/socketHub';
 
-const customFieldsRoutes = require(path.join(__dirname, 'routes', 'customFields')).default;
-const customTablesRoutes = require(path.join(__dirname, 'routes', 'customTables')).default;
+import customFieldsRoutes from './modules/admin/customFields';
+import customTablesRoutes from './modules/admin/customTables';
 
 dotenv.config();
 
@@ -160,13 +169,26 @@ app.prepare().then(async () => {
     credentials: true,
   }));
 
-  // Rate limiting for authentication endpoints
+  // Rate limiting for authentication endpoints (login/register/reset — not encryption session / refresh)
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 20, // 20 attempts
-    message: 'Too many authentication attempts, please try again later',
+    max: 100, // raised from 20 — failed attempts still counted
     standardHeaders: true,
     legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    skip: (req) => {
+      const path = `${req.originalUrl || ''}${req.path || ''}`;
+      if (req.method === 'GET' && path.includes('encryption-session')) return true;
+      if (req.method === 'GET' && path.includes('reset-password/validate')) return true;
+      if (req.method === 'POST' && path.includes('/auth/refresh')) return true;
+      return false;
+    },
+    handler: (_req, res) => {
+      res.status(429).json({
+        success: false,
+        message: 'Too many authentication attempts, please try again later',
+      });
+    },
   });
 
   // General API rate limiting
@@ -320,44 +342,71 @@ app.prepare().then(async () => {
     });
   });
 
-  // Download latest generated Desktop App installer from release folder
+  // Downloads: desktop installers, IDE extensions, Tampermonkey script
+  server.get('/api/downloads/catalog', async (_req, res) => {
+    try {
+      const catalog = await getDownloadsCatalog();
+      return res.json({ success: true, catalog });
+    } catch (error) {
+      logger.error('Failed to build downloads catalog', { error });
+      return res.status(500).json({ success: false, message: 'Failed to load downloads catalog' });
+    }
+  });
+
   server.get('/api/downloads/desktop-app', async (req, res) => {
     try {
-      const releaseDir = path.join(process.cwd(), 'release');
-      if (!fs.existsSync(releaseDir)) {
-        return res.status(404).json({ success: false, message: 'Desktop installer folder not found' });
-      }
-
-      const platform = String(req.query.platform || 'win').toLowerCase();
-      const isLinux = platform === 'linux';
-      const extension = isLinux ? '.appimage' : '.exe';
-
-      const entries = await fsPromises.readdir(releaseDir);
-      const candidates = entries
-        .filter((entry) => entry.toLowerCase().endsWith(extension))
-        .filter((entry) => entry.toLowerCase().includes('desktop timer'));
-
-      if (candidates.length === 0) {
+      const platform = String(req.query.platform || 'win').toLowerCase() === 'linux' ? 'linux' : 'win';
+      const latest = await findLatestDesktopInstaller(platform as DesktopPlatform);
+      if (!latest) {
         return res.status(404).json({
           success: false,
-          message: isLinux ? 'Linux desktop installer not found' : 'Desktop installer not found',
+          message: platform === 'linux' ? 'Linux desktop installer not found' : 'Desktop installer not found',
         });
       }
-
-      const withStats = await Promise.all(
-        candidates.map(async (fileName) => {
-          const absolutePath = path.join(releaseDir, fileName);
-          const stats = await fsPromises.stat(absolutePath);
-          return { fileName, absolutePath, mtimeMs: stats.mtimeMs };
-        })
-      );
-
-      withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
-      const latest = withStats[0];
       return res.download(latest.absolutePath, latest.fileName);
     } catch (error) {
       logger.error('Failed to provide desktop installer download', { error });
       return res.status(500).json({ success: false, message: 'Failed to download desktop installer' });
+    }
+  });
+
+  server.get('/api/downloads/ide-extension', async (req, res) => {
+    try {
+      const raw = String(req.query.ide || 'vscode').toLowerCase();
+      const ide: IdeExtensionKind =
+        raw === 'rider' ? 'rider' : raw === 'visualstudio' || raw === 'vs' ? 'visualstudio' : 'vscode';
+      const latest = await findLatestIdeExtension(ide);
+      if (!latest) {
+        return res.status(404).json({
+          success: false,
+          message: `IDE extension package for ${ide} was not found in extras/release`,
+        });
+      }
+      return res.download(latest.absolutePath, latest.fileName);
+    } catch (error) {
+      logger.error('Failed to provide IDE extension download', { error });
+      return res.status(500).json({ success: false, message: 'Failed to download IDE extension' });
+    }
+  });
+
+  // Redirect short path → `.user.js` URL (Tampermonkey installs on top-level navigation)
+  server.get('/api/downloads/tampermonkey', (_req, res) => {
+    return res.redirect(302, TAMPERMONKEY_SCRIPT_URL_PATH);
+  });
+
+  server.get(TAMPERMONKEY_SCRIPT_URL_PATH, async (_req, res) => {
+    try {
+      const scriptPath = getTampermonkeyScriptPath();
+      if (!fs.existsSync(scriptPath)) {
+        return res.status(404).json({ success: false, message: 'Tampermonkey script not found' });
+      }
+      // Inline JS (no attachment) so the browser opens the script and Tampermonkey can install it
+      res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+      res.setHeader('Content-Disposition', `inline; filename="${TAMPERMONKEY_SCRIPT_FILE_NAME}"`);
+      return res.sendFile(scriptPath);
+    } catch (error) {
+      logger.error('Failed to serve Tampermonkey script', { error });
+      return res.status(500).json({ success: false, message: 'Failed to serve Tampermonkey script' });
     }
   });
 

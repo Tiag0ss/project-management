@@ -12,12 +12,28 @@ Cursor agents: read **`.cursor/rules/project-management.mdc`** (always on) plus 
 
 | Need | Read |
 |------|------|
-| Full conventions (1100+ lines) | [.github/copilot-instructions.md](.github/copilot-instructions.md) |
+| Rebuild roadmap (progress) | [docs/REBUILD_ROADMAP.md](docs/REBUILD_ROADMAP.md) |
 | Feature reference | [docs/FEATURES.md](docs/FEATURES.md) |
 | Permissions | [docs/ROLE_PERMISSIONS.md](docs/ROLE_PERMISSIONS.md) |
 | Manual test catalog | [TESTING_SCENARIOS.md](TESTING_SCENARIOS.md) |
 | End-user manual | `/docs` in app |
 | Deploy / Redis / env | [README.md](README.md) |
+
+## Layout (rebuild)
+
+| Path | Role |
+|------|------|
+| `app/` | App Router UI (public auth pages + authenticated routes; shell via `AuthenticatedAppGate`) |
+| `components/` | Live UI components |
+| `server/modules/` | Live API domains (only mount point) |
+| `server/database/` | Shared JSON schema SOT |
+| `old/` | **Dead archive** (`old/frontend`, `old/backend`) — not mounted, not imported |
+| `extras/` | ide-extensions, cloudflare, desktop, release |
+| `__tests__/unit/` | Unit tests (required for new domain logic) |
+| `.cursor/skills/` | Task skills (Cursor-only) |
+| `.github/workflows/` | CI only |
+
+**Never add features under `old/`.** Never import from `old/` into the live app. Live Express mounts **only** `server/modules/*`.
 
 ## Cursor rules (`.cursor/rules/`)
 
@@ -33,21 +49,22 @@ Cursor agents: read **`.cursor/rules/project-management.mdc`** (always on) plus 
 | `integrations.mdc` | Jira, Outlook, email queue, API tokens |
 | `testing-quality.mdc` | `__tests__/**`, CI |
 
-## Prompt skills (`.github/prompts/`)
+## Prompt skills (`.cursor/skills/`)
 
 Open the matching skill **before** implementing:
 
-- `skill-backend-route.prompt.md` — API routes
-- `skill-frontend-feature.prompt.md` — UI pages
-- `skill-db-schema-json.prompt.md` — JSON schema
-- `skill-validated-route.prompt.md` — Zod middleware
-- `skill-permission-gated-ui.prompt.md` — permissions UI + API
-- `skill-dashboard-kpi-drilldown.prompt.md` — KPI widgets
-- `skill-jira-integration.prompt.md` — Jira/GitHub/Gitea
-- `skill-bugfix-debug.prompt.md` — regressions
-- `skill-timesheet-summary.prompt.md` — time entries
-- `skill-auth-password-recovery.prompt.md` — auth flows
-- `skill-release-pdf-flow.prompt.md` — PDF exports
+- `backend-route` — API routes / modules
+- `frontend-feature` — UI pages
+- `db-schema-json` — JSON schema
+- `validated-route` — Zod middleware
+- `permission-gated-ui` — permissions UI + API
+- `dashboard-kpi-drilldown` — KPI widgets
+- `jira-integration` — Jira/GitHub/Gitea
+- `bugfix-debug` — regressions
+- `timesheet-summary` — time entries
+- `auth-password-recovery` — auth flows
+- `release-pdf-flow` — PDF exports
+- Plus kit skills: `new-api-route`, `new-ui-feature`, `new-change`, `add-tests`, etc.
 
 ## Stack (short)
 
@@ -62,4 +79,5 @@ Next.js 16 · React 19 · Tailwind · Express · TypeScript · MySQL/MSSQL · op
 - `ConfirmAlertModal` not `alert`/`confirm`.
 - Leaf-only hour totals; header-driven planning bars.
 - `usePermissions()` + backend permission checks.
+- **Unit tests** for new/changed pure logic (`pnpm run test:unit`).
 - Minimal diffs; English only; commit when user asks.

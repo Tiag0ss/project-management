@@ -1,10 +1,12 @@
 'use client';
 
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 import { parseCsv } from '@/lib/csv';
 
 import React, { useState, useEffect, useRef, use, Suspense, useMemo } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -16,8 +18,9 @@ import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { TaskTypeBadge, TaskTypeIconMark } from '@/lib/taskTypeIcons';
 import { usersApi, User } from '@/lib/api/users';
 import { tagsApi } from '@/lib/api/tags';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
@@ -25,8 +28,12 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProjectExpensesSection from '@/components/ProjectExpensesSection';
 import { TaskAnalyticsCharts } from '@/components/reporting/TaskAnalyticsCharts';
 import { buildTaskAnalytics } from '@/lib/reporting/taskAnalytics';
+import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
+import { isUnplannedLeafTask } from '@/lib/tasks/isUnplannedTask';
+import { stripHtml } from '@/lib/stripHtml';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { getTaskAttachment } from '@/lib/api/taskAttachments';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
@@ -61,9 +68,7 @@ export default function ProjectDetailPage(props: { params: Promise<{ id: string 
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
-        </div>
+        <PageLoadingSkeleton />
       }
     >
       <ProjectDetailPageContent {...props} />
@@ -145,6 +150,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   });
   const [existingGitHubIssueIds, setExistingGitHubIssueIds] = useState<Set<string>>(new Set());
   const [showAlreadyImportedGitHub, setShowAlreadyImportedGitHub] = useState(false);
+  const [gitHubImportApplicationId, setGitHubImportApplicationId] = useState<number>(0);
   // Gitea Integration State
   const [showGiteaImportModal, setShowGiteaImportModal] = useState(false);
   const [giteaIssues, setGiteaIssues] = useState<any[]>([]);
@@ -160,6 +166,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   });
   const [existingGiteaIssueIds, setExistingGiteaIssueIds] = useState<Set<string>>(new Set());
   const [showAlreadyImportedGitea, setShowAlreadyImportedGitea] = useState(false);
+  const [giteaImportApplicationId, setGiteaImportApplicationId] = useState<number>(0);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
   // Jira Tickets Import State (for ticket system, not project board)
   const [showJiraTicketsModal, setShowJiraTicketsModal] = useState(false);
@@ -229,6 +236,15 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
   };
+
+  useEffect(() => {
+    if (!project?.Id || !project.ProjectName) return;
+    recordRecentNavAccess(
+      'projects',
+      { id: project.Id, label: project.ProjectName, href: `/projects/${project.Id}` },
+      user?.id
+    );
+  }, [project?.Id, project?.ProjectName, user?.id]);
 
   const parseMappingJson = (value: any): Record<string, string> => {
     if (!value || typeof value !== 'string') return {};
@@ -444,7 +460,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
       return;
     }
     if (user && token && featureFlagsLoaded) {
@@ -1853,32 +1869,54 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
     }
   };
 
-  const loadGitHubIssues = async () => {
+  const loadGitHubIssues = async (applicationIdOverride?: number) => {
     if (!token || !project) return;
-    
-    // Check if project has GitHub repository configured
-    if (!project.GitHubOwner || !project.GitHubRepo) {
-      setGitHubError('Please configure GitHub repository in Project Settings first (Owner and Repository fields)');
+
+    const applicationId = applicationIdOverride ?? gitHubImportApplicationId;
+    const linkedApps = (project.Applications || []).filter(
+      (app: { RepositoryUrl?: string | null; GitHubIntegrationId?: number | null }) =>
+        Boolean(app.RepositoryUrl) &&
+        (Boolean(app.GitHubIntegrationId) || /github/i.test(String(app.RepositoryUrl)))
+    );
+    const legacyConfigured = Boolean(project.GitHubOwner && project.GitHubRepo);
+
+    if (!applicationId && linkedApps.length === 0 && !legacyConfigured) {
+      setGitHubError(
+        'Link an Application with a GitHub repository URL (and optional GitHub integration) to this project, then select it here.'
+      );
       setGitHubLoading(false);
       return;
     }
-    
+
+    if (!applicationId && linkedApps.length > 0) {
+      setGitHubError('Select an application to import GitHub issues from.');
+      setGitHubLoading(false);
+      return;
+    }
+
     setGitHubLoading(true);
     setGitHubError('');
-    
+
     try {
       const queryParams = new URLSearchParams();
-      queryParams.append('owner', project.GitHubOwner);
-      queryParams.append('repo', project.GitHubRepo);
+      if (applicationId) {
+        queryParams.append('applicationId', String(applicationId));
+      } else if (legacyConfigured) {
+        queryParams.append('owner', String(project.GitHubOwner));
+        queryParams.append('repo', String(project.GitHubRepo));
+      }
       if (gitHubFilters.search) {
         queryParams.append('query', gitHubFilters.search);
       }
-      
-      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+
+      const response = await fetch(
+        `${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
-      });
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -1887,7 +1925,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
       const data = await response.json();
       setGitHubIssues(data.issues || []);
-      
+
       // Clear selections and mappings
       setSelectedGitHubIssues(new Set());
       setGitHubStatusMapping({});
@@ -2036,23 +2074,42 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
     }
   };
 
-  const loadGiteaIssues = async () => {
+  const loadGiteaIssues = async (applicationIdOverride?: number) => {
     if (!token || !project) return;
-    
-    // Check if project has Gitea repository configured
-    if (!project.GiteaOwner || !project.GiteaRepo) {
-      setGiteaError('Please configure Gitea repository in Project Settings first (Owner and Repository fields)');
+
+    const applicationId = applicationIdOverride ?? giteaImportApplicationId;
+    const linkedApps = (project.Applications || []).filter(
+      (app: { RepositoryUrl?: string | null; GiteaIntegrationId?: number | null }) =>
+        Boolean(app.RepositoryUrl) &&
+        (Boolean(app.GiteaIntegrationId) || /gitea/i.test(String(app.RepositoryUrl)))
+    );
+    const legacyConfigured = Boolean(project.GiteaOwner && project.GiteaRepo);
+
+    if (!applicationId && linkedApps.length === 0 && !legacyConfigured) {
+      setGiteaError(
+        'Link an Application with a Gitea repository URL (and Gitea integration) to this project, then select it here.'
+      );
       setGiteaLoading(false);
       return;
     }
-    
+
+    if (!applicationId && linkedApps.length > 0) {
+      setGiteaError('Select an application to import Gitea issues from.');
+      setGiteaLoading(false);
+      return;
+    }
+
     setGiteaLoading(true);
     setGiteaError('');
-    
+
     try {
       const queryParams = new URLSearchParams();
-      queryParams.append('owner', project.GiteaOwner);
-      queryParams.append('repo', project.GiteaRepo);
+      if (applicationId) {
+        queryParams.append('applicationId', String(applicationId));
+      } else if (legacyConfigured) {
+        queryParams.append('owner', String(project.GiteaOwner));
+        queryParams.append('repo', String(project.GiteaRepo));
+      }
       if (giteaFilters.search) {
         queryParams.append('query', giteaFilters.search);
       }
@@ -2065,12 +2122,15 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
       if (giteaFilters.type) {
         queryParams.append('type', giteaFilters.type);
       }
-      
-      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+
+      const response = await fetch(
+        `${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}/search?${queryParams.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
-      });
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -2079,17 +2139,17 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
       const data = await response.json();
       setGiteaIssues(data.issues || []);
-      
+
       // Initialize status mapping with auto-mapping
       const mapping: {[key: string]: string} = {};
       (data.issues || []).forEach((issue: any) => {
         const state = issue.state?.toLowerCase();
         let mappedStatus = '';
-        
+
         if (state === 'closed') {
           // Try to find a "done" or "closed" status
-          const doneStatus = taskStatuses.find(s => 
-            s.StatusName.toLowerCase().includes('done') || 
+          const doneStatus = taskStatuses.find(s =>
+            s.StatusName.toLowerCase().includes('done') ||
             s.StatusName.toLowerCase().includes('closed') ||
             s.StatusName.toLowerCase().includes('complete')
           );
@@ -2098,11 +2158,11 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
           // Map open to first status (typically "To Do" or "Open")
           mappedStatus = taskStatuses[0]?.StatusName || '';
         }
-        
+
         mapping[issue.number] = mappedStatus;
       });
       setGiteaStatusMapping(mapping);
-      
+
       // Clear selections
       setSelectedGiteaIssues(new Set());
     } catch (err: any) {
@@ -2278,9 +2338,20 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   // Load task statuses and GitHub issues when modal opens
   useEffect(() => {
     if (showGitHubImportModal && project) {
+      const linkedApps = (project.Applications || []).filter(
+        (app: { RepositoryUrl?: string | null; GitHubIntegrationId?: number | null }) =>
+          Boolean(app.RepositoryUrl) &&
+          (Boolean(app.GitHubIntegrationId) || /github/i.test(String(app.RepositoryUrl)))
+      );
+      const initialAppId =
+        gitHubImportApplicationId ||
+        (linkedApps.length === 1 ? linkedApps[0].Id : linkedApps[0]?.Id || 0);
+      if (initialAppId && initialAppId !== gitHubImportApplicationId) {
+        setGitHubImportApplicationId(initialAppId);
+      }
       loadTaskStatuses();
       loadExistingGitHubIssues();
-      loadGitHubIssues();
+      void loadGitHubIssues(initialAppId || undefined);
     } else if (!showGitHubImportModal) {
       // Reset filters when modal closes
       setGitHubFilters({
@@ -2291,6 +2362,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
       });
       setShowAlreadyImportedGitHub(false);
       setExistingGitHubIssueIds(new Set());
+      setGitHubImportApplicationId(0);
     }
   }, [showGitHubImportModal, project]);
 
@@ -2479,9 +2551,20 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   // Load task statuses and Gitea issues when modal opens
   useEffect(() => {
     if (showGiteaImportModal && project) {
+      const linkedApps = (project.Applications || []).filter(
+        (app: { RepositoryUrl?: string | null; GiteaIntegrationId?: number | null }) =>
+          Boolean(app.RepositoryUrl) &&
+          (Boolean(app.GiteaIntegrationId) || /gitea/i.test(String(app.RepositoryUrl)))
+      );
+      const initialAppId =
+        giteaImportApplicationId ||
+        (linkedApps.length === 1 ? linkedApps[0].Id : linkedApps[0]?.Id || 0);
+      if (initialAppId && initialAppId !== giteaImportApplicationId) {
+        setGiteaImportApplicationId(initialAppId);
+      }
       loadTaskStatuses();
       loadExistingGiteaIssues();
-      loadGiteaIssues();
+      void loadGiteaIssues(initialAppId || undefined);
     } else if (!showGiteaImportModal) {
       // Reset filters when modal closes
       setGiteaFilters({
@@ -2492,6 +2575,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
       });
       setShowAlreadyImportedGitea(false);
       setExistingGiteaIssueIds(new Set());
+      setGiteaImportApplicationId(0);
     }
   }, [showGiteaImportModal, project]);
 
@@ -2515,277 +2599,102 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
   if (authLoading || isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
   if (!user || !project) return null;
 
+  const projectTabs = [
+    { id: 'overview' as const, label: 'Overview' },
+    { id: 'tasks' as const, label: 'Tasks' },
+    { id: 'kanban' as const, label: 'Kanban Board' },
+    { id: 'gantt' as const, label: 'Gantt Chart' },
+    ...(permissions?.canViewReports ? [{ id: 'reporting' as const, label: 'Reporting' }] : []),
+    { id: 'burndown' as const, label: 'Burndown' },
+    { id: 'sprints' as const, label: 'Sprints' },
+    { id: 'milestones' as const, label: 'Milestones' },
+    { id: 'attachments' as const, label: 'Attachments' },
+    { id: 'dependencies' as const, label: 'Dependencies' },
+    { id: 'utilities' as const, label: 'Utilities' },
+    ...(permissions?.canManageProjects ? [{ id: 'settings' as const, label: 'Settings' }] : []),
+    ...(permissions?.canManageProjects && jiraIntegration?.IsEnabled && jiraIntegration?.JiraProjectsUrl
+      ? [{ id: 'mappings' as const, label: 'Mappings' }]
+      : []),
+    { id: 'history' as const, label: 'History' },
+  ];
+
   return (
     <CustomerUserGuard>
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
-
-      <div className="flex flex-col md:flex-row">
-        {/* Mobile project tabs */}
-        <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Project tabs">
-            {([
-              { id: 'overview' as const, label: 'Overview', icon: '📊' },
-              { id: 'tasks' as const, label: 'Tasks', icon: '✅' },
-              { id: 'kanban' as const, label: 'Kanban', icon: '📋' },
-              { id: 'gantt' as const, label: 'Gantt', icon: '📅' },
-              ...(permissions?.canViewReports ? [{ id: 'reporting' as const, label: 'Reporting', icon: '📊' }] : []),
-              { id: 'burndown' as const, label: 'Burndown', icon: '📉' },
-              { id: 'sprints' as const, label: 'Sprints', icon: '🏃' },
-              { id: 'milestones' as const, label: 'Milestones', icon: '🏁' },
-              { id: 'attachments' as const, label: 'Files', icon: '📎' },
-              { id: 'dependencies' as const, label: 'Deps', icon: '🔗' },
-              { id: 'utilities' as const, label: 'Utils', icon: '🔧' },
-              ...(permissions?.canManageProjects ? [{ id: 'settings' as const, label: 'Settings', icon: '⚙️' }] : []),
-              ...(permissions?.canManageProjects && jiraIntegration?.IsEnabled && jiraIntegration?.JiraProjectsUrl
-                ? [{ id: 'mappings' as const, label: 'Mappings', icon: '🧭' }]
-                : []),
-              { id: 'history' as const, label: 'History', icon: '📜' },
-            ]).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  if (tab.id === 'attachments') loadProjectAttachments();
-                }}
-                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="mr-1">{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Sidebar */}
-        <aside className="hidden md:block w-64 bg-white dark:bg-gray-800 shadow-lg min-h-screen shrink-0">
-          <div className="p-6">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-              Project Menu
-            </h2>
-            <nav className="space-y-2">
-              <button
-                onClick={() => setActiveTab('overview')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'overview'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📊 Overview
-              </button>
-              <button
-                onClick={() => setActiveTab('tasks')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'tasks'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                ✅ Tasks
-              </button>
-              <button
-                onClick={() => setActiveTab('kanban')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'kanban'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📋 Kanban Board
-              </button>
-              <button
-                onClick={() => setActiveTab('gantt')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'gantt'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📅 Gantt Chart
-              </button>
-              {permissions?.canViewReports && (
-              <button
-                onClick={() => setActiveTab('reporting')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'reporting'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📊 Reporting
-              </button>
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      {/* Outside the scroll region — never covered by tab content */}
+      <PageStickyChrome>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-xl font-semibold text-[var(--pm-text)]">{project.ProjectName}</h1>
+              {!!project.IsGlobal && (
+                <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                  🌐 Global
+                </span>
               )}
-              <button
-                onClick={() => setActiveTab('burndown')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'burndown'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📉 Burndown
-              </button>
-              <button
-                onClick={() => setActiveTab('sprints')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'sprints'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                🏃 Sprints
-              </button>
-              <button
-                onClick={() => setActiveTab('milestones')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'milestones'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                🏁 Milestones
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('attachments');
-                  loadProjectAttachments();
-                }}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'attachments'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📎 Attachments
-              </button>
-              <button
-                onClick={() => setActiveTab('dependencies')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'dependencies'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                🔗 Dependencies
-              </button>
-              <button
-                onClick={() => setActiveTab('utilities')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'utilities'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                🔧 Utilities
-              </button>
-              {permissions?.canManageProjects && (
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'settings'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                ⚙️ Settings
-              </button>
+              {!!project.IsHobby && (
+                <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                  🎮 Hobby
+                </span>
               )}
-              {permissions?.canManageProjects && jiraIntegration?.IsEnabled && jiraIntegration?.JiraProjectsUrl && (
-              <button
-                onClick={() => setActiveTab('mappings')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'mappings'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                🧭 Mappings
-              </button>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[var(--pm-muted)]">
+              {project.OrganizationName && <span>{project.OrganizationName}</span>}
+              {project.OrganizationName && project.CustomerName && <span aria-hidden>•</span>}
+              {project.CustomerName && <span>{project.CustomerName}</span>}
+              {project.StatusName && (
+                <span
+                  className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+                  style={pillStyle(project.StatusColor, { alpha: '22', borderAlpha: '44' })}
+                >
+                  {project.StatusName}
+                </span>
               )}
-              <button
-                onClick={() => setActiveTab('history')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'history'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📜 History
-              </button>
-            </nav>
-
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-              <a
-                href="/projects"
-                className="block text-center px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              >
-                ← Back to Projects
-              </a>
             </div>
           </div>
-        </aside>
+          <a
+            href={oldPath('/projects')}
+            className="shrink-0 text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
+          >
+            ← Back to Projects
+          </a>
+        </div>
 
-        {/* Main Content */}
-        <main className="flex-1 min-w-0 p-3 sm:p-6">
+        <PageTabs
+          tabs={projectTabs}
+          activeId={activeTab}
+          onChange={(id) => {
+            setActiveTab(id as ProjectDetailTab);
+            if (id === 'attachments') loadProjectAttachments();
+          }}
+        />
+      </PageStickyChrome>
+
+      <div
+        className={
+          activeTab === 'tasks'
+            ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-3'
+            : 'min-h-0 min-w-0 flex-1 overflow-y-auto pt-3'
+        }
+      >
           {error && (
-            <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg flex items-start justify-between gap-3">
+            <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-red-400 bg-red-100 p-4 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
               <span>{error}</span>
               <button
                 type="button"
                 onClick={() => setError('')}
-                className="text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 text-lg leading-none"
+                className="text-lg leading-none text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100"
                 aria-label="Close error message"
                 title="Close"
               >
                 ×
               </button>
-            </div>
-          )}
-
-          {activeTab !== 'overview' && (
-            <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="h-1 w-full" style={backgroundStyle(project.StatusColor || '#6366f1')} />
-              <div className="px-4 py-2.5">
-                <div className="flex items-center justify-between gap-3 min-w-0">
-                  <div className="min-w-0 flex-1 overflow-x-auto">
-                    <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      <span className="font-semibold text-gray-900 dark:text-white">{project.ProjectName}</span>
-                      {project.OrganizationName && (
-                        <>
-                          <span className="text-gray-400 dark:text-gray-500">•</span>
-                          <span>{project.OrganizationName}</span>
-                        </>
-                      )}
-                      {project.CustomerName && (
-                        <>
-                          <span className="text-gray-400 dark:text-gray-500">•</span>
-                          <span>{project.CustomerName}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <span
-                    className="inline-flex items-center px-2.5 py-1 rounded-md font-medium text-xs flex-shrink-0"
-                    style={pillStyle(project.StatusColor, { alpha: '22', borderAlpha: '44' })}
-                  >
-                    {project.StatusName || 'Unknown'}
-                  </span>
-                </div>
-              </div>
             </div>
           )}
 
@@ -2802,6 +2711,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
           )}
 
           {activeTab === 'tasks' && (
+            <div className="flex min-h-0 flex-1 flex-col">
             <TasksTab
               tasks={tasks}
               project={project}
@@ -2832,6 +2742,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
               canDelete={permissions?.canDeleteTasks || false}
               token={token!}
             />
+            </div>
           )}
 
           {activeTab === 'kanban' && (
@@ -2873,8 +2784,6 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
           {activeTab === 'attachments' && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Project Attachments</h2>
-              
               {/* Upload Section */}
               <div className="mb-6 pb-6 border-b border-gray-200 dark:border-gray-700">
                 <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg cursor-pointer transition-colors">
@@ -2969,7 +2878,6 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
           {activeTab === 'history' && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">📜 Change History</h2>
               <ChangeHistory entityType="project" entityId={parseInt(projectId)} />
             </div>
           )}
@@ -2999,8 +2907,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
               canManage={permissions?.canManageProjects || false}
             />
           )}
-        </main>
-      </div>
+        </div>
 
       {/* Edit Project Modal */}
       {showEditModal && project && (
@@ -3610,6 +3517,39 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
+              {(() => {
+                const githubApps = (project?.Applications || []).filter(
+                  (app: { RepositoryUrl?: string | null; GitHubIntegrationId?: number | null }) =>
+                    Boolean(app.RepositoryUrl) &&
+                    (Boolean(app.GitHubIntegrationId) || /github/i.test(String(app.RepositoryUrl)))
+                );
+                if (githubApps.length === 0) return null;
+                return (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Application
+                    </label>
+                    <select
+                      value={gitHubImportApplicationId || ''}
+                      onChange={(e) => {
+                        const nextId = e.target.value ? Number(e.target.value) : 0;
+                        setGitHubImportApplicationId(nextId);
+                        if (nextId) void loadGitHubIssues(nextId);
+                      }}
+                      className="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="">Select application...</option>
+                      {githubApps.map((app: { Id: number; Name: string; RepositoryUrl?: string | null }) => (
+                        <option key={app.Id} value={app.Id}>
+                          {app.Name}
+                          {app.RepositoryUrl ? ` — ${app.RepositoryUrl}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
+
               {gitHubError && (
                 <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
                   {gitHubError}
@@ -3898,6 +3838,39 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
+              {(() => {
+                const giteaApps = (project?.Applications || []).filter(
+                  (app: { RepositoryUrl?: string | null; GiteaIntegrationId?: number | null }) =>
+                    Boolean(app.RepositoryUrl) &&
+                    (Boolean(app.GiteaIntegrationId) || /gitea/i.test(String(app.RepositoryUrl)))
+                );
+                if (giteaApps.length === 0) return null;
+                return (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Application
+                    </label>
+                    <select
+                      value={giteaImportApplicationId || ''}
+                      onChange={(e) => {
+                        const nextId = e.target.value ? Number(e.target.value) : 0;
+                        setGiteaImportApplicationId(nextId);
+                        if (nextId) void loadGiteaIssues(nextId);
+                      }}
+                      className="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="">Select application...</option>
+                      {giteaApps.map((app: { Id: number; Name: string; RepositoryUrl?: string | null }) => (
+                        <option key={app.Id} value={app.Id}>
+                          {app.Name}
+                          {app.RepositoryUrl ? ` — ${app.RepositoryUrl}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
+
               {giteaError && (
                 <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
                   {giteaError}
@@ -4217,9 +4190,9 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
                   ProjectId is added automatically from the current project.
                 </p>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a href="/templates/tasks_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  <a href={oldPath("/templates/tasks_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                   {' | '}
-                  <a href="/templates/README_TASKS_IMPORT.md" target="_blank" className="underline hover:text-blue-600 dark:hover:text-blue-200">Read documentation</a>
+                  <a href={oldPath("/templates/README_TASKS_IMPORT.md")} target="_blank" className="underline hover:text-blue-600 dark:hover:text-blue-200">Read documentation</a>
                 </p>
               </div>
 
@@ -5377,57 +5350,14 @@ function OverviewTab({
   return (
     <div className="space-y-6">
 
-      {/* ── Project Header ── */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
-        <div className="h-1.5 w-full" style={backgroundStyle(project.StatusColor || '#6366f1')} />
-        <div className="p-6">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.ProjectName}</h1>
-                {!!project.IsGlobal && (
-                  <span className="px-2.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-xs font-medium">🌐 Global</span>
-                )}
-                {!!project.IsHobby && (
-                  <span className="px-2.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-xs font-medium">🎮 Hobby</span>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                {project.OrganizationName && (
-                  <span className="flex items-center gap-1">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                    {project.OrganizationName}
-                  </span>
-                )}
-                {project.CustomerName && (
-                  <span className="flex items-center gap-1">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    {project.CustomerName}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex-shrink-0">
-              <span
-                className="inline-flex items-center px-4 py-2 rounded-lg font-semibold text-sm"
-                style={pillStyle(project.StatusColor, { alpha: '22', borderAlpha: '44' })}
-              >
-                {project.StatusName || 'Unknown'}
-              </span>
-            </div>
-          </div>
-          {project.Description && (
-            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-              <div className="text-gray-700 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: project.Description }} />
-            </div>
-          )}
+      {/* Description only — title / org / status / Global|Hobby live in the sticky page header */}
+      {project.Description ? (
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="h-1 w-full" style={backgroundStyle(project.StatusColor || '#6366f1')} />
+          <div className="prose prose-sm dark:prose-invert max-w-none p-4 text-gray-700 dark:text-gray-300"
+            dangerouslySetInnerHTML={{ __html: project.Description }} />
         </div>
-      </div>
+      ) : null}
 
       {/* ── RAG Health Badge ── */}
       {(() => {
@@ -5519,7 +5449,68 @@ function OverviewTab({
         </div>
       </div>
 
-      <TaskAnalyticsCharts data={taskAnalytics} onViewAll={onViewTasks} />
+      <TaskAnalyticsCharts
+        data={taskAnalytics}
+        onViewAll={onViewTasks}
+        fourthCard={(() => {
+        const avatarColors = ['bg-blue-500','bg-purple-500','bg-green-500','bg-amber-500','bg-pink-500','bg-indigo-500','bg-teal-500','bg-rose-500'];
+        const assignedTasks = parentTasks.filter(t => t.AssignedTo);
+        const teamMembers = Array.from(new Set(assignedTasks.map(t => t.AssignedTo)))
+          .map(userId => {
+            const memberTasks = assignedTasks.filter(t => t.AssignedTo === userId);
+            const firstTask = memberTasks[0];
+            const name = firstTask.AssigneeName || 'Unknown';
+            const completed = memberTasks.filter(t => t.StatusIsClosed === 1).length;
+            const inProgress = memberTasks.filter(t =>
+              t.StatusIsClosed !== 1 && t.StatusIsCancelled !== 1 && t.Status !== null && t.StatusName?.toLowerCase() !== 'to do'
+            ).length;
+            const totalHours = memberTasks.reduce((sum, t) => sum + (parseFloat(String(t.EstimatedHours || 0))), 0);
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            const avatarColor = avatarColors[Math.abs(hash) % avatarColors.length];
+            return { userId, name, taskCount: memberTasks.length, completed, inProgress, totalHours: Number(totalHours) || 0, avatarColor };
+          })
+          .sort((a, b) => b.taskCount - a.taskCount);
+
+        if (teamMembers.length === 0) {
+          return (
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 flex flex-col min-h-[220px]">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Team Members</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 py-10 text-center flex-1">No assigned team members.</p>
+            </div>
+          );
+        }
+        return (
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 flex flex-col min-h-[220px]">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Team Members</h3>
+            <div className="space-y-2 overflow-y-auto max-h-[280px] pr-1">
+              {teamMembers.map(member => {
+                const completionRate = member.taskCount > 0 ? Math.round((member.completed / member.taskCount) * 100) : 0;
+                return (
+                  <div key={member.userId} className="flex items-start gap-3 p-2.5 bg-gray-50 dark:bg-gray-700/40 rounded-lg">
+                    <div className={`w-8 h-8 ${member.avatarColor} rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>
+                      {member.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{member.name}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">{decimalHoursToHMS(member.totalHours)} · {member.taskCount} task{member.taskCount !== 1 ? 's' : ''}</p>
+                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mb-1">
+                        <div className={`h-1.5 rounded-full transition-all ${completionRate === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                          style={{ width: `${completionRate}%` }} />
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500">
+                        <span>{member.inProgress} active</span>
+                        <span>{completionRate}% done</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+      />
 
       {/* ── Key Metrics Strip ── */}
       <div className={`grid grid-cols-2 ${internalTicketsEnabled ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
@@ -5987,59 +5978,6 @@ function OverviewTab({
         </div>
       )}
 
-      {/* ── Team Members ── */}
-      {(() => {
-        const avatarColors = ['bg-blue-500','bg-purple-500','bg-green-500','bg-amber-500','bg-pink-500','bg-indigo-500','bg-teal-500','bg-rose-500'];
-        const assignedTasks = parentTasks.filter(t => t.AssignedTo);
-        const teamMembers = Array.from(new Set(assignedTasks.map(t => t.AssignedTo)))
-          .map(userId => {
-            const memberTasks = assignedTasks.filter(t => t.AssignedTo === userId);
-            const firstTask = memberTasks[0];
-            const name = firstTask.AssigneeName || 'Unknown';
-            const completed = memberTasks.filter(t => t.StatusIsClosed === 1).length;
-            const inProgress = memberTasks.filter(t =>
-              t.StatusIsClosed !== 1 && t.StatusIsCancelled !== 1 && t.Status !== null && t.StatusName?.toLowerCase() !== 'to do'
-            ).length;
-            const totalHours = memberTasks.reduce((sum, t) => sum + (parseFloat(String(t.EstimatedHours || 0))), 0);
-            let hash = 0;
-            for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-            const avatarColor = avatarColors[Math.abs(hash) % avatarColors.length];
-            return { userId, name, taskCount: memberTasks.length, completed, inProgress, totalHours: Number(totalHours) || 0, avatarColor };
-          })
-          .sort((a, b) => b.taskCount - a.taskCount);
-
-        if (teamMembers.length === 0) return null;
-        return (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
-            <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-5">Team Members</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {teamMembers.map(member => {
-                const completionRate = member.taskCount > 0 ? Math.round((member.completed / member.taskCount) * 100) : 0;
-                return (
-                  <div key={member.userId} className="flex items-start gap-3 p-4 bg-gray-50 dark:bg-gray-700/40 rounded-xl">
-                    <div className={`w-10 h-10 ${member.avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
-                      {member.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{member.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{decimalHoursToHMS(member.totalHours)} · {member.taskCount} task{member.taskCount !== 1 ? 's' : ''}</p>
-                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5 mb-1">
-                        <div className={`h-1.5 rounded-full transition-all ${completionRate === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                          style={{ width: `${completionRate}%` }} />
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500">
-                        <span>{member.inProgress} active</span>
-                        <span>{completionRate}% done</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
     </div>
   );
 }
@@ -6113,6 +6051,7 @@ function TasksTab({
   const [filterAssignee, setFilterAssignee] = useState<number | undefined>(undefined);
   const [filterTaskType, setFilterTaskType] = useState<number | undefined>(undefined);
   const [hideClosed, setHideClosed] = useState(false);
+  const [unplannedOnly, setUnplannedOnly] = useState(false);
   const [sortField, setSortField] = useState<string>('displayOrder');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filterTagIds, setFilterTagIds] = useState<number[]>([]);
@@ -6781,8 +6720,20 @@ function TasksTab({
   const hasTaskStatusCheckOption =
     (hasJiraTicketIntegration && Boolean(onCheckJiraTicketStatus)) ||
     (hasJiraBoardIntegration && Boolean(onCheckJiraBoardStatus));
-  const hasGitHubIntegration = project.GitHubOwner && project.GitHubRepo;
-  const hasGiteaIntegration = project.GiteaOwner && project.GiteaRepo;
+  const hasGitHubIntegration =
+    Boolean(project.GitHubOwner && project.GitHubRepo) ||
+    (project.Applications || []).some(
+      (app: { RepositoryUrl?: string | null; GitHubIntegrationId?: number | null }) =>
+        Boolean(app.RepositoryUrl) &&
+        (Boolean(app.GitHubIntegrationId) || /github/i.test(String(app.RepositoryUrl)))
+    );
+  const hasGiteaIntegration =
+    Boolean(project.GiteaOwner && project.GiteaRepo) ||
+    (project.Applications || []).some(
+      (app: { RepositoryUrl?: string | null; GiteaIntegrationId?: number | null }) =>
+        Boolean(app.RepositoryUrl) &&
+        (Boolean(app.GiteaIntegrationId) || /gitea/i.test(String(app.RepositoryUrl)))
+    );
 
   const toggleExpand = (taskId: number) => {
     setExpandedTasks(prev => {
@@ -7174,7 +7125,8 @@ function TasksTab({
     filterAssignee ||
     filterTaskType ||
     filterTagIds.length > 0 ||
-    hideClosed
+    hideClosed ||
+    unplannedOnly
   );
 
   const shouldAutoExpandForFilters = !!(
@@ -7183,11 +7135,13 @@ function TasksTab({
     filterPriority ||
     filterAssignee ||
     filterTaskType ||
-    filterTagIds.length > 0
+    filterTagIds.length > 0 ||
+    unplannedOnly
   );
 
   const taskMatchesFilters = (task: Task): boolean => {
     if (hideClosed && (Number(task.StatusIsClosed || 0) === 1 || Number(task.StatusIsCancelled || 0) === 1)) return false;
+    if (unplannedOnly && !isUnplannedLeafTask(task, tasks)) return false;
     const taskStatusId = task.Status !== null && task.Status !== undefined ? Number(task.Status) : undefined;
     const taskPriorityId = task.Priority !== null && task.Priority !== undefined ? Number(task.Priority) : undefined;
     const taskAssigneeId = task.AssignedTo !== null && task.AssignedTo !== undefined ? Number(task.AssignedTo) : undefined;
@@ -7375,7 +7329,7 @@ function TasksTab({
     const ids: number[] = [];
     visibleParentTasks.forEach((task) => collectVisibleTaskIds(task, ids));
     return ids;
-  }, [visibleParentTasks, expandedTasks, shouldAutoExpandForFilters, isFilterActive, filterText, filterStatus, filterPriority, filterAssignee, filterTaskType, filterTagIds, hideClosed, sortField, sortDirection]);
+  }, [visibleParentTasks, expandedTasks, shouldAutoExpandForFilters, isFilterActive, filterText, filterStatus, filterPriority, filterAssignee, filterTaskType, filterTagIds, hideClosed, unplannedOnly, sortField, sortDirection]);
 
   const allVisibleTasksSelected = visibleTaskIds.length > 0 && visibleTaskIds.every((taskId) => selectedTaskIds.has(taskId));
 
@@ -8212,10 +8166,9 @@ function TasksTab({
   };
 
   return (
-    <div className="w-full min-w-0">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3 md:items-center">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Tasks</h1>
-        <div className="flex max-w-full flex-wrap gap-3">
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <div className="mb-3 flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <div className="flex max-w-full flex-wrap gap-2">
           {canCreate && (
             <>
               {/* Import Dropdown - always visible, CSV always available */}
@@ -8482,16 +8435,29 @@ function TasksTab({
           )}
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="shrink-0 space-y-3">
+          <CollapsibleFilterPanel
+            title="Task filters"
+            activeCount={[
+              filterText.trim() ? 1 : 0,
+              filterTaskType != null ? 1 : 0,
+              filterStatus != null ? 1 : 0,
+              filterPriority != null ? 1 : 0,
+              filterAssignee != null ? 1 : 0,
+              filterTagIds.length > 0 ? 1 : 0,
+              hideClosed ? 1 : 0,
+              unplannedOnly ? 1 : 0,
+            ].reduce((a, b) => a + b, 0)}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-2">
               <div className="lg:col-span-2">
                 <input
                   type="text"
                   value={filterText}
                   onChange={(e) => setFilterText(e.target.value)}
                   placeholder="Search task, description, assignee..."
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
               <div>
@@ -8540,18 +8506,30 @@ function TasksTab({
               </div>
             </div>
 
-            <div className="mt-3 flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={hideClosed}
-                  onChange={(e) => setHideClosed(e.target.checked)}
-                  className="rounded"
-                />
-                Hide closed tasks
-              </label>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={hideClosed}
+                    onChange={(e) => setHideClosed(e.target.checked)}
+                    className="rounded"
+                  />
+                  Hide closed tasks
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={unplannedOnly}
+                    onChange={(e) => setUnplannedOnly(e.target.checked)}
+                    className="rounded"
+                  />
+                  Unplanned only
+                </label>
+              </div>
               {isFilterActive && (
                 <button
+                  type="button"
                   onClick={() => {
                     setFilterText('');
                     setFilterStatus(undefined);
@@ -8560,6 +8538,7 @@ function TasksTab({
                     setFilterTaskType(undefined);
                     setFilterTagIds([]);
                     setHideClosed(false);
+                    setUnplannedOnly(false);
                   }}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                 >
@@ -8567,7 +8546,7 @@ function TasksTab({
                 </button>
               )}
             </div>
-          </div>
+          </CollapsibleFilterPanel>
 
           {selectedTaskIds.size > 0 && canManage && (
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
@@ -8757,11 +8736,15 @@ function TasksTab({
                 </>
               )}
           </div>
+          </div>
 
-          <div className="w-full min-w-0 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" ref={tasksGridRef} data-grid-enhancer-ignore="true">
-            <div className="w-full min-w-0 overflow-x-auto">
+          <div
+            className="min-h-0 w-full flex-1 overflow-auto rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 dark:bg-gray-800"
+            ref={tasksGridRef}
+            data-grid-enhancer-ignore="true"
+          >
           <table data-grid-disable-sort="true" data-grid-disable-reorder="true" data-grid-key={`project-tasks-${Number(project.Id)}-v2`} className={`w-full min-w-max divide-y divide-gray-200 dark:divide-gray-700 ${taskRowDensity === 'compact' ? 'grid-density-compact' : ''}`}>
-            <thead className="bg-gray-50 dark:bg-gray-900">
+            <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 shadow-[0_1px_0_0_rgba(0,0,0,0.06)] dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
               <tr>
                 <th data-column-key="select" scope="col" className="w-8 min-w-[2rem] max-w-[2rem] px-1 py-3 text-center">
                   <input
@@ -9003,7 +8986,6 @@ function TasksTab({
               )}
             </tbody>
           </table>
-          </div>
           </div>
         </div>
       )}
@@ -9313,7 +9295,6 @@ function UtilitiesTab({ projectId, token, onTasksUpdated }: { projectId: number;
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">🔧 Utilities</h1>
       <p className="text-gray-600 dark:text-gray-400 mb-6">Bulk operations to keep your project data consistent and up to date.</p>
 
       {error && (
@@ -9706,26 +9687,10 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
   const visibleRootTasks = visibleTasksWithPlanning
     .filter(task => !task.ParentTaskId || !visiblePlannedTaskIds.has(task.ParentTaskId))
     .sort(compareTaskHierarchyOrder);
-  
-  const tasksWithoutPlanning = tasks.filter(t => {
-    // Exclude if already in planned list
-    if (tasksWithPlanning.includes(t)) return false;
-
-    // Exclude closed/completed and cancelled tasks from unplanned list
-    if (Number(t.StatusIsClosed || 0) === 1 || Number(t.StatusIsCancelled || 0) === 1) return false;
-    
-    // Don't show parent tasks in unplanned if they have children
-    // (their planning status is determined by their children)
-    const hasChildren = tasks.some(child => child.ParentTaskId === t.Id);
-    if (hasChildren) return false;
-    
-    return true;
-  });
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Gantt Chart</h1>
+      <div className="mb-6 flex justify-end gap-4">
         <div className="flex gap-4">
           {/* View Mode Selector */}
           <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
@@ -9917,43 +9882,6 @@ function GanttViewTab({ tasks }: { tasks: Task[] }) {
           </div>
         </div>
       )}
-
-      {/* Unplanned Tasks */}
-      {tasksWithoutPlanning.length > 0 && (
-        <div className="mt-6">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Unplanned Tasks</h2>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <div className="space-y-2">
-              {tasksWithoutPlanning.map((task) => (
-                <div
-                  key={task.Id}
-                  className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
-                >
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-1.5 min-w-0">
-                      <TaskTypeIconMark
-                        name={task.TaskTypeName}
-                        iconSvg={task.TaskTypeIconSvg}
-                        color={task.TaskTypeColor}
-                        className="w-3.5 h-3.5"
-                      />
-                      <span className="truncate">{task.TaskName}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {task.AssigneeName || 'Unassigned'} • {task.EstimatedHours ? `${task.EstimatedHours}h` : 'No estimate'}
-                    </div>
-                  </div>
-                  <span className="px-2 py-1 text-xs font-semibold rounded-full"
-                    style={pillStyle(task.StatusColor, { alpha: '20' })}
-                  >
-                    {task.StatusName || 'Unknown'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -10128,9 +10056,8 @@ function KanbanTab({
 
   return (
     <div className="h-[calc(100vh-220px)] min-h-[560px] flex flex-col">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Kanban Board</h1>
-        {canCreate && (
+      {canCreate && (
+        <div className="mb-4 flex items-center justify-end">
           <button
             onClick={onCreateTask}
             className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
@@ -10138,8 +10065,8 @@ function KanbanTab({
             <span className="text-base leading-none">+</span>
             New Task
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="w-full overflow-x-auto flex-1 min-h-0">
         <div
@@ -11346,7 +11273,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
       Hours: parseFloat(e.Hours || 0).toFixed(2),
       StartTime: e.StartTime || '',
       EndTime: e.EndTime || '',
-      Description: e.Description || ''
+      Description: stripHtml(e.Description) || ''
     }));
     exportToCSV(data, 'project_time_entries', ['Date', 'Task', 'User', 'Hours', 'StartTime', 'EndTime', 'Description']);
   };
@@ -11359,7 +11286,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
       Hours: parseFloat(e.Hours || 0).toFixed(2),
       StartTime: e.StartTime || '',
       EndTime: e.EndTime || '',
-      Description: e.Description || ''
+      Description: stripHtml(e.Description) || ''
     }));
     await exportToPDF(data, 'project_time_entries', ['Date', 'Task', 'User', 'Hours', 'StartTime', 'EndTime', 'Description'], 'Project Report - Time Entries');
   };
@@ -11386,8 +11313,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Reporting</h1>
+      <div className="mb-6 flex items-center justify-end">
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
@@ -11942,7 +11868,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                             {entry.StartTime || '-'} - {entry.EndTime || '-'}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                            {entry.Description || '-'}
+                            {stripHtml(entry.Description) || '-'}
                           </td>
                           <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-100 font-medium">
                             {decimalHoursToHMS(parseFloat(entry.Hours))}
@@ -12191,7 +12117,7 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
                                 {entry.StartTime || '-'} - {entry.EndTime || '-'}
                               </td>
                               <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
-                                {entry.Description || '-'}
+                                {stripHtml(entry.Description) || '-'}
                               </td>
                               <td className="px-4 py-2 text-sm text-right text-gray-900 dark:text-gray-100 font-medium">
                                 {decimalHoursToHMS(parseFloat(entry.Hours))}
@@ -12953,8 +12879,6 @@ function ProjectMappingsTab({ project, token, onSaved }: { project: Project; tok
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Jira Board Task Mappings</h1>
-
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Status, Priority and Task Type</h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
@@ -13015,8 +12939,6 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
-  const [githubIntegration, setGithubIntegration] = useState<any>(null);
-  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [availableApplications, setAvailableApplications] = useState<{ Id: number; Name: string }[]>([]);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
@@ -13029,8 +12951,6 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
     loadCustomers();
     loadProjectStatuses();
     loadJiraIntegration();
-    loadGitHubIntegration();
-    loadGiteaIntegration();
     loadApplicationsList();
   }, []);
 
@@ -13105,43 +13025,6 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
     }
   };
 
-  const loadGitHubIntegration = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GitHubUrl) {
-          setGithubIntegration(data.integration);
-        } else {
-          setGithubIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load GitHub integration:', err);
-      setGithubIntegration(null);
-    }
-  };
-
-  const loadGiteaIntegration = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GiteaUrl) {
-          setGiteaIntegration(data.integration);
-        } else {
-          setGiteaIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load Gitea integration:', err);
-      setGiteaIntegration(null);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -13209,8 +13092,6 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Project Settings</h1>
-      
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">General Settings</h2>
         
@@ -13518,110 +13399,16 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
               )}
             </div>
           )}
-
-          {githubIntegration && (
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
-              <div className="flex items-center gap-2 mb-3">
-                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                </svg>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  GitHub Integration
-                </label>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    Repository Owner/Organization
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.gitHubOwner}
-                    onChange={(e) => setFormData({ ...formData, gitHubOwner: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    placeholder="username or organization-name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    Repository Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.gitHubRepo}
-                    onChange={(e) => setFormData({ ...formData, gitHubRepo: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    placeholder="repository-name"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
-              </p>
-              {(formData.gitHubOwner || formData.gitHubRepo) && (
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, gitHubOwner: '', gitHubRepo: '' })}
-                    className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                  >
-                    Clear Repository
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {giteaIntegration && (
-            <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-300 dark:border-green-700">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-lg">🍵</span>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Gitea Integration
-                </label>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    Repository Owner/Organization
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.giteaOwner}
-                    onChange={(e) => setFormData({ ...formData, giteaOwner: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    placeholder="username or organization-name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                    Repository Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.giteaRepo}
-                    onChange={(e) => setFormData({ ...formData, giteaRepo: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                    placeholder="repository-name"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                Required for Gitea issues import. Format: <strong>owner/repo</strong>
-              </p>
-              {(formData.giteaOwner || formData.giteaRepo) && (
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, giteaOwner: '', giteaRepo: '' })}
-                    className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                  >
-                    Clear Repository
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Git / VCS repositories
+            </label>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Configure repository URL and GitHub / Gitea / Bitbucket credentials on each{' '}
+              <strong>Application</strong>, then link applications to this project. Issue import uses the
+              selected application&apos;s repository.
+            </p>
+          </div>
 
           <CustomFieldsFormSection
             tableName="Projects"
@@ -13679,8 +13466,6 @@ function EditProjectModal({
   const [customers, setCustomers] = useState<{ Id: number; Name: string }[]>([]);
   const [projectStatuses, setProjectStatuses] = useState<StatusValue[]>([]);
   const [jiraIntegration, setJiraIntegration] = useState<any>(null);
-  const [githubIntegration, setGithubIntegration] = useState<any>(null);
-  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
   const [availableApplications, setAvailableApplications] = useState<{ Id: number; Name: string }[]>([]);
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
   const [error, setError] = useState('');
@@ -13692,8 +13477,6 @@ function EditProjectModal({
     loadCustomers();
     loadProjectStatuses();
     loadJiraIntegration();
-    loadGitHubIntegration();
-    loadGiteaIntegration();
     loadApplicationsList();
     // Clear any previous errors when modal opens
     setError('');
@@ -13769,43 +13552,6 @@ function EditProjectModal({
     }
   };
 
-  const loadGitHubIntegration = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/github-integrations/organization/${project.OrganizationId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GitHubUrl) {
-          setGithubIntegration(data.integration);
-        } else {
-          setGithubIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load GitHub integration:', err);
-      setGithubIntegration(null);
-    }
-  };
-
-  const loadGiteaIntegration = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/gitea-integrations/organization/${project.OrganizationId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.integration && data.integration.IsEnabled && data.integration.GiteaUrl) {
-          setGiteaIntegration(data.integration);
-        } else {
-          setGiteaIntegration(null);
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load Gitea integration:', err);
-      setGiteaIntegration(null);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -14085,88 +13831,17 @@ function EditProjectModal({
                 </p>
               </div>
             )}
+          <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Git / VCS repositories
+            </label>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Configure repository URL and GitHub / Gitea / Bitbucket credentials on each{' '}
+              <strong>Application</strong>, then link applications to this project. Issue import uses the
+              selected application&apos;s repository.
+            </p>
+          </div>
 
-            {githubIntegration && (
-              <div className="p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-300 dark:border-gray-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                  </svg>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    GitHub Integration
-                  </label>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Owner/Organization
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.gitHubOwner || ''}
-                      onChange={(e) => setFormData({ ...formData, gitHubOwner: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="username or organization-name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.gitHubRepo || ''}
-                      onChange={(e) => setFormData({ ...formData, gitHubRepo: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="repository-name"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Required for GitHub issues import. Find in your repository URL: github.com/<strong>owner</strong>/<strong>repo</strong>
-                </p>
-              </div>
-            )}
-
-            {giteaIntegration && (
-              <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-300 dark:border-green-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg">🍵</span>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Gitea Integration
-                  </label>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Owner/Organization
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.giteaOwner || ''}
-                      onChange={(e) => setFormData({ ...formData, giteaOwner: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="username or organization-name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Repository Name
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.giteaRepo || ''}
-                      onChange={(e) => setFormData({ ...formData, giteaRepo: e.target.value || undefined })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                      placeholder="repository-name"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                  Required for Gitea issues import. Format: <strong>owner/repo</strong>
-                </p>
-              </div>
-            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -14398,8 +14073,7 @@ function DependencyGraphTab({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: 
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">🔗 Dependency Graph</h2>
+      <div className="mb-4 flex items-center justify-end">
         <span className="text-sm text-gray-500 dark:text-gray-400">{diagramTasks.length} linked tasks · click to open</span>
       </div>
       <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
@@ -15207,15 +14881,12 @@ function BurndownTab({ projectId, token }: { projectId: number; token: string })
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">📉 Burndown / Burnup Chart</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
               {new Date(data.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
               {' → '}
               {new Date(endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-            </p>
-          </div>
+          </p>
           <div className="flex gap-2">
             <button
               onClick={() => setChartMode('burndown')}
@@ -15307,7 +14978,7 @@ function BurndownTab({ projectId, token }: { projectId: number; token: string })
                 const val = chartMode === 'burndown' ? s.remaining : s.cumulative;
                 return (
                   <circle
-                    key={s.date}
+                    key={`${s.date}-${i}`}
                     cx={xScale(i)}
                     cy={yScale(val)}
                     r={3}
@@ -15318,12 +14989,12 @@ function BurndownTab({ projectId, token }: { projectId: number; token: string })
 
               {/* X axis */}
               <line x1={0} y1={chartH} x2={chartW} y2={chartH} stroke="#e5e7eb" />
-              {xTicks.map((s) => {
+              {xTicks.map((s, tickIdx) => {
                 const idx = allSeries.indexOf(s);
                 const x = xScale(idx);
                 const label = new Date(s.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
                 return (
-                  <text key={s.date} x={x} y={chartH + 16} textAnchor="middle" fontSize={10} fill="#9ca3af">
+                  <text key={`${s.date}-${tickIdx}`} x={x} y={chartH + 16} textAnchor="middle" fontSize={10} fill="#9ca3af">
                     {label}
                   </text>
                 );
@@ -15366,8 +15037,8 @@ function BurndownTab({ projectId, token }: { projectId: number; token: string })
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {visibleSeries.filter(s => s.worked > 0).map(s => (
-                <tr key={s.date}>
+              {visibleSeries.filter(s => s.worked > 0).map((s, i) => (
+                <tr key={`${s.date}-${i}`}>
                   <td className="py-2 pr-4 text-gray-700 dark:text-gray-300">
                     {new Date(s.date).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
                   </td>
@@ -16085,8 +15756,7 @@ function MilestonesTab({
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">🏁 Milestones</h2>
+      <div className="mb-6 flex items-center justify-end">
         {canManage && (
           <button
             onClick={openCreateModal}
@@ -16741,49 +16411,49 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {error && (
         <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
           {error}
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Sprints</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{sprints.length} sprint{sprints.length !== 1 ? 's' : ''} · {backlog.length} backlog item{backlog.length !== 1 ? 's' : ''}</p>
+      {/* Compact toolbar: counts + view switch + action */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {sprints.length} sprint{sprints.length !== 1 ? 's' : ''} · {backlog.length} backlog item{backlog.length !== 1 ? 's' : ''}
+          </p>
+          <div className="inline-flex items-center rounded-lg border border-gray-200 bg-white p-0.5 dark:border-gray-700 dark:bg-gray-800">
+            <button
+              type="button"
+              onClick={() => setSprintsViewTab('sprints')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                sprintsViewTab === 'sprints'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+            >
+              Sprint Planning
+            </button>
+            <button
+              type="button"
+              onClick={() => setSprintsViewTab('retrospectives')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                sprintsViewTab === 'retrospectives'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+            >
+              Retrospective Actions
+            </button>
+          </div>
         </div>
         <button
           onClick={openCreateSprint}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+          className="inline-flex h-10 items-center rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
           + New Sprint
-        </button>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1 inline-flex items-center">
-        <button
-          type="button"
-          onClick={() => setSprintsViewTab('sprints')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            sprintsViewTab === 'sprints'
-              ? 'bg-blue-600 text-white'
-              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-        >
-          Sprint Planning
-        </button>
-        <button
-          type="button"
-          onClick={() => setSprintsViewTab('retrospectives')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            sprintsViewTab === 'retrospectives'
-              ? 'bg-blue-600 text-white'
-              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-          }`}
-        >
-          Retrospective Actions
         </button>
       </div>
 
@@ -16980,27 +16650,36 @@ function SprintsTab({ projectId, organizationId, token }: { projectId: number; o
       )}
 
       {sprintsViewTab === 'sprints' && velocitySummary && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Recent Velocity</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{velocitySummary.recentAverage.toFixed(1)} SP</p>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Recent</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{velocitySummary.recentAverage.toFixed(1)} SP</span>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Previous Velocity</p>
-            <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{velocitySummary.previousAverage.toFixed(1)} SP</p>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Previous</span>
+            <span className="font-semibold text-gray-900 dark:text-white">{velocitySummary.previousAverage.toFixed(1)} SP</span>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Trend</p>
-            <p className={`mt-1 text-2xl font-semibold ${velocitySummary.trendDirection === 'up' ? 'text-green-600 dark:text-green-400' : velocitySummary.trendDirection === 'down' ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
-              {velocitySummary.trendDirection === 'up' ? '↑' : velocitySummary.trendDirection === 'down' ? '↓' : '→'} {velocitySummary.trendDelta.toFixed(1)} SP
-            </p>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Trend</span>
+            <span
+              className={`font-semibold ${
+                velocitySummary.trendDirection === 'up'
+                  ? 'text-green-600 dark:text-green-400'
+                  : velocitySummary.trendDirection === 'down'
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-gray-900 dark:text-white'
+              }`}
+            >
+              {velocitySummary.trendDirection === 'up' ? '↑' : velocitySummary.trendDirection === 'down' ? '↓' : '→'}{' '}
+              {velocitySummary.trendDelta.toFixed(1)} SP
+            </span>
           </div>
         </div>
       )}
 
       {/* Sprint Task Filters */}
       {sprintsViewTab === 'sprints' && sprints.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2.5">
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide shrink-0">Filter tasks:</span>
             <input

@@ -3,7 +3,7 @@
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, useMemo, Suspense, useCallback, useRef } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -23,7 +23,8 @@ import {
   getDashboardKpiValues,
   saveDashboardKpis,
 } from '@/lib/api/dashboardKpis';
-import Navbar from '@/components/Navbar';
+import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
@@ -38,6 +39,7 @@ import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
+import { Check, Pencil, RefreshCw, X } from 'lucide-react';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -575,7 +577,7 @@ function AssignedKanbanTab({
       }}
     >
       <div
-        className="flex justify-between items-center mb-4"
+        className="mb-4 flex items-center justify-end"
         onDragEnter={(e) => {
           if (!canManage) return;
           e.preventDefault();
@@ -586,7 +588,6 @@ function AssignedKanbanTab({
           e.dataTransfer.dropEffect = 'move';
         }}
       >
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Kanban Board</h1>
         <span className="px-3 py-1 rounded-full text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
           {assignedTasks.length} assigned task{assignedTasks.length === 1 ? '' : 's'}
         </span>
@@ -971,7 +972,13 @@ const CalendarTab = dynamic(
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-100 dark:bg-gray-900"><div className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8"><div className="space-y-5 animate-pulse"><div className="bg-white dark:bg-gray-800 rounded-lg shadow h-24" /><div className="bg-white dark:bg-gray-800 rounded-lg shadow h-14" /><div className="bg-white dark:bg-gray-800 rounded-lg shadow h-96" /></div></div></div>}>
+    <Suspense fallback={
+        <div className="w-full space-y-5 animate-pulse py-6">
+          <div className="h-24 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)]" />
+          <div className="h-14 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)]" />
+          <div className="h-96 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)]" />
+        </div>
+      }>
       <DashboardContent />
     </Suspense>
   );
@@ -1373,7 +1380,7 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      router.push(('/login'));
     }
   }, [isLoading, user, router]);
 
@@ -2530,24 +2537,19 @@ function DashboardContent() {
   
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
-        <div className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
-          </div>
+      <div className="w-full py-6">
+        <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] p-8 text-center">
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--pm-accent)]" />
+          <p className="mt-4 text-[var(--pm-muted)]">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
-
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       {isCustomerUser ? (
-        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <main className="min-h-0 flex-1 overflow-y-auto max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 w-full">
           <div className="px-4 py-6 sm:px-0 space-y-4">
             <InstallAppPrompt />
             {portalLoading ? (
@@ -2684,255 +2686,112 @@ function DashboardContent() {
           </div>
         </main>
       ) : (
-        /* Regular User View with Sidebar */
-        <div className="flex flex-col md:flex-row w-full mx-auto min-h-[calc(100vh-64px)]">
-          {/* Mobile tab bar */}
-          <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-            <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Dashboard tabs">
-              {([
-                { id: 'overview' as const, label: 'Overview', icon: '🏠', href: '/dashboard' },
-                ...(!showCalendarInOverview
-                  ? [{ id: 'calendar' as const, label: 'Calendar', icon: '📅', href: '/dashboard?tab=calendar' }]
-                  : []),
-                { id: 'kanban' as const, label: 'Kanban', icon: '📋', href: '/dashboard?tab=kanban' },
-                ...(user?.isAdmin
-                  ? [{ id: 'analytics' as const, label: 'Analytics', icon: '📊', href: '/dashboard?tab=analytics' }]
-                  : []),
-              ]).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    window.history.pushState({}, '', tab.href);
-                  }}
-                  className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                    activeTab === tab.id
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
+        /* Regular user view — chrome outside scroll (same as project detail) */
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+          <PageStickyChrome>
+            {kpiEditMode && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <select
+                  value={kpiAddType}
+                  onChange={(e) => setKpiAddType(e.target.value as DashboardKpiType | '')}
+                  className="h-8 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-2 text-sm text-[var(--pm-text)]"
                 >
-                  <span className="mr-1">{tab.icon}</span>
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-
-          {/* Sidebar */}
-          <aside className="hidden md:flex w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col shrink-0">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Dashboard</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-              </p>
-            </div>
-
-            <nav className="flex-1 p-4 space-y-1">
-              <button
-                onClick={() => {
-                  setActiveTab('overview');
-                  window.history.pushState({}, '', '/dashboard');
-                }}
-                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                  activeTab === 'overview'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="text-xl">🏠</span>
-                <span className="font-medium">Overview</span>
-              </button>
-
-              {!showCalendarInOverview && (
-                <button
-                  onClick={() => {
-                    setActiveTab('calendar');
-                    window.history.pushState({}, '', '/dashboard?tab=calendar');
-                  }}
-                  className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                    activeTab === 'calendar'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <span className="text-xl">📅</span>
-                  <span className="font-medium">Calendar</span>
-                </button>
-              )}
-
-              <button
-                onClick={() => {
-                  setActiveTab('kanban');
-                  window.history.pushState({}, '', '/dashboard?tab=kanban');
-                }}
-                className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                  activeTab === 'kanban'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="text-xl">📋</span>
-                <span className="font-medium">Kanban Board</span>
-              </button>
-
-              {!!user?.isAdmin && (
-                <button
-                  onClick={() => {
-                    setActiveTab('analytics');
-                    window.history.pushState({}, '', '/dashboard?tab=analytics');
-                  }}
-                  className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                    activeTab === 'analytics'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <span className="text-xl">📊</span>
-                  <span className="font-medium">Analytics</span>
-                </button>
-              )}
-            </nav>
-          </aside>
-
-          {/* Main Content */}
-          <main ref={scrollContainerRef} className="flex-1 overflow-auto p-4 md:p-6 min-w-0">
-            <InstallAppPrompt className="mb-4" />
-            {/* Overview Tab */}
-            {activeTab === 'overview' && (
-            overviewLoading ? (
-              <div className="space-y-6 animate-pulse">
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-28" />
-                <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
-                  {Array.from({ length: internalTicketsEnabled ? 5 : 4 }).map((_, idx) => (
-                    <div key={`overview-kpi-skeleton-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 h-24" />
+                  <option value="">Select KPI</option>
+                  {selectableKpiTemplates.map((template) => (
+                    <option key={template.type} value={template.type}>{template.label}</option>
                   ))}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-72" />
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-72" />
-                </div>
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 h-80" />
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddWidget}
+                  className="h-8 rounded-md bg-[var(--pm-accent)] px-3 text-sm font-semibold text-[var(--pm-accent-fg)] disabled:opacity-50"
+                  disabled={!kpiAddType}
+                >
+                  Add KPI
+                </button>
               </div>
-            ) : (
-            <div className="space-y-6">
-              {/* Welcome Header */}
-              <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-4 sm:p-6 text-white">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <h2 className="text-2xl font-bold">
-                      Welcome back, {user?.firstName || user?.username}!
-                    </h2>
-                    <p className="text-blue-100 mt-1">
-                      {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    {showPendingApprovalAlert && (
-                      <div className="bg-amber-500/95 text-white px-3 py-2 rounded-lg">
-                        <div className="text-xs font-semibold uppercase tracking-wide opacity-90">Approval Required</div>
-                        <div className="mt-1 flex flex-wrap justify-end gap-2">
-                          {pendingApprovals.timeEntries > 0 && pendingApprovals.canApproveTime && (
-                            <button
-                              onClick={() => router.push('/approvals?tab=time')}
-                              className="px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium transition-colors"
-                              title="Open time entries approval"
-                            >
-                              {pendingApprovals.timeEntries} time entr{pendingApprovals.timeEntries === 1 ? 'y' : 'ies'}
-                            </button>
-                          )}
-                          {pendingApprovals.vacations > 0 && pendingApprovals.canApproveVacations && (
-                            <button
-                              onClick={() => router.push('/approvals?tab=vacations')}
-                              className="px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium transition-colors"
-                              title="Open vacations approval"
-                            >
-                              {pendingApprovals.vacations} vacation{pendingApprovals.vacations === 1 ? '' : 's'}
-                            </button>
-                          )}
-                          {pendingApprovals.expenses > 0 && pendingApprovals.canApproveExpenses && (
-                            <button
-                              onClick={() => router.push('/approvals?tab=expenses')}
-                              className="px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-xs font-medium transition-colors"
-                              title="Open expenses approval"
-                            >
-                              {pendingApprovals.expenses} expense{pendingApprovals.expenses === 1 ? '' : 's'}
-                            </button>
-                          )}
-                        </div>
+            )}
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="shrink-0 sm:max-w-[14rem]">
+                <h1 className="text-xl font-semibold leading-tight text-[var(--pm-text)]">Dashboard</h1>
+                <p className="text-xs leading-snug text-[var(--pm-muted)] sm:text-sm">
+                  {new Date().toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </p>
+                <div className="mt-1.5 flex flex-col gap-1.5">
+                  {showPendingApprovalAlert && (
+                    <div className="rounded-md border border-[var(--pm-warn)]/40 bg-[var(--pm-warn)]/15 px-2 py-1.5 text-[var(--pm-text)]">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--pm-warn)]">
+                        Approval Required
                       </div>
-                    )}
-                    {summaryStats.overdueTasks > 0 && (
-                      <div className="bg-red-500 px-4 py-2 rounded-lg">
-                        <span className="text-sm font-medium">⚠️ {summaryStats.overdueTasks} overdue task{summaryStats.overdueTasks > 1 ? 's' : ''}</span>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {pendingApprovals.timeEntries > 0 && pendingApprovals.canApproveTime && (
+                          <button
+                            type="button"
+                            onClick={() => router.push('/approvals?tab=time')}
+                            className="rounded bg-[var(--pm-surface-2)] px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
+                            title="Open time entries approval"
+                          >
+                            {pendingApprovals.timeEntries} time entr
+                            {pendingApprovals.timeEntries === 1 ? 'y' : 'ies'}
+                          </button>
+                        )}
+                        {pendingApprovals.vacations > 0 && pendingApprovals.canApproveVacations && (
+                          <button
+                            type="button"
+                            onClick={() => router.push('/approvals?tab=vacations')}
+                            className="rounded bg-[var(--pm-surface-2)] px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
+                            title="Open vacations approval"
+                          >
+                            {pendingApprovals.vacations} vacation
+                            {pendingApprovals.vacations === 1 ? '' : 's'}
+                          </button>
+                        )}
+                        {pendingApprovals.expenses > 0 && pendingApprovals.canApproveExpenses && (
+                          <button
+                            type="button"
+                            onClick={() => router.push('/approvals?tab=expenses')}
+                            className="rounded bg-[var(--pm-surface-2)] px-2 py-0.5 text-[11px] font-medium transition-colors hover:bg-[var(--pm-accent)] hover:text-[var(--pm-bg)]"
+                            title="Open expenses approval"
+                          >
+                            {pendingApprovals.expenses} expense
+                            {pendingApprovals.expenses === 1 ? '' : 's'}
+                          </button>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
+                  {summaryStats.overdueTasks > 0 && (
+                    <div className="rounded-md border border-[var(--pm-danger)]/40 bg-[var(--pm-danger)]/15 px-2 py-1 text-xs font-medium text-[var(--pm-danger)]">
+                      {summaryStats.overdueTasks} overdue task
+                      {summaryStats.overdueTasks > 1 ? 's' : ''}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Summary Stats Grid */}
-              <div className="space-y-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">KPIs</h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {kpiEditMode ? (
-                      <>
-                        <select
-                          value={kpiAddType}
-                          onChange={(e) => setKpiAddType(e.target.value as DashboardKpiType | '')}
-                          className="h-10 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        >
-                          <option value="">Select KPI</option>
-                          {selectableKpiTemplates.map((template) => (
-                            <option key={template.type} value={template.type}>{template.label}</option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={handleAddWidget}
-                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
-                          disabled={!kpiAddType}
-                        >
-                          Add KPI
-                        </button>
-                        <button
-                          onClick={handleSaveKpis}
-                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
-                          disabled={kpiSaving}
-                        >
-                          {kpiSaving ? 'Saving...' : 'Save'}
-                        </button>
-                        <button
-                          onClick={handleCancelKpiEdit}
-                          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-white"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => setKpiEditMode(true)}
-                        className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white"
-                      >
-                        Edit KPIs
-                      </button>
-                    )}
-                  </div>
-                </div>
-
+              <div className="min-w-0 flex-1">
                 {kpiSectionLoading ? (
-                  <div className={`grid grid-cols-1 md:grid-cols-2 ${internalTicketsEnabled ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
+                  <div className="flex items-stretch gap-2">
                     {Array.from({ length: internalTicketsEnabled ? 5 : 4 }).map((_, idx) => (
-                      <div key={`kpi-card-skeleton-${idx}`} className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 h-36 animate-pulse" />
+                      <div key={`kpi-card-skeleton-${idx}`} className="h-14 min-w-0 flex-1 animate-pulse rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)]" />
                     ))}
-                  </div>
-                ) : kpiWidgets.length === 0 ? (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700 text-center text-gray-600 dark:text-gray-300">
-                    No KPI cards configured. Enter edit mode to add KPI cards.
+                    <div className="h-14 w-9 shrink-0 animate-pulse rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)]" />
                   </div>
                 ) : (
-                  <div className={`grid grid-cols-1 md:grid-cols-2 ${kpiWidgets.length >= 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
-                    {kpiWidgets.map((widget) => {
+                  <div className="flex items-stretch gap-2 overflow-x-auto">
+                    {kpiWidgets.length === 0 ? (
+                      <div className="flex min-h-14 min-w-0 flex-1 items-center justify-center rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-center text-sm text-[var(--pm-muted)]">
+                        No KPI cards configured.
+                      </div>
+                    ) : (
+                      <>
+                        {kpiWidgets.map((widget) => {
                       const template = getKpiTemplate(widget.type);
                       const valueData = kpiValues[widget.id] || { value: 0 };
                       const numericValue = Number(valueData.value || 0);
@@ -2951,17 +2810,17 @@ function DashboardContent() {
                           }}
                           onDrop={() => handleKpiDrop(widget.id)}
                           onClick={() => !kpiEditMode && openKpiDetailModal(widget)}
-                          className={`bg-white dark:bg-gray-800 rounded-lg shadow p-5 border-l-4 kpi-widget-border ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : 'cursor-pointer hover:shadow-lg transition-shadow'}`}
+                          className={`min-w-[7.5rem] flex-1 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] px-2.5 py-1.5 border-l-4 kpi-widget-border ${template?.borderClass || 'border-gray-400'} ${kpiEditMode ? 'cursor-move' : 'cursor-pointer hover:bg-[var(--pm-surface-2)] transition-colors'}`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">{getWidgetDisplayTitle(widget)}</p>
-                              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{formattedValue}{valueData.suffix || ''}</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-[11px] leading-tight text-[var(--pm-muted)]">{getWidgetDisplayTitle(widget)}</p>
+                              <p className="mt-0.5 text-lg font-bold leading-none text-[var(--pm-text)]">{formattedValue}{valueData.suffix || ''}</p>
                               {valueData.subtitle && (
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{valueData.subtitle}</p>
+                                <p className="mt-0.5 truncate text-[10px] text-gray-500 dark:text-gray-400">{valueData.subtitle}</p>
                               )}
                             </div>
-                            <div className="text-3xl opacity-60">{template?.icon || '📌'}</div>
+                            <div className="shrink-0 text-base opacity-70">{template?.icon || '📌'}</div>
                           </div>
 
                           {kpiEditMode && (
@@ -3121,9 +2980,78 @@ function DashboardContent() {
                         </div>
                       );
                     })}
+                  </>
+                )}
+
+                {kpiEditMode ? (
+                  <div className="flex w-9 shrink-0 flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveKpis}
+                      disabled={kpiSaving}
+                      title={kpiSaving ? 'Saving…' : 'Save KPIs'}
+                      aria-label={kpiSaving ? 'Saving KPIs' : 'Save KPIs'}
+                      className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[var(--pm-accent)]/50 bg-[var(--pm-accent)]/15 text-[var(--pm-accent-soft)] hover:bg-[var(--pm-accent)]/25 disabled:opacity-50"
+                    >
+                      <Check size={16} strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelKpiEdit}
+                      title="Cancel"
+                      aria-label="Cancel KPI edit"
+                      className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] text-[var(--pm-muted)] hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-text)]"
+                    >
+                      <X size={16} strokeWidth={2} />
+                    </button>
                   </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setKpiEditMode(true)}
+                    title="Edit KPIs"
+                    aria-label="Edit KPIs"
+                    className="inline-flex w-9 shrink-0 items-center justify-center self-stretch rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] text-[var(--pm-muted)] hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-accent-soft)]"
+                  >
+                    <Pencil size={16} strokeWidth={1.75} />
+                  </button>
                 )}
               </div>
+            )}
+              </div>
+            </div>
+
+          <PageTabs
+            tabs={[
+              { id: 'overview', label: 'Overview' },
+              ...(!showCalendarInOverview ? [{ id: 'calendar', label: 'Calendar' }] : []),
+              { id: 'kanban', label: 'Kanban' },
+              ...(user?.isAdmin ? [{ id: 'analytics', label: 'Analytics' }] : []),
+            ]}
+            activeId={activeTab}
+            onChange={(id) => {
+              const next = id as typeof activeTab;
+              setActiveTab(next);
+              window.history.pushState(
+                {},
+                '',
+                next === 'overview' ? '/dashboard' : `/dashboard?tab=${next}`
+              );
+            }}
+          />
+          </PageStickyChrome>
+
+          <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
+            <InstallAppPrompt className="mb-4" />
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
+            overviewLoading ? (
+              <div className="space-y-4 animate-pulse">
+                <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] h-20" />
+                <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] h-[520px]" />
+              </div>
+            ) : (
+            <div className="space-y-6">
 
               {showCalendarInOverview ? (
                 calendarLoading ? (
@@ -3160,7 +3088,7 @@ function DashboardContent() {
                     <div className="text-center py-8">
                       <p className="text-gray-500 dark:text-gray-400">No tasks scheduled for today</p>
                       <button
-                        onClick={() => router.push('/planning')}
+                        onClick={() => router.push(('/planning'))}
                         className="mt-3 text-blue-600 dark:text-blue-400 hover:underline text-sm"
                       >
                         Go to Planning →
@@ -3203,24 +3131,24 @@ function DashboardContent() {
                 </div>
               )}
 
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 sm:p-6">
-                <div className="mb-3 sm:mb-4 flex flex-col gap-2 sm:gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-3 sm:p-4">
+                <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                      <span className="text-xl sm:text-2xl">📋</span> My Pending Tasks
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                      <span className="text-lg">📋</span> My Pending Tasks
                     </h3>
-                    <p className="hidden sm:block text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="hidden sm:block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                       One list for all open tasks, filtered by planning type.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                    <span className="px-2.5 sm:px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-300">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs font-medium text-gray-600 dark:text-gray-300">
                       {sortedPendingTasks.length} visible
                     </span>
                     <select
                       value={pendingSortBy}
                       onChange={(event) => setPendingSortBy(event.target.value as TaskSortOption)}
-                      className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     >
                       <option value="dueDate">Sort: Due date</option>
                       <option value="priority">Sort: Priority</option>
@@ -3229,7 +3157,7 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                <div className="mb-3 sm:mb-4 flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
+                <div className="mb-2 flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-thin">
                   {[
                     { key: 'all' as const, label: 'All', count: pendingTasks.length },
                     { key: 'scheduled' as const, label: 'Scheduled', count: pendingTasks.length - unscheduledPendingTasks.length },
@@ -3245,14 +3173,14 @@ function DashboardContent() {
                           setPendingWorkFilter(option.key);
                           setShowAllPendingTasks(false);
                         }}
-                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs sm:text-sm transition-colors ${
+                        className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors ${
                           isActive
                             ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/20 dark:text-blue-300'
                             : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                         }`}
                       >
                         <span>{option.label}</span>
-                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] sm:text-xs ${
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
                           isActive
                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                             : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
@@ -3275,7 +3203,8 @@ function DashboardContent() {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-2 sm:space-y-3">
+                  <>
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                     {sortedPendingTasks.slice(0, (isPrintMode || showAllPendingTasks) ? sortedPendingTasks.length : 5).map((task) => {
                       const isOverdue = isTaskOverdue(task.DueDate ? String(task.DueDate) : null);
                       const isUnscheduled = Number(task.UnscheduledWork || 0) === 1;
@@ -3292,292 +3221,349 @@ function DashboardContent() {
                               openTaskDetails(task);
                             }
                           }}
-                          className={`border rounded-lg p-3 sm:p-4 hover:shadow-md transition-shadow cursor-pointer ${
-                            isOverdue
-                              ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10'
-                              : 'border-gray-200 dark:border-gray-700'
+                          className={`px-2.5 py-1.5 sm:px-3 sm:py-2 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/40 ${
+                            isOverdue ? 'bg-red-50/80 dark:bg-red-900/10' : ''
                           }`}
                         >
-                          <div className="flex items-start gap-2 min-w-0">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start gap-2">
-                                <h4 className="font-medium text-sm sm:text-base text-gray-900 dark:text-white line-clamp-2 min-w-0 flex-1">
-                                  {task.TaskName}
-                                </h4>
-                                <div className="hidden sm:flex items-center gap-3 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      openTaskDetails(task);
-                                    }}
-                                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
-                                  >
-                                    Task Details
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      router.push(`/projects/${task.ProjectId}`);
-                                    }}
-                                    className="text-sm text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap"
-                                  >
-                                    Go to Project →
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                {!!task.IsHobby && (
-                                  <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                    Hobby
-                                  </span>
-                                )}
-                                <span className={`text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full ${
-                                  isUnscheduled
-                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                                    : 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
-                                }`}>
-                                  {isUnscheduled ? 'Unscheduled' : 'Scheduled'}
-                                </span>
-                                {isOverdue && (
-                                  <span className="text-[10px] sm:text-xs px-1.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">
-                                    Overdue
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 mt-1 text-xs sm:text-sm text-gray-500 dark:text-gray-400 min-w-0">
-                                <span className="truncate">{task.ProjectName || 'No project'}</span>
-                                {task.CustomerName && (
-                                  <span className="text-blue-500 shrink-0">• {task.CustomerName}</span>
-                                )}
-                                {!task.CustomerName && task.ProjectCustomerName && (
-                                  <span className="text-blue-500 shrink-0">• {task.ProjectCustomerName}</span>
-                                )}
-                              </div>
-                              {!!task.TaskTags?.length && (
-                                <div className="mt-1.5 flex flex-wrap gap-1">
-                                  {task.TaskTags.map((tag) => (
-                                    <SegmentedTagBadge
-                                      key={`${task.Id}-${tag.Id}`}
-                                      name={tag.Name}
-                                      color={tag.Color}
-                                      size="xs"
-                                    />
-                                  ))}
-                                </div>
-                              )}
-                              <div className="flex items-center gap-1.5 sm:gap-3 mt-1.5 flex-wrap">
-                                <span
-                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium"
-                                  style={pillStyle(task.PriorityColor, { alpha: '20' })}
-                                >
-                                  {task.PriorityName || 'Normal'}
-                                </span>
-                                <span
-                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium"
-                                  style={pillStyle(task.StatusColor, { alpha: '20' })}
-                                >
-                                  {task.StatusName || 'Unknown'}
-                                </span>
-                                {task.DueDate && (
-                                  <span className={`text-[10px] sm:text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-500 dark:text-gray-400'}`}>
-                                    📅 {new Date(task.DueDate).toLocaleDateString()}
-                                  </span>
-                                )}
-                                {typeof task.EstimatedHours === 'number' && (
-                                  <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">
-                                    ⏱️ {task.EstimatedHours}h estimated
-                                  </span>
-                                )}
-                                {typeof task.PlannedHours === 'number' && task.PlannedHours > 0 && (
-                                  <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">
-                                    🗓️ {task.PlannedHours}h planned
-                                  </span>
-                                )}
-                                {typeof task.WorkedHours === 'number' && task.WorkedHours > 0 && (
-                                  <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">
-                                    ✅ {task.WorkedHours}h worked
-                                  </span>
-                                )}
-                              </div>
-                              <div className="mt-2 flex sm:hidden">
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    router.push(`/projects/${task.ProjectId}`);
-                                  }}
-                                  className="text-xs text-gray-600 dark:text-gray-300"
-                                >
-                                  Project →
-                                </button>
-                              </div>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h4 className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-white">
+                              {task.TaskName}
+                            </h4>
+                            <div className="hidden sm:flex shrink-0 items-center gap-2.5">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openTaskDetails(task);
+                                }}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                              >
+                                Task Details
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  router.push(`/projects/${task.ProjectId}`);
+                                }}
+                                className="text-xs text-gray-600 dark:text-gray-300 hover:underline whitespace-nowrap"
+                              >
+                                Go to Project →
+                              </button>
                             </div>
+                          </div>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400">
+                            {!!task.IsHobby && (
+                              <span className="rounded px-1.5 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                Hobby
+                              </span>
+                            )}
+                            <span className={`rounded px-1.5 py-0.5 font-medium ${
+                              isUnscheduled
+                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                : 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+                            }`}>
+                              {isUnscheduled ? 'Unscheduled' : 'Scheduled'}
+                            </span>
+                            {isOverdue && (
+                              <span className="rounded px-1.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-medium">
+                                Overdue
+                              </span>
+                            )}
+                            <span className="min-w-0 truncate text-gray-600 dark:text-gray-300">
+                              {task.ProjectName || 'No project'}
+                              {(task.CustomerName || task.ProjectCustomerName) && (
+                                <span className="text-blue-500">
+                                  {' '}• {task.CustomerName || task.ProjectCustomerName}
+                                </span>
+                              )}
+                            </span>
+                            {!!task.TaskTags?.length && task.TaskTags.map((tag) => (
+                              <SegmentedTagBadge
+                                key={`${task.Id}-${tag.Id}`}
+                                name={tag.Name}
+                                color={tag.Color}
+                                size="xs"
+                              />
+                            ))}
+                            <span
+                              className="inline-flex items-center rounded px-1.5 py-0.5 font-medium"
+                              style={pillStyle(task.PriorityColor, { alpha: '20' })}
+                            >
+                              {task.PriorityName || 'Normal'}
+                            </span>
+                            <span
+                              className="inline-flex items-center rounded px-1.5 py-0.5 font-medium"
+                              style={pillStyle(task.StatusColor, { alpha: '20' })}
+                            >
+                              {task.StatusName || 'Unknown'}
+                            </span>
+                            {task.DueDate && (
+                              <span className={isOverdue ? 'text-red-500 font-medium' : ''}>
+                                📅 {new Date(task.DueDate).toLocaleDateString()}
+                              </span>
+                            )}
+                            {typeof task.EstimatedHours === 'number' && (
+                              <span className="hidden sm:inline">⏱️ {task.EstimatedHours}h estimated</span>
+                            )}
+                            {typeof task.PlannedHours === 'number' && task.PlannedHours > 0 && (
+                              <span className="hidden sm:inline">🗓️ {task.PlannedHours}h planned</span>
+                            )}
+                            {typeof task.WorkedHours === 'number' && task.WorkedHours > 0 && (
+                              <span className="hidden sm:inline">✅ {task.WorkedHours}h worked</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                router.push(`/projects/${task.ProjectId}`);
+                              }}
+                              className="sm:hidden text-gray-600 dark:text-gray-300"
+                            >
+                              Project →
+                            </button>
                           </div>
                         </div>
                       );
                     })}
-                    {!isPrintMode && sortedPendingTasks.length > 5 && (
-                      <div className="text-center pt-2">
-                        <button
-                          onClick={() => setShowAllPendingTasks((previous) => !previous)}
-                          className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
-                        >
-                          {showAllPendingTasks
-                            ? 'Show less tasks'
-                            : `View all ${sortedPendingTasks.length} tasks →`}
-                        </button>
-                      </div>
-                    )}
                   </div>
+                  {!isPrintMode && sortedPendingTasks.length > 5 && (
+                    <div className="text-center pt-2">
+                      <button
+                        onClick={() => setShowAllPendingTasks((previous) => !previous)}
+                        className="text-blue-600 dark:text-blue-400 hover:underline text-sm"
+                      >
+                        {showAllPendingTasks
+                          ? 'Show less tasks'
+                          : `View all ${sortedPendingTasks.length} tasks →`}
+                      </button>
+                    </div>
+                  )}
+                  </>
                 )}
               </div>
 
-              {/* Progress Overview */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Overall Progress */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                  <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">📈 Work Progress</h3>
-                  <div className="space-y-4">
-                    {/* Normal Projects */}
-                    {summaryStats.normalEstimatedHours > 0 && (
-                      <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">💼 Work Projects</span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            {decimalHoursToHMS(summaryStats.normalWorkedHours)} / {decimalHoursToHMS(summaryStats.normalEstimatedHours)}
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                          <div 
-                            className={`h-3 rounded-full transition-all ${
-                              summaryStats.normalEstimatedHours > 0 && summaryStats.normalWorkedHours > summaryStats.normalEstimatedHours
-                                ? 'bg-red-500'
-                                : 'bg-green-500'
-                            }`}
-                            style={{ 
-                              width: `${Math.min(100, summaryStats.normalEstimatedHours > 0 ? (summaryStats.normalWorkedHours / summaryStats.normalEstimatedHours) * 100 : 0)}%` 
-                            }}
-                          />
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {summaryStats.normalEstimatedHours > 0 
-                            ? `${Math.round((summaryStats.normalWorkedHours / summaryStats.normalEstimatedHours) * 100)}% of estimated hours`
-                            : 'No estimated hours set'}
-                        </p>
+              {/* Work Progress — full width (Quick Actions removed) */}
+              <div className="rounded-lg border border-gray-200 bg-white p-3 shadow dark:border-gray-700 dark:bg-gray-800 sm:p-4">
+                <h3 className="mb-3 text-base font-semibold text-gray-900 dark:text-white">📈 Work Progress</h3>
+
+                <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                  {[
+                    { label: 'Allocated today', value: decimalHoursToHMS(summaryStats.allocatedToday) },
+                    { label: 'Worked this week', value: decimalHoursToHMS(summaryStats.hoursThisWeek) },
+                    { label: 'Worked this month', value: decimalHoursToHMS(summaryStats.hoursThisMonth) },
+                    {
+                      label: 'Remaining (work)',
+                      value: decimalHoursToHMS(
+                        Math.max(0, summaryStats.normalEstimatedHours - summaryStats.normalWorkedHours)
+                      ),
+                    },
+                    { label: 'My pending', value: String(pendingTasks.length) },
+                    {
+                      label: 'Overdue',
+                      value: String(summaryStats.overdueTasks),
+                      warn: summaryStats.overdueTasks > 0,
+                    },
+                  ].map((stat) => (
+                    <div
+                      key={stat.label}
+                      className={`rounded-md border px-2.5 py-2 ${
+                        stat.warn
+                          ? 'border-red-300/60 bg-red-50 dark:border-red-700/50 dark:bg-red-900/15'
+                          : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40'
+                      }`}
+                    >
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        {stat.label}
+                      </p>
+                      <p
+                        className={`mt-0.5 text-sm font-semibold tabular-nums ${
+                          stat.warn ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'
+                        }`}
+                      >
+                        {stat.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      Overall vs estimate
+                    </h4>
+
+                    <div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">💼 Work Projects</span>
+                        <span className="text-sm font-medium tabular-nums text-gray-900 dark:text-white">
+                          {decimalHoursToHMS(summaryStats.normalWorkedHours)} /{' '}
+                          {decimalHoursToHMS(summaryStats.normalEstimatedHours)}
+                        </span>
                       </div>
-                    )}
-                    
-                    {/* Hobby Projects */}
-                    {summaryStats.hobbyEstimatedHours > 0 && (
-                      <div className={summaryStats.normalEstimatedHours > 0 ? 'pt-4 border-t dark:border-gray-700' : ''}>
-                        <div className="flex justify-between items-center mb-2">
+                      <div className="h-2.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+                        <div
+                          className={`h-2.5 rounded-full transition-all ${
+                            summaryStats.normalEstimatedHours > 0 &&
+                            summaryStats.normalWorkedHours > summaryStats.normalEstimatedHours
+                              ? 'bg-red-500'
+                              : 'bg-green-500'
+                          }`}
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              summaryStats.normalEstimatedHours > 0
+                                ? (summaryStats.normalWorkedHours / summaryStats.normalEstimatedHours) * 100
+                                : 0
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {summaryStats.normalEstimatedHours > 0
+                          ? `${Math.round(
+                              (summaryStats.normalWorkedHours / summaryStats.normalEstimatedHours) * 100
+                            )}% of estimated hours`
+                          : 'No estimated hours set'}
+                        {summaryStats.normalWorkedHours > summaryStats.normalEstimatedHours &&
+                          summaryStats.normalEstimatedHours > 0 && (
+                            <span className="text-red-500">
+                              {' '}
+                              · {decimalHoursToHMS(
+                                summaryStats.normalWorkedHours - summaryStats.normalEstimatedHours
+                              )}{' '}
+                              over
+                            </span>
+                          )}
+                      </p>
+                    </div>
+
+                    {(summaryStats.hobbyEstimatedHours > 0 || summaryStats.hobbyWorkedHours > 0) && (
+                      <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
                           <span className="text-sm text-gray-600 dark:text-gray-400">🎮 Hobby Projects</span>
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            {decimalHoursToHMS(summaryStats.hobbyWorkedHours)} / {decimalHoursToHMS(summaryStats.hobbyEstimatedHours)}
+                          <span className="text-sm font-medium tabular-nums text-gray-900 dark:text-white">
+                            {decimalHoursToHMS(summaryStats.hobbyWorkedHours)} /{' '}
+                            {decimalHoursToHMS(summaryStats.hobbyEstimatedHours)}
                           </span>
                         </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                          <div 
-                            className={`h-3 rounded-full transition-all ${
-                              summaryStats.hobbyEstimatedHours > 0 && summaryStats.hobbyWorkedHours > summaryStats.hobbyEstimatedHours
+                        <div className="h-2.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+                          <div
+                            className={`h-2.5 rounded-full transition-all ${
+                              summaryStats.hobbyEstimatedHours > 0 &&
+                              summaryStats.hobbyWorkedHours > summaryStats.hobbyEstimatedHours
                                 ? 'bg-red-500'
                                 : 'bg-purple-500'
                             }`}
-                            style={{ 
-                              width: `${Math.min(100, summaryStats.hobbyEstimatedHours > 0 ? (summaryStats.hobbyWorkedHours / summaryStats.hobbyEstimatedHours) * 100 : 0)}%` 
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                summaryStats.hobbyEstimatedHours > 0
+                                  ? (summaryStats.hobbyWorkedHours / summaryStats.hobbyEstimatedHours) * 100
+                                  : 0
+                              )}%`,
                             }}
                           />
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {summaryStats.hobbyEstimatedHours > 0 
-                            ? `${Math.round((summaryStats.hobbyWorkedHours / summaryStats.hobbyEstimatedHours) * 100)}% of estimated hours`
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {summaryStats.hobbyEstimatedHours > 0
+                            ? `${Math.round(
+                                (summaryStats.hobbyWorkedHours / summaryStats.hobbyEstimatedHours) * 100
+                              )}% of estimated hours`
                             : 'No estimated hours set'}
                         </p>
                       </div>
                     )}
-                    
-                    <div className="pt-4 border-t dark:border-gray-700">
-                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Weekly Progress</h4>
-                      
-                      {/* Normal Weekly Progress */}
-                      {summaryStats.normalAllocatedThisWeek > 0 && (
-                        <div className="mb-3">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs text-gray-600 dark:text-gray-400">💼 Work</span>
-                            <span className="text-xs font-medium text-gray-900 dark:text-white">
-                              {decimalHoursToHMS(summaryStats.normalHoursThisWeek)} / {decimalHoursToHMS(summaryStats.normalAllocatedThisWeek)}
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                            <div 
-                              className="bg-blue-500 h-2 rounded-full transition-all"
-                              style={{ 
-                                width: `${Math.min(100, summaryStats.normalAllocatedThisWeek > 0 ? (summaryStats.normalHoursThisWeek / summaryStats.normalAllocatedThisWeek) * 100 : 0)}%` 
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Hobby Weekly Progress */}
-                      {summaryStats.hobbyAllocatedThisWeek > 0 && (
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs text-gray-600 dark:text-gray-400">🎮 Hobby</span>
-                            <span className="text-xs font-medium text-gray-900 dark:text-white">
-                              {decimalHoursToHMS(summaryStats.hobbyHoursThisWeek)} / {decimalHoursToHMS(summaryStats.hobbyAllocatedThisWeek)}
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                            <div 
-                              className="bg-purple-500 h-2 rounded-full transition-all"
-                              style={{ 
-                                width: `${Math.min(100, summaryStats.hobbyAllocatedThisWeek > 0 ? (summaryStats.hobbyHoursThisWeek / summaryStats.hobbyAllocatedThisWeek) * 100 : 0)}%` 
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
-                </div>
 
-                {/* Quick Actions */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                  <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">⚡ Quick Actions</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => router.push('/timesheet')}
-                      className="flex items-center gap-3 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                    >
-                      <span className="text-2xl">⏱️</span>
-                      <span className="font-medium text-gray-900 dark:text-white">Log Time</span>
-                    </button>
-                    <button
-                      onClick={() => router.push('/planning')}
-                      className="flex items-center gap-3 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-green-500 dark:hover:border-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
-                    >
-                      <span className="text-2xl">📅</span>
-                      <span className="font-medium text-gray-900 dark:text-white">Planning</span>
-                    </button>
-                    <button
-                      onClick={() => router.push('/projects')}
-                      className="flex items-center gap-3 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-purple-500 dark:hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
-                    >
-                      <span className="text-2xl">📁</span>
-                      <span className="font-medium text-gray-900 dark:text-white">Projects</span>
-                    </button>
-                    {!showCalendarInOverview && (
-                      <button
-                        onClick={() => setActiveTab('calendar')}
-                        className="flex items-center gap-3 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-orange-500 dark:hover:border-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-                      >
-                        <span className="text-2xl">🗓️</span>
-                        <span className="font-medium text-gray-900 dark:text-white">Calendar</span>
-                      </button>
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      This week vs allocated
+                    </h4>
+
+                    <div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="text-xs text-gray-600 dark:text-gray-400">💼 Work</span>
+                        <span className="text-xs font-medium tabular-nums text-gray-900 dark:text-white">
+                          {decimalHoursToHMS(summaryStats.normalHoursThisWeek)} /{' '}
+                          {decimalHoursToHMS(summaryStats.normalAllocatedThisWeek)}
+                        </span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+                        <div
+                          className="h-2 rounded-full bg-blue-500 transition-all"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              summaryStats.normalAllocatedThisWeek > 0
+                                ? (summaryStats.normalHoursThisWeek / summaryStats.normalAllocatedThisWeek) * 100
+                                : 0
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {summaryStats.normalAllocatedThisWeek > 0
+                          ? `${Math.round(
+                              (summaryStats.normalHoursThisWeek / summaryStats.normalAllocatedThisWeek) * 100
+                            )}% of planned allocation`
+                          : 'No work allocation this week'}
+                      </p>
+                    </div>
+
+                    {(summaryStats.hobbyAllocatedThisWeek > 0 || summaryStats.hobbyHoursThisWeek > 0) && (
+                      <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-xs text-gray-600 dark:text-gray-400">🎮 Hobby</span>
+                          <span className="text-xs font-medium tabular-nums text-gray-900 dark:text-white">
+                            {decimalHoursToHMS(summaryStats.hobbyHoursThisWeek)} /{' '}
+                            {decimalHoursToHMS(summaryStats.hobbyAllocatedThisWeek)}
+                          </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+                          <div
+                            className="h-2 rounded-full bg-purple-500 transition-all"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                summaryStats.hobbyAllocatedThisWeek > 0
+                                  ? (summaryStats.hobbyHoursThisWeek / summaryStats.hobbyAllocatedThisWeek) * 100
+                                  : 0
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {summaryStats.hobbyAllocatedThisWeek > 0
+                            ? `${Math.round(
+                                (summaryStats.hobbyHoursThisWeek / summaryStats.hobbyAllocatedThisWeek) * 100
+                              )}% of planned allocation`
+                            : 'No hobby allocation this week'}
+                        </p>
+                      </div>
                     )}
+
+                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300">
+                      <div className="flex justify-between gap-2">
+                        <span>Allocated this week (all)</span>
+                        <span className="font-medium tabular-nums text-gray-900 dark:text-white">
+                          {decimalHoursToHMS(summaryStats.allocatedThisWeek)}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-2">
+                        <span>Unscheduled pending</span>
+                        <span className="font-medium tabular-nums text-gray-900 dark:text-white">
+                          {unscheduledPendingTasks.length}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-2">
+                        <span>My tasks (open)</span>
+                        <span className="font-medium tabular-nums text-gray-900 dark:text-white">
+                          {summaryStats.myTasks}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3627,49 +3613,50 @@ function DashboardContent() {
             />
           )}
 
-          {/* Resume Tab */}
               {/* Analytics Tab - Admin Only */}
               {activeTab === 'analytics' && user?.isAdmin && (
-            <div className="space-y-6">
-              {/* Analytics Header */}
-              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow p-6 text-white">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div>
-                    <h2 className="text-2xl font-bold">📊 Analytics Dashboard</h2>
-                    <p className="text-indigo-100 mt-1">Global statistics and KPIs across all organizations</p>
-                    <p className="text-indigo-100/90 text-sm mt-1">
-                      Period: {selectedAnalyticsRange
-                        ? `${selectedAnalyticsRange.from} to ${selectedAnalyticsRange.to}`
-                        : 'All Time'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {([
-                      { key: 'thisWeek', label: 'This Week' },
-                      { key: 'lastWeek', label: 'Last Week' },
-                      { key: 'thisMonth', label: 'This Month' },
-                      { key: 'lastMonth', label: 'Last Month' },
-                      { key: 'allTime', label: 'All Time' },
-                    ] as { key: AnalyticsPeriod; label: string }[]).map(period => (
-                      <button
-                        key={period.key}
-                        onClick={() => setAnalyticsPeriod(period.key)}
-                        className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                          analyticsPeriod === period.key
-                            ? 'bg-white text-indigo-700 font-semibold'
-                            : 'bg-white/20 hover:bg-white/30 text-white'
-                        }`}
-                      >
-                        {period.label}
-                      </button>
-                    ))}
-                    <button 
-                      onClick={() => loadGlobalStats(analyticsPeriod)}
-                      className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-colors"
+            <div className="space-y-4">
+              {/* Compact filter bar — Synapse chrome (no purple banner) */}
+              <div className="flex flex-col gap-2 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-[var(--pm-text)]">Analytics</h2>
+                  <p className="truncate text-xs text-[var(--pm-muted)]">
+                    {selectedAnalyticsRange
+                      ? `${selectedAnalyticsRange.from} → ${selectedAnalyticsRange.to}`
+                      : 'All time'}
+                    <span className="text-[var(--pm-muted)]/80"> · global KPIs</span>
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {([
+                    { key: 'thisWeek', label: 'This Week' },
+                    { key: 'lastWeek', label: 'Last Week' },
+                    { key: 'thisMonth', label: 'This Month' },
+                    { key: 'lastMonth', label: 'Last Month' },
+                    { key: 'allTime', label: 'All Time' },
+                  ] as { key: AnalyticsPeriod; label: string }[]).map((period) => (
+                    <button
+                      key={period.key}
+                      type="button"
+                      onClick={() => setAnalyticsPeriod(period.key)}
+                      className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                        analyticsPeriod === period.key
+                          ? 'border-[var(--pm-accent)] bg-[var(--pm-accent)]/15 text-[var(--pm-accent-soft)]'
+                          : 'border-[var(--pm-border)] bg-[var(--pm-surface)] text-[var(--pm-muted)] hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-text)]'
+                      }`}
                     >
-                      🔄 Refresh
+                      {period.label}
                     </button>
-                  </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => loadGlobalStats(analyticsPeriod)}
+                    title="Refresh"
+                    aria-label="Refresh analytics"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] text-[var(--pm-muted)] hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-text)]"
+                  >
+                    <RefreshCw size={14} strokeWidth={2} />
+                  </button>
                 </div>
               </div>
 

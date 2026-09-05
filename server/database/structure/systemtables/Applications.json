@@ -47,6 +47,24 @@
       "Comment": "Foreign key - reference to Organizations.Id that owns this application"
     },
     {
+      "FieldName": "GitHubIntegrationId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Optional FK to OrganizationGitHubIntegrations.Id for this application"
+    },
+    {
+      "FieldName": "GiteaIntegrationId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Optional FK to OrganizationGiteaIntegrations.Id for this application"
+    },
+    {
+      "FieldName": "BitbucketIntegrationId",
+      "DataType": "int",
+      "NotNullable": false,
+      "Comment": "Optional FK to OrganizationBitbucketIntegrations.Id for this application"
+    },
+    {
       "FieldName": "IsActive",
       "DataType": "tinyint(1)",
       "NotNullable": true,

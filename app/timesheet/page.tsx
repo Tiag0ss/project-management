@@ -1,4 +1,6 @@
 'use client';
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 
 import { getApiUrl } from '@/lib/api/config';
 
@@ -8,8 +10,8 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { usersApi, User } from '@/lib/api/users';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import SearchableSelect from '@/components/SearchableSelect';
 import RichTextEditor from '@/components/RichTextEditor';
@@ -147,6 +149,18 @@ export default function TimesheetPage() {
   const [historyDateTo, setHistoryDateTo] = useState(() => new Date().toISOString().split('T')[0]);
   const [historyProjectFilter, setHistoryProjectFilter] = useState('');
   const [historyTaskFilter, setHistoryTaskFilter] = useState('');
+  const defaultHistoryDateFrom = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split('T')[0];
+  }, []);
+  const defaultHistoryDateTo = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const historyFilterActiveCount = [
+    historyDateFrom !== defaultHistoryDateFrom ? 1 : 0,
+    historyDateTo !== defaultHistoryDateTo ? 1 : 0,
+    historyProjectFilter ? 1 : 0,
+    historyTaskFilter ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
   const [groupByDays, setGroupByDays] = useState(false);
   const [modalMessage, setModalMessage] = useState<{
     type: 'alert' | 'confirm';
@@ -910,9 +924,7 @@ export default function TimesheetPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
@@ -922,19 +934,15 @@ export default function TimesheetPage() {
 
   return (
     <CustomerUserGuard>
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
+      <div className="w-full">
 
         <main className="w-full mx-auto py-6 sm:px-6 lg:px-8">
-          <div className="px-4 py-6 sm:px-0">
-            {/* Page Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-6 text-white mb-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-3xl font-bold">Timesheet</h1>
-                  <p className="text-blue-100 mt-1">Track your hours and review your time entries</p>
-                </div>
-              </div>
+          <div className="px-4 sm:px-0 space-y-4">
+            <div>
+              <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Timesheet</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Track your hours and review your time entries.
+              </p>
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
@@ -1673,7 +1681,13 @@ export default function TimesheetPage() {
                           </button>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                      <CollapsibleFilterPanel
+                        className="mb-2"
+                        title="Entry filters"
+                        activeCount={historyFilterActiveCount}
+                        bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             From
@@ -1733,7 +1747,8 @@ export default function TimesheetPage() {
                             })}
                           </select>
                         </div>
-                      </div>
+                        </div>
+                      </CollapsibleFilterPanel>
                       <div className="flex items-center">
                         <label className="flex items-center cursor-pointer">
                           <input

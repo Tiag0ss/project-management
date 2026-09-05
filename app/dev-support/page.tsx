@@ -1,9 +1,11 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Navbar from '@/components/Navbar';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { getApiUrl } from '@/lib/api/config';
 
@@ -110,7 +112,7 @@ export default function DevSupportManagementPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
       return;
     }
 
@@ -200,155 +202,156 @@ export default function DevSupportManagementPage() {
   };
 
   if (!user || (!canManage && isLoading)) {
-    return (
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
-        <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <p className="text-gray-600 dark:text-gray-300">Loading...</p>
-        </main>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!canManage) {
     return null;
   }
 
+  const fieldClass =
+    'w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]';
+
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
-      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dev Support</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Schedule informational dev support days for your team. Visible in planning and calendar; does not block allocation.
+    <div className="w-full">
+      <main className="w-full space-y-3 p-4 sm:p-6">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          <p className="max-w-2xl text-xs text-[var(--pm-muted)]">
+            Schedule informational dev support days for your team. Visible in planning and calendar; does not
+            block allocation.
+            {user?.isAdmin
+              ? ' Admins can manage any active user.'
+              : ' Team leaders can manage direct reports only.'}
           </p>
-        </div>
-
-        {message && (
-          <div className="mb-6 p-4 bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200 rounded-lg">
-            {message}
-          </div>
-        )}
-
-        {!isLoading && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">Team members</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{stats.teamSize}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">in scope</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">Scheduled days</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{stats.totalDays}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">in current view</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">Users with days</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{stats.membersWithDays}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">in {year}</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">Filtered users</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{stats.uniqueUsers}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">shown in table</div>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="flex flex-wrap items-end gap-2">
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Year</label>
+              <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Year</label>
               <input
                 type="number"
                 min={2000}
                 max={2100}
                 value={year}
                 onChange={(e) => setYear(Number(e.target.value) || new Date().getFullYear())}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                className="w-24 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Team member</label>
+            <div className="min-w-[12rem] flex-1 sm:min-w-[14rem] sm:flex-none">
+              <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Team member</label>
               <select
                 value={selectedMemberId}
                 onChange={(e) => setSelectedMemberId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                className={fieldClass}
               >
                 <option value="">All users</option>
                 {members.map((member) => (
                   <option key={member.Id} value={member.Id}>
-                    {getMemberLabel(member)} ({Number(member.DevSupportDays || 0)} day{Number(member.DevSupportDays || 0) === 1 ? '' : 's'})
+                    {getMemberLabel(member)} ({Number(member.DevSupportDays || 0)} day
+                    {Number(member.DevSupportDays || 0) === 1 ? '' : 's'})
                   </option>
                 ))}
               </select>
             </div>
-          </div>
-          <div className="mt-3 flex items-center gap-3">
             <button
-              onClick={() => void loadData()}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              type="button"
+              onClick={openAddModal}
+              disabled={members.length === 0}
+              className="inline-flex h-9 items-center rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:bg-gray-400"
             >
-              Apply filters
+              Add Dev Support
             </button>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {user?.isAdmin ? 'Admins can manage any active user.' : 'Team leaders can manage direct reports only.'}
-            </p>
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Team Dev Support Days</h2>
-          <button
-            onClick={openAddModal}
-            disabled={members.length === 0}
-            className="h-9 px-4 inline-flex items-center rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white transition-colors"
-          >
-            Add Dev Support
-          </button>
-        </div>
+        {message && (
+          <div className="rounded border border-blue-300 bg-blue-100 px-3 py-2 text-sm text-blue-800 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-200">
+            {message}
+          </div>
+        )}
+
+        {!isLoading && (
+          <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2 sm:grid-cols-4 sm:gap-4">
+            <div>
+              <p className="text-[11px] text-[var(--pm-muted)]">Team members</p>
+              <p className="text-sm font-semibold tabular-nums text-[var(--pm-text)]">{stats.teamSize}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-[var(--pm-muted)]">Scheduled days</p>
+              <p className="text-sm font-semibold tabular-nums text-[var(--pm-text)]">{stats.totalDays}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-[var(--pm-muted)]">Users with days</p>
+              <p className="text-sm font-semibold tabular-nums text-[var(--pm-text)]">{stats.membersWithDays}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-[var(--pm-muted)]">Filtered users</p>
+              <p className="text-sm font-semibold tabular-nums text-[var(--pm-text)]">{stats.uniqueUsers}</p>
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
-          <div className="text-gray-600 dark:text-gray-300">Loading dev support…</div>
+          <div className="py-8 text-center text-sm text-[var(--pm-muted)]">Loading dev support…</div>
         ) : entries.length === 0 ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-8 text-center text-sm text-[var(--pm-muted)]">
             No dev support days found for this filter.
           </div>
         ) : (
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="overflow-hidden rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)]">
+            <div className="border-b border-[var(--pm-border)] px-3 py-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">
+                Entries ({entries.length})
+              </span>
+            </div>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-900">
+              <table className="min-w-full divide-y divide-[var(--pm-border)]">
+                <thead className="bg-[var(--pm-panel)]">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">User</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Notes</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Added by</th>
-                    <th scope="col" className="relative px-4 py-3"><span className="sr-only">Actions</span></th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
+                      User
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
+                      Date
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
+                      Notes
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
+                      Added by
+                    </th>
+                    <th scope="col" className="relative px-3 py-2">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-[var(--pm-border)]">
                   {entries.map((entry) => (
-                    <tr key={entry.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
+                    <tr key={entry.Id} className="hover:bg-[var(--pm-panel)]">
+                      <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-text)]">
                         {getMemberLabel(entry)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
+                      <td className="whitespace-nowrap px-3 py-2 text-sm tabular-nums text-[var(--pm-text)]">
                         {String(entry.DevSupportDate).split('T')[0]}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
-                        {entry.Notes || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      <td className="px-3 py-2 text-sm text-[var(--pm-muted)]">{entry.Notes || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-muted)]">
                         {entry.CreatedByName || '—'}
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
                         <button
+                          type="button"
                           onClick={() => setDeleteTarget(entry)}
-                          className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
+                          title="Delete"
+                          aria-label="Delete"
+                          className="rounded p-1.5 text-[var(--pm-muted)] transition-colors hover:text-red-600 dark:hover:text-red-400"
                         >
-                          Delete
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
                         </button>
                       </td>
                     </tr>
@@ -361,26 +364,24 @@ export default function DevSupportManagementPage() {
       </main>
 
       {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full">
-            <div className="p-6 space-y-4">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-[var(--pm-border)] bg-[var(--pm-surface)] shadow-xl">
+            <div className="space-y-3 p-4 sm:p-5">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Dev Support</h3>
+                <h3 className="text-sm font-semibold text-[var(--pm-text)]">Add Dev Support</h3>
                 <button
+                  type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                  className="rounded p-1 text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
+                  aria-label="Close"
                 >
                   ✕
                 </button>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Team member</label>
-                <select
-                  value={addMemberId}
-                  onChange={(e) => setAddMemberId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Team member</label>
+                <select value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} className={fieldClass}>
                   {members.map((member) => (
                     <option key={member.Id} value={member.Id}>
                       {getMemberLabel(member)}
@@ -389,51 +390,53 @@ export default function DevSupportManagementPage() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start date</label>
+                  <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Start date</label>
                   <input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className={fieldClass}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End date</label>
+                  <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">End date</label>
                   <input
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className={fieldClass}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+                <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Notes</label>
                 <input
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className={fieldClass}
                   placeholder="Optional notes"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-1">
                 <button
+                  type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg"
+                  className="h-9 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-sm font-medium text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={() => void handleConfigure()}
                   disabled={isSaving || !addMemberId}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-lg"
+                  className="h-9 rounded-lg bg-indigo-600 px-3 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-gray-400"
                 >
-                  {isSaving ? 'Saving...' : `Add ${getRequestDays(startDate, endDate)} day(s)`}
+                  {isSaving ? 'Saving…' : `Add ${getRequestDays(startDate, endDate)} day(s)`}
                 </button>
               </div>
             </div>
@@ -442,28 +445,28 @@ export default function DevSupportManagementPage() {
       )}
 
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[110] p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Delete Dev Support Day</h3>
-              <p className="text-sm text-gray-700 dark:text-gray-300 mb-6">
-                Delete dev support for <span className="font-medium">{getMemberLabel(deleteTarget)}</span> on{' '}
-                <span className="font-medium">{String(deleteTarget.DevSupportDate).split('T')[0]}</span>?
-              </p>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => void handleDelete()}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
-                >
-                  Delete
-                </button>
-              </div>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg border border-[var(--pm-border)] bg-[var(--pm-surface)] p-4 shadow-xl sm:p-5">
+            <h3 className="mb-1 text-sm font-semibold text-[var(--pm-text)]">Delete Dev Support Day</h3>
+            <p className="mb-4 text-sm text-[var(--pm-muted)]">
+              Delete dev support for <span className="font-medium text-[var(--pm-text)]">{getMemberLabel(deleteTarget)}</span> on{' '}
+              <span className="font-medium text-[var(--pm-text)]">{String(deleteTarget.DevSupportDate).split('T')[0]}</span>?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="h-9 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-sm font-medium text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                className="h-9 rounded-lg bg-red-600 px-3 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>

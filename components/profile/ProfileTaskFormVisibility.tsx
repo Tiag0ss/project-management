@@ -1,15 +1,21 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
+import TaskFormVisibilitySettingsPanel, {
+  type TaskFormVisibilityActionsState,
+} from '@/components/admin/TaskFormVisibilitySettingsPanel';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import { organizationsApi, Organization } from '@/lib/api/organizations';
 
 interface ProfileTaskFormVisibilityProps {
   token: string;
+  onActionsStateChange?: (state: TaskFormVisibilityActionsState | null) => void;
 }
 
-export default function ProfileTaskFormVisibility({ token }: ProfileTaskFormVisibilityProps) {
+export default function ProfileTaskFormVisibility({
+  token,
+  onActionsStateChange,
+}: ProfileTaskFormVisibilityProps) {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [organizationId, setOrganizationId] = useState<number | null>(null);
   const [loadingOrgs, setLoadingOrgs] = useState(true);
@@ -43,13 +49,17 @@ export default function ProfileTaskFormVisibility({ token }: ProfileTaskFormVisi
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!organizationId) onActionsStateChange?.(null);
+  }, [organizationId, onActionsStateChange]);
+
   if (loadingOrgs) {
-    return <div className="text-sm text-gray-500 dark:text-gray-400">Loading organizations…</div>;
+    return <div className="text-sm text-[var(--pm-muted)]">Loading organizations…</div>;
   }
 
   if (loadError) {
     return (
-      <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
+      <div className="rounded-lg border border-red-400 bg-red-100 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
         {loadError}
       </div>
     );
@@ -57,22 +67,20 @@ export default function ProfileTaskFormVisibility({ token }: ProfileTaskFormVisi
 
   if (organizations.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 text-sm text-gray-600 dark:text-gray-300">
+      <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3 text-sm text-[var(--pm-muted)]">
         You are not a member of any organization, so there is no task form layout to customize.
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Organization
-        </label>
+    <div className="space-y-3">
+      <div>
+        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Organization</label>
         <select
           value={organizationId ?? ''}
           onChange={(e) => setOrganizationId(Number(e.target.value))}
-          className="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full max-w-md rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
         >
           {organizations.map((org) => (
             <option key={org.Id} value={org.Id}>
@@ -81,24 +89,24 @@ export default function ProfileTaskFormVisibility({ token }: ProfileTaskFormVisi
             </option>
           ))}
         </select>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
           Personal overrides are per organization. Cascade: your override → organization → global.
         </p>
       </div>
 
       {organizationId && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-          <TaskFormVisibilitySettingsPanel
-            mode="user"
-            token={token}
-            organizationId={organizationId}
-            canManage
-            onRequestResetConfirm={(onConfirm) => {
-              setPendingReset(() => onConfirm);
-              setResetConfirmOpen(true);
-            }}
-          />
-        </div>
+        <TaskFormVisibilitySettingsPanel
+          mode="user"
+          token={token}
+          organizationId={organizationId}
+          canManage
+          actionsPlacement="none"
+          onActionsStateChange={onActionsStateChange}
+          onRequestResetConfirm={(onConfirm) => {
+            setPendingReset(() => onConfirm);
+            setResetConfirmOpen(true);
+          }}
+        />
       )}
 
       <ConfirmAlertModal

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import type {
   TaskAnalyticsData,
   TaskAnalyticsParentProgress,
@@ -177,11 +178,14 @@ export function TaskAnalyticsCharts({
   viewAllHref,
   onViewAll,
   className,
+  fourthCard,
 }: {
   data: TaskAnalyticsData | null | undefined;
   viewAllHref?: string;
   onViewAll?: () => void;
   className?: string;
+  /** When set, replaces the default "Parent task progress" card (e.g. Team Members on project overview). */
+  fourthCard?: ReactNode;
 }) {
   if (!data) return null;
 
@@ -193,7 +197,9 @@ export function TaskAnalyticsCharts({
     priority.some((r) => r.value > 0) ||
     types.some((r) => r.value > 0) ||
     workload.some((r) => r.value > 0) ||
-    parents.some((r) => r.done + r.inProgress + r.todo > 0);
+    (fourthCard
+      ? true
+      : parents.some((r) => r.done + r.inProgress + r.todo > 0));
 
   const viewAll =
     onViewAll || viewAllHref ? (
@@ -243,13 +249,15 @@ export function TaskAnalyticsCharts({
           >
             <WorkloadBars rows={workload} />
           </ChartCard>
-          <ChartCard
-            title="Parent task progress"
-            subtitle="Done / in progress / to do"
-            empty={parents.length === 0}
-          >
-            <ParentProgressBars rows={parents} />
-          </ChartCard>
+          {fourthCard ?? (
+            <ChartCard
+              title="Parent task progress"
+              subtitle="Done / in progress / to do"
+              empty={parents.length === 0}
+            >
+              <ParentProgressBars rows={parents} />
+            </ChartCard>
+          )}
         </div>
       )}
     </section>

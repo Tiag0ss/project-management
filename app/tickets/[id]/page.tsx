@@ -1,12 +1,13 @@
 'use client';
 
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import TicketHistory from '@/components/TicketHistory';
 import AttachmentUploader, { AttachmentList } from '@/components/AttachmentManager';
@@ -176,7 +177,7 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
     }
   }, [user, isLoading, router]);
 
@@ -342,8 +343,8 @@ export default function TicketDetailPage() {
       setEditForm({
         title: data.ticket.Title,
         description: data.ticket.Description || '',
-        status: data.ticket.Status || '',
-        priority: data.ticket.Priority || '',
+        status: data.ticket.StatusId != null ? String(data.ticket.StatusId) : '',
+        priority: data.ticket.PriorityId != null ? String(data.ticket.PriorityId) : '',
         category: data.ticket.Category || '',
         assignedToUserId: data.ticket.AssignedToUserId?.toString() || '',
         developerUserId: data.ticket.DeveloperUserId?.toString() || '',
@@ -662,8 +663,8 @@ export default function TicketDetailPage() {
           body: JSON.stringify({
             title: editForm.title.trim(),
             description: editForm.description || null,
-            status: editForm.status,
-            priority: editForm.priority,
+            status: editForm.status ? parseInt(editForm.status, 10) : undefined,
+            priority: editForm.priority ? parseInt(editForm.priority, 10) : undefined,
             category: editForm.category,
             assignedToUserId: editForm.assignedToUserId ? parseInt(editForm.assignedToUserId) : null,
             developerUserId: editForm.developerUserId ? parseInt(editForm.developerUserId) : null,
@@ -801,7 +802,7 @@ export default function TicketDetailPage() {
             headers: { 'Authorization': `Bearer ${token}` },
           });
           if (res.ok) {
-            router.push('/tickets');
+            router.push(oldPath('/tickets'));
           } else {
             const data = await res.json();
             setError(data.message || 'Failed to delete ticket');
@@ -813,7 +814,7 @@ export default function TicketDetailPage() {
     );
   };
 
-  const quickStatusChange = async (newStatus: string) => {
+  const quickStatusChange = async (newStatusId: number) => {
     try {
       const res = await fetch(
         `${getApiUrl()}/api/tickets/${ticketId}`,
@@ -823,7 +824,7 @@ export default function TicketDetailPage() {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ status: newStatus }),
+          body: JSON.stringify({ status: newStatusId }),
         }
       );
 
@@ -883,9 +884,7 @@ export default function TicketDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
@@ -893,22 +892,19 @@ export default function TicketDetailPage() {
 
   if (!featureFlagsLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
   if (!internalTicketsEnabled) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
         <div className="max-w-4xl mx-auto py-12 px-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-200 dark:border-gray-700">
             <div className="text-4xl mb-3">🎫</div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Internal Ticket System Disabled</h2>
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push(oldPath('/dashboard'))}
               className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
             >
               Back to Dashboard
@@ -922,7 +918,6 @@ export default function TicketDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
         </div>
@@ -933,13 +928,12 @@ export default function TicketDetailPage() {
   if (error && !ticket) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
         <div className="max-w-4xl mx-auto py-12 px-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
             <div className="text-4xl mb-4">😕</div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{error}</h2>
             <button
-              onClick={() => router.push('/tickets')}
+              onClick={() => router.push(oldPath('/tickets'))}
               className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
             >
               Back to Tickets
@@ -980,13 +974,12 @@ export default function TicketDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
 
       <main className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
           <button
-            onClick={() => router.push('/tickets')}
+            onClick={() => router.push(oldPath('/tickets'))}
             className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1503,7 +1496,7 @@ export default function TicketDetailPage() {
                   {(ticketStatuses.length > 0 ? ticketStatuses : []).filter(s => s.StatusName !== ticket.Status).map(s => (
                     <button
                       key={s.Id}
-                      onClick={() => quickStatusChange(s.StatusName)}
+                      onClick={() => quickStatusChange(s.Id)}
                       style={getStatusStyle(s.StatusName)}
                       className="px-3 py-1.5 text-sm rounded-lg transition-colors hover:opacity-80"
                     >
@@ -1529,7 +1522,7 @@ export default function TicketDetailPage() {
                       onChange={(e) => setEditForm(prev => ({ ...prev, status: e.target.value }))}
                       className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                     >
-                      {ticketStatuses.map(s => <option key={s.Id} value={s.StatusName}>{s.StatusName}</option>)}
+                      {ticketStatuses.map(s => <option key={s.Id} value={s.Id}>{s.StatusName}</option>)}
                     </select>
                   ) : (
                     <dd className="mt-1 inline-block px-2 py-1 text-sm rounded-full" style={getStatusStyle(ticket.Status)}>
@@ -1547,7 +1540,7 @@ export default function TicketDetailPage() {
                       onChange={(e) => setEditForm(prev => ({ ...prev, priority: e.target.value }))}
                       className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                     >
-                      {ticketPriorities.map(p => <option key={p.Id} value={p.PriorityName}>{p.PriorityName}</option>)}
+                      {ticketPriorities.map(p => <option key={p.Id} value={p.Id}>{p.PriorityName}</option>)}
                     </select>
                   ) : (
                     <dd className="mt-1 inline-block px-2 py-1 text-sm rounded-full" style={getPriorityStyle(ticket.Priority)}>

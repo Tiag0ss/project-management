@@ -29,23 +29,26 @@ interface ActivityStats {
   recentActivity: ActivityLog[];
 }
 
+const EMPTY_FILTERS = {
+  action: '',
+  entityType: '',
+  username: '',
+  startDate: '',
+  endDate: '',
+};
+
+const fieldClass =
+  'w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]';
+
 export default function ActivityLogsManagement() {
   const { token } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [stats, setStats] = useState<ActivityStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  
-  // Filters
-  const [filters, setFilters] = useState({
-    action: '',
-    entityType: '',
-    username: '',
-    startDate: '',
-    endDate: ''
-  });
-  
-  // Pagination
+
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+
   const [page, setPage] = useState(1);
   const [limit] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
@@ -69,15 +72,15 @@ export default function ActivityLogsManagement() {
 
     try {
       const res = await fetch(`${API_URL}/api/activity-logs/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.ok) {
         const data = await res.json();
         setStats(data.data);
       }
-    } catch (err: any) {
-      console.error('Failed to load stats:', err);
+    } catch {
+      // Stats are optional; table load surfaces errors.
     }
   };
 
@@ -99,7 +102,7 @@ export default function ActivityLogsManagement() {
       });
 
       const res = await fetch(`${API_URL}/api/activity-logs?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.ok) {
@@ -110,14 +113,26 @@ export default function ActivityLogsManagement() {
       } else {
         setError('Failed to load activity logs');
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load activity logs');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load activity logs');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCleanup = async () => {
+  const updateFilter = <K extends keyof typeof EMPTY_FILTERS>(key: K, value: (typeof EMPTY_FILTERS)[K]) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setPage(1);
+  };
+
+  const hasActiveFilters = Object.values(filters).some(Boolean);
+
+  const handleCleanup = () => {
     setModal({
       type: 'confirm',
       title: 'Delete old logs',
@@ -131,10 +146,10 @@ export default function ActivityLogsManagement() {
       const res = await fetch(`${API_URL}/api/activity-logs/cleanup`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ days: 90 })
+        body: JSON.stringify({ days: 90 }),
       });
 
       if (res.ok) {
@@ -145,8 +160,12 @@ export default function ActivityLogsManagement() {
       } else {
         setModal({ type: 'alert', title: 'Error', message: 'Failed to cleanup logs' });
       }
-    } catch (err: any) {
-      setModal({ type: 'alert', title: 'Error', message: err.message || 'Failed to cleanup logs' });
+    } catch (err: unknown) {
+      setModal({
+        type: 'alert',
+        title: 'Error',
+        message: err instanceof Error ? err.message : 'Failed to cleanup logs',
+      });
     }
   };
 
@@ -158,18 +177,8 @@ export default function ActivityLogsManagement() {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit'
+      second: '2-digit',
     });
-  };
-
-  const getActionIcon = (action: string) => {
-    if (action.includes('CREATE')) return '➕';
-    if (action.includes('UPDATE') || action.includes('EDIT')) return '✏️';
-    if (action.includes('DELETE')) return '🗑️';
-    if (action.includes('LOGIN')) return '🔐';
-    if (action.includes('LOGOUT')) return '🚪';
-    if (action.includes('ASSIGN')) return '👤';
-    return '📋';
   };
 
   const getActionColor = (action: string) => {
@@ -177,94 +186,83 @@ export default function ActivityLogsManagement() {
     if (action.includes('UPDATE') || action.includes('EDIT')) return 'text-blue-600 dark:text-blue-400';
     if (action.includes('DELETE')) return 'text-red-600 dark:text-red-400';
     if (action.includes('LOGIN')) return 'text-purple-600 dark:text-purple-400';
-    return 'text-gray-600 dark:text-gray-400';
+    return 'text-[var(--pm-muted)]';
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          Activity Logs
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400">
-          Monitor all system activity and user actions
-        </p>
+    <div className="space-y-3 p-4 sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <p className="text-xs text-[var(--pm-muted)]">Monitor system activity and user actions.</p>
+        <button
+          type="button"
+          onClick={handleCleanup}
+          className="h-9 shrink-0 rounded-lg border border-red-500/40 bg-red-600/10 px-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-600 hover:text-white dark:text-red-400"
+        >
+          Cleanup 90+ days
+        </button>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+        <div className="rounded border border-red-400 bg-red-100 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           {error}
         </div>
       )}
 
-      {/* Statistics Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Total Logs</p>
-                <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">{stats.totalLogs.toLocaleString()}</p>
-              </div>
-              <span className="text-3xl">📊</span>
-            </div>
+        <div className="grid grid-cols-3 gap-2 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2 sm:gap-4">
+          <div>
+            <p className="text-[11px] text-[var(--pm-muted)]">Total</p>
+            <p className="text-sm font-semibold tabular-nums text-[var(--pm-text)]">
+              {stats.totalLogs.toLocaleString()}
+            </p>
           </div>
-
-          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-green-600 dark:text-green-400 font-medium">Today</p>
-                <p className="text-2xl font-bold text-green-900 dark:text-green-100">{stats.todayLogs.toLocaleString()}</p>
-              </div>
-              <span className="text-3xl">📅</span>
-            </div>
+          <div>
+            <p className="text-[11px] text-[var(--pm-muted)]">Today</p>
+            <p className="text-sm font-semibold tabular-nums text-[var(--pm-text)]">
+              {stats.todayLogs.toLocaleString()}
+            </p>
           </div>
-
-          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-purple-600 dark:text-purple-400 font-medium">Last 7 Days</p>
-                <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">{stats.weekLogs.toLocaleString()}</p>
-              </div>
-              <span className="text-3xl">📈</span>
-            </div>
+          <div>
+            <p className="text-[11px] text-[var(--pm-muted)]">Last 7 days</p>
+            <p className="text-sm font-semibold tabular-nums text-[var(--pm-text)]">
+              {stats.weekLogs.toLocaleString()}
+            </p>
           </div>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Filters</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">Filters</h3>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="h-7 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-2.5 text-xs font-medium text-[var(--pm-muted)] transition-colors hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-text)]"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Action
-            </label>
+            <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Action</label>
             <input
               type="text"
               value={filters.action}
-              onChange={(e) => {
-                setFilters({ ...filters, action: e.target.value });
-                setPage(1);
-              }}
+              onChange={(e) => updateFilter('action', e.target.value)}
               placeholder="e.g. CREATE, UPDATE"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className={fieldClass}
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Entity Type
-            </label>
+            <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Entity type</label>
             <select
               value={filters.entityType}
-              onChange={(e) => {
-                setFilters({ ...filters, entityType: e.target.value });
-                setPage(1);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              onChange={(e) => updateFilter('entityType', e.target.value)}
+              className={fieldClass}
             >
-              <option value="">All Types</option>
+              <option value="">All types</option>
               <option value="User">User</option>
               <option value="Project">Project</option>
               <option value="Task">Task</option>
@@ -273,146 +271,108 @@ export default function ActivityLogsManagement() {
               <option value="Customer">Customer</option>
             </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Username
-            </label>
+            <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Username</label>
             <input
               type="text"
               value={filters.username}
-              onChange={(e) => {
-                setFilters({ ...filters, username: e.target.value });
-                setPage(1);
-              }}
+              onChange={(e) => updateFilter('username', e.target.value)}
               placeholder="Username"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className={fieldClass}
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Start Date
-            </label>
+            <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Start date</label>
             <input
               type="date"
               value={filters.startDate}
-              onChange={(e) => {
-                setFilters({ ...filters, startDate: e.target.value });
-                setPage(1);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              onChange={(e) => updateFilter('startDate', e.target.value)}
+              className={fieldClass}
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              End Date
-            </label>
+            <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">End date</label>
             <input
               type="date"
               value={filters.endDate}
-              onChange={(e) => {
-                setFilters({ ...filters, endDate: e.target.value });
-                setPage(1);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              onChange={(e) => updateFilter('endDate', e.target.value)}
+              className={fieldClass}
             />
           </div>
         </div>
-
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={() => {
-              setFilters({ action: '', entityType: '', username: '', startDate: '', endDate: '' });
-              setPage(1);
-            }}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
-          >
-            Clear Filters
-          </button>
-
-          <button
-            onClick={handleCleanup}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
-          >
-            🗑️ Cleanup Old Logs (90+ days)
-          </button>
-        </div>
       </div>
 
-      {/* Logs Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Activity Log Entries ({total.toLocaleString()})
-          </h3>
+      <div className="overflow-hidden rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)]">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--pm-border)] px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">
+            Entries ({total.toLocaleString()})
+          </span>
+          {totalPages > 1 && (
+            <span className="text-[11px] text-[var(--pm-muted)]">
+              Page {page} of {totalPages}
+            </span>
+          )}
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center text-gray-600 dark:text-gray-400">
-            Loading logs...
-          </div>
+          <div className="px-3 py-8 text-center text-sm text-[var(--pm-muted)]">Loading logs…</div>
         ) : logs.length === 0 ? (
-          <div className="p-8 text-center text-gray-600 dark:text-gray-400">
-            No activity logs found
-          </div>
+          <div className="px-3 py-8 text-center text-sm text-[var(--pm-muted)]">No activity logs found</div>
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-900">
+              <table className="min-w-full divide-y divide-[var(--pm-border)]">
+                <thead className="bg-[var(--pm-panel)]">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                       Timestamp
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                       User
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                       Action
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                       Entity
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                       Details
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      IP Address
+                    <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
+                      IP
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-[var(--pm-border)]">
                   {logs.map((log) => (
-                    <tr key={log.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                    <tr key={log.Id} className="hover:bg-[var(--pm-panel)]">
+                      <td className="whitespace-nowrap px-3 py-2 text-sm tabular-nums text-[var(--pm-text)]">
                         {formatDate(log.CreatedAt)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {log.Username || <span className="text-gray-400 italic">System</span>}
+                      <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-text)]">
+                        {log.Username || <span className="italic text-[var(--pm-muted)]">System</span>}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <span className={`inline-flex items-center gap-1 ${getActionColor(log.Action)}`}>
-                          <span>{getActionIcon(log.Action)}</span>
-                          <span className="font-medium">{log.Action}</span>
-                        </span>
+                      <td className="whitespace-nowrap px-3 py-2 text-sm">
+                        <span className={`font-medium ${getActionColor(log.Action)}`}>{log.Action}</span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {log.EntityType && (
+                      <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-text)]">
+                        {log.EntityType ? (
                           <div>
                             <div className="font-medium">{log.EntityType}</div>
                             {log.EntityName && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">{log.EntityName}</div>
+                              <div className="text-[11px] text-[var(--pm-muted)]">{log.EntityName}</div>
                             )}
                           </div>
+                        ) : (
+                          <span className="text-[var(--pm-muted)]">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white max-w-md truncate">
-                        {log.Details || <span className="text-gray-400">-</span>}
+                      <td className="max-w-md truncate px-3 py-2 text-sm text-[var(--pm-text)]" title={log.Details || undefined}>
+                        {log.Details || <span className="text-[var(--pm-muted)]">—</span>}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                        {log.IpAddress || '-'}
+                      <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-muted)]">
+                        {log.IpAddress || '—'}
                       </td>
                     </tr>
                   ))}
@@ -420,24 +380,25 @@ export default function ActivityLogsManagement() {
               </table>
             </div>
 
-            {/* Pagination */}
             {totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  Page {page} of {totalPages} ({total.toLocaleString()} total)
+              <div className="flex items-center justify-between gap-2 border-t border-[var(--pm-border)] px-3 py-2">
+                <div className="text-xs text-[var(--pm-muted)]">
+                  {total.toLocaleString()} total
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-1.5">
                   <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1}
-                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="h-8 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-xs font-medium text-[var(--pm-text)] transition-colors hover:bg-[var(--pm-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Previous
                   </button>
                   <button
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
-                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="h-8 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-xs font-medium text-[var(--pm-text)] transition-colors hover:bg-[var(--pm-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Next
                   </button>

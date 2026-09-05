@@ -1,28 +1,32 @@
 'use client';
 
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, use, useMemo, useRef, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { useToast } from '@/contexts/ToastContext';
 import { organizationsApi, Organization, OrganizationMember, AddMemberData } from '@/lib/api/organizations';
 import { permissionGroupsApi, PermissionGroup, CreatePermissionGroupData } from '@/lib/api/permissionGroups';
 import { statusValuesApi, StatusValue, CreateStatusValueData } from '@/lib/api/statusValues';
 import { workflowTransitionPoliciesApi, WorkflowTransitionPolicy, UpsertWorkflowTransitionPolicyData } from '@/lib/api/workflowTransitionPolicies';
 import { projectsApi, Project } from '@/lib/api/projects';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { useFormatHours } from '@/lib/useFormatHours';
-import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
+import { useColorVision } from '@/hooks/useColorVision';
 import { TaskTypeIcon, TaskTypeIconPicker, resolveTaskTypeIcon } from '@/lib/taskTypeIcons';
 import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
 import ExpenseTaxonomyManager from '@/components/ExpenseTaxonomyManager';
+import OrganizationIntegrationsPanel from '@/components/OrganizationIntegrationsPanel';
 import { useUrlTab } from '@/hooks/useUrlTab';
 
 const ORGANIZATION_DETAIL_TABS = [
@@ -46,9 +50,7 @@ export default function OrganizationDetailPage(props: { params: Promise<{ id: st
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
-        </div>
+        <PageLoadingSkeleton />
       }
     >
       <OrganizationDetailPageContent {...props} />
@@ -78,6 +80,7 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
   // Attachments state
   const [attachments, setAttachments] = useState<any[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   
   const [modalMessage, setModalMessage] = useState<{
     type: 'confirm';
@@ -142,7 +145,7 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
       return;
     }
     if (user && token && featureFlagsLoaded) {
@@ -324,9 +327,7 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
 
   if (authLoading || isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
@@ -339,234 +340,65 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
     organization.Role === 'Admin' ||
     Number(organization.CanManageSettings || 0) === 1;
 
+  const organizationTabs = [
+    { id: 'overview' as const, label: 'Overview' },
+    { id: 'members' as const, label: 'Members' },
+    { id: 'projects' as const, label: 'Projects' },
+    { id: 'permissions' as const, label: 'Permission Groups' },
+    { id: 'statuses' as const, label: 'Status & Priorities' },
+    { id: 'expense-categories' as const, label: 'Expense Categories' },
+    { id: 'tags' as const, label: 'Tags' },
+    ...(canManageSettings
+      ? [
+          { id: 'integrations' as const, label: 'Integrations' },
+          { id: 'sla' as const, label: 'SLA Rules' },
+          { id: 'workflow-policies' as const, label: 'Workflow Transition Policies (DoR/DoD)' },
+          { id: 'task-form' as const, label: 'Task Form' },
+        ]
+      : []),
+    { id: 'attachments' as const, label: 'Attachments' },
+    { id: 'history' as const, label: 'History' },
+  ];
+
   return (
     <CustomerUserGuard>
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
-
-      <div className="flex flex-col md:flex-row w-full mx-auto">
-        {/* Mobile tabs */}
-        <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-          <div className="px-3 pt-2">
-            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{organization.Name}</p>
-          </div>
-          <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Organization tabs">
-            {([
-              { id: 'overview' as const, label: 'Overview', icon: '📊' },
-              { id: 'members' as const, label: 'Members', icon: '👥' },
-              { id: 'projects' as const, label: 'Projects', icon: '📁' },
-              { id: 'permissions' as const, label: 'Permissions', icon: '🔐' },
-              { id: 'statuses' as const, label: 'Statuses', icon: '🎨' },
-              { id: 'expense-categories' as const, label: 'Expenses', icon: '💸' },
-              { id: 'tags' as const, label: 'Tags', icon: '🏷️' },
-              ...(canManageSettings
-                ? [
-                    { id: 'integrations' as const, label: 'Integrations', icon: '🔌' },
-                    { id: 'sla' as const, label: 'SLA', icon: '⏱️' },
-                    { id: 'workflow-policies' as const, label: 'Workflow', icon: '✅' },
-                    { id: 'task-form' as const, label: 'Task Form', icon: '🧩' },
-                  ]
-                : []),
-              { id: 'attachments' as const, label: 'Files', icon: '📎' },
-              { id: 'history' as const, label: 'History', icon: '📜' },
-            ]).map((tab) => (
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PageStickyChrome>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-[var(--pm-text)] truncate">{organization.Name}</h1>
+            {canManageSettings && (
               <button
-                key={tab.id}
                 type="button"
                 onClick={() => {
-                  setActiveTab(tab.id);
-                  if (tab.id === 'attachments') loadAttachments();
+                  setEditForm({ name: organization.Name, description: organization.Description || '' });
+                  setShowEditModal(true);
                 }}
-                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
+                className="mt-1 text-sm text-[var(--pm-accent)] hover:underline"
               >
-                <span className="mr-1">{tab.icon}</span>
-                {tab.label}
+                Edit
               </button>
-            ))}
-          </nav>
+            )}
+          </div>
+          <a
+            href="/administration?tab=organizations"
+            className="text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
+          >
+            ← Back to Organizations
+          </a>
         </div>
 
-        {/* Sidebar */}
-        <aside className="hidden md:block w-64 bg-white dark:bg-gray-800 min-h-[calc(100vh-64px)] border-r border-gray-200 dark:border-gray-700 shrink-0">
-          <div className="p-4">
-            {/* Organization Header */}
-            <div className="mb-6">
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{organization.Name}</h1>
-              {canManageSettings && (
-                <button
-                  onClick={() => {
-                    setEditForm({ name: organization.Name, description: organization.Description || '' });
-                    setShowEditModal(true);
-                  }}
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  ✏️ Edit
-                </button>
-              )}
-            </div>
+        <PageTabs
+          tabs={organizationTabs}
+          activeId={activeTab}
+          onChange={(id) => {
+            setActiveTab(id as OrganizationDetailTab);
+            if (id === 'attachments') loadAttachments();
+          }}
+        />
+      </PageStickyChrome>
 
-            {/* Navigation */}
-            <nav className="space-y-1">
-              <button
-                onClick={() => setActiveTab('overview')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'overview'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📊 Overview
-              </button>
-              <button
-                onClick={() => setActiveTab('members')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'members'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                👥 Members
-              </button>
-              <button
-                onClick={() => setActiveTab('projects')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'projects'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📁 Projects
-              </button>
-              <button
-                onClick={() => setActiveTab('permissions')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'permissions'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                🔐 Permission Groups
-              </button>
-              <button
-                onClick={() => setActiveTab('statuses')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'statuses'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                🎨 Status & Priorities
-              </button>
-              <button
-                onClick={() => setActiveTab('expense-categories')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'expense-categories'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                💸 Expense Categories
-              </button>
-              <button
-                onClick={() => setActiveTab('tags')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'tags'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                🏷️ Tags
-              </button>
-              {canManageSettings && (
-                <button
-                  onClick={() => setActiveTab('integrations')}
-                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                    activeTab === 'integrations'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  🔌 Integrations
-                </button>
-              )}
-              {canManageSettings && (
-                <button
-                  onClick={() => setActiveTab('sla')}
-                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                    activeTab === 'sla'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  ⏱️ SLA Rules
-                </button>
-              )}
-              {canManageSettings && (
-                <button
-                  onClick={() => setActiveTab('workflow-policies')}
-                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                    activeTab === 'workflow-policies'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  ✅ Workflow Transition Policies (DoR/DoD)
-                </button>
-              )}
-              {canManageSettings && (
-                <button
-                  onClick={() => setActiveTab('task-form')}
-                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                    activeTab === 'task-form'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  🧩 Task Form
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setActiveTab('attachments');
-                  loadAttachments();
-                }}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'attachments'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📎 Attachments
-              </button>
-              <button
-                onClick={() => setActiveTab('history')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'history'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📜 History
-              </button>
-            </nav>
-
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-              <a
-                href="/organizations"
-                className="block text-center px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              >
-                ← Back to Organizations
-              </a>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 p-3 sm:p-6 min-w-0">
+      <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
           {error && (
             <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
               {error}
@@ -595,7 +427,7 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
               />
             )}
             {activeTab === 'tags' && <TagsTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
-            {activeTab === 'integrations' && <IntegrationsTab orgId={orgId} token={token!} />}
+            {activeTab === 'integrations' && <OrganizationIntegrationsPanel orgId={orgId} token={token!} />}
             {activeTab === 'sla' && <SlaTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />}
             {activeTab === 'workflow-policies' && (
               <WorkflowPoliciesTab orgId={orgId} canManage={canManageSettings} token={token!} showConfirm={showConfirm} />
@@ -628,13 +460,11 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
             )}
             {activeTab === 'history' && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">📜 Change History</h2>
                 <ChangeHistory entityType="organization" entityId={orgId} />
               </div>
             )}
           </div>
         </main>
-      </div>
 
       {/* Edit Organization Modal */}
       {showEditModal && (
@@ -690,7 +520,7 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
         </div>
       )}
 
-      <ScrollToTopButton />
+      <ScrollToTopButton scrollContainerRef={scrollContainerRef} />
 
       <ConfirmAlertModal
         isOpen={!!modalMessage}
@@ -869,8 +699,7 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-3">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Organization Dashboard</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 Portfolio health, delivery progress, and operational signals for {organization.Name}.
               </p>
             </div>
@@ -1587,14 +1416,49 @@ function EditMemberModal({ orgId, member, groups, onClose, onUpdated, token }: {
   );
 }
 
-function PermissionsTab({ 
-  orgId, 
-  canManage, 
+const PERMISSION_GROUP_FLAGS = [
+  { field: 'CanManageProjects', formKey: 'canManageProjects', label: 'Manage Projects' },
+  { field: 'CanCreateProjects', formKey: 'canCreateProjects', label: 'Create Projects' },
+  { field: 'CanDeleteProjects', formKey: 'canDeleteProjects', label: 'Delete Projects' },
+  { field: 'CanManageTasks', formKey: 'canManageTasks', label: 'Manage Tasks' },
+  { field: 'CanCreateTasks', formKey: 'canCreateTasks', label: 'Create Tasks' },
+  { field: 'CanDeleteTasks', formKey: 'canDeleteTasks', label: 'Delete Tasks' },
+  { field: 'CanAssignTasks', formKey: 'canAssignTasks', label: 'Assign Tasks' },
+  { field: 'CanPlanTasks', formKey: 'canPlanTasks', label: 'Plan Tasks' },
+  { field: 'CanManageTimeEntries', formKey: 'canManageTimeEntries', label: 'Manage Time Entries' },
+  { field: 'CanViewReports', formKey: 'canViewReports', label: 'View Reports' },
+  { field: 'CanViewBudgetInfo', formKey: 'canViewBudgetInfo', label: 'View Budget Info' },
+  { field: 'CanManageTickets', formKey: 'canManageTickets', label: 'Manage Tickets' },
+  { field: 'CanCreateTickets', formKey: 'canCreateTickets', label: 'Create Tickets' },
+  { field: 'CanDeleteTickets', formKey: 'canDeleteTickets', label: 'Delete Tickets' },
+  { field: 'CanAssignTickets', formKey: 'canAssignTickets', label: 'Assign Tickets' },
+  { field: 'CanCreateTaskFromTicket', formKey: 'canCreateTaskFromTicket', label: 'Create Task from Ticket' },
+  { field: 'CanViewOthersPlanning', formKey: 'canViewOthersPlanning', label: 'View Others Planning' },
+  { field: 'CanViewApplications', formKey: 'canViewApplications', label: 'View Applications' },
+  { field: 'CanManageMembers', formKey: 'canManageMembers', label: 'Manage Members' },
+  { field: 'CanManageSettings', formKey: 'canManageSettings', label: 'Manage Settings' },
+  { field: 'CanManageApplications', formKey: 'canManageApplications', label: 'Manage Applications' },
+  { field: 'CanCreateApplications', formKey: 'canCreateApplications', label: 'Create Applications' },
+  { field: 'CanDeleteApplications', formKey: 'canDeleteApplications', label: 'Delete Applications' },
+  { field: 'CanManageReleases', formKey: 'canManageReleases', label: 'Manage Releases' },
+] as const;
+
+type PermissionGroupFlagField = (typeof PERMISSION_GROUP_FLAGS)[number]['field'];
+
+function getGrantedPermissionLabels(group: PermissionGroup): string[] {
+  return PERMISSION_GROUP_FLAGS
+    .filter((flag) => Number(group[flag.field as PermissionGroupFlagField]) === 1)
+    .map((flag) => flag.label);
+}
+
+function PermissionsTab({
+  orgId,
+  canManage,
   token,
-  showConfirm 
-}: { 
-  orgId: number; 
-  canManage: boolean; 
+  showConfirm,
+}: {
+  orgId: number;
+  canManage: boolean;
   token: string;
   showConfirm: (
     title: string,
@@ -1613,7 +1477,7 @@ function PermissionsTab({
   const [editingGroup, setEditingGroup] = useState<PermissionGroup | null>(null);
 
   useEffect(() => {
-    loadGroups();
+    void loadGroups();
   }, [orgId]);
 
   const loadGroups = async () => {
@@ -1622,8 +1486,8 @@ function PermissionsTab({
       const response = await permissionGroupsApi.getByOrganization(orgId, token);
       setGroups(response.groups);
       setError('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to load permission groups');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load permission groups');
     } finally {
       setIsLoading(false);
     }
@@ -1637,8 +1501,8 @@ function PermissionsTab({
         try {
           await permissionGroupsApi.delete(id, token);
           await loadGroups();
-        } catch (err: any) {
-          setError(err.message || 'Failed to delete permission group');
+        } catch (err: unknown) {
+          setError(err instanceof Error ? err.message : 'Failed to delete permission group');
         }
       }
     );
@@ -1652,8 +1516,8 @@ function PermissionsTab({
         try {
           await permissionGroupsApi.syncFromGlobal(group.Id, token);
           await loadGroups();
-        } catch (err: any) {
-          setError(err.message || 'Failed to sync permission group');
+        } catch (err: unknown) {
+          setError(err instanceof Error ? err.message : 'Failed to sync permission group');
         }
       },
       {
@@ -1663,16 +1527,20 @@ function PermissionsTab({
     );
   };
 
-  if (isLoading) return <div>Loading permission groups...</div>;
+  if (isLoading) {
+    return <div className="py-4 text-sm text-gray-500 dark:text-gray-400">Loading permission groups…</div>;
+  }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Permission Groups</h3>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          {groups.length} group{groups.length !== 1 ? 's' : ''}
+        </p>
         {canManage && (
           <button
             onClick={() => setShowCreateModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            className="inline-flex h-10 items-center rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700"
           >
             Create Group
           </button>
@@ -1680,200 +1548,128 @@ function PermissionsTab({
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
+        <div className="rounded border border-red-400 bg-red-100 p-3 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {groups.map((group) => (
-          <div key={group.Id} className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">{group.GroupName}</h4>
-                {group.IsSystemGroup && group.LinkedRole && (
-                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 font-medium mt-1">
-                    🔗 Global role: {group.LinkedRole}
-                  </span>
+      {groups.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-300 py-10 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+          No permission groups yet.
+        </div>
+      ) : (
+        <div className="overflow-x-auto overflow-hidden rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 dark:bg-gray-800">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-900">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                  Group
+                </th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                  Members
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                  Granted permissions
+                </th>
+                {canManage && (
+                  <th scope="col" className="relative px-3 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 )}
-                {group.Description && (() => {
-                  const plainText = group.Description.replace(/<[^>]*>/g, '').trim();
-                  return plainText ? (
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{plainText}</p>
-                  ) : null;
-                })()}
-              </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{group.MemberCount || 0} members</span>
-            </div>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {groups.map((group) => {
+                const granted = getGrantedPermissionLabels(group);
+                const plainDescription = group.Description?.replace(/<[^>]*>/g, '').trim() || '';
 
-            <div className="space-y-1 text-sm">
-              <div className="flex items-center gap-2">
-                <span className={group.CanManageProjects ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanManageProjects ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Manage Projects</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanCreateProjects ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanCreateProjects ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Create Projects</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanDeleteProjects ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanDeleteProjects ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Delete Projects</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanManageTasks ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanManageTasks ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Manage Tasks</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanCreateTasks ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanCreateTasks ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Create Tasks</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanDeleteTasks ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanDeleteTasks ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Delete Tasks</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanAssignTasks ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanAssignTasks ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Assign Tasks</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanPlanTasks ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanPlanTasks ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Plan Tasks</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanManageTimeEntries ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanManageTimeEntries ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Manage Time Entries</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanViewReports ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanViewReports ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">View Reports</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanViewBudgetInfo ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanViewBudgetInfo ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">View Budget Info</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanManageTickets ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanManageTickets ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Manage Tickets</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanCreateTickets ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanCreateTickets ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Create Tickets</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanDeleteTickets ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanDeleteTickets ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Delete Tickets</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanAssignTickets ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanAssignTickets ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Assign Tickets</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanCreateTaskFromTicket ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanCreateTaskFromTicket ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Create Task from Ticket</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanManageMembers ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanManageMembers ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Manage Members</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanManageSettings ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanManageSettings ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Manage Settings</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanManageApplications ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanManageApplications ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Manage Applications</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanCreateApplications ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanCreateApplications ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Create Applications</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanDeleteApplications ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanDeleteApplications ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Delete Applications</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={group.CanManageReleases ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
-                  {group.CanManageReleases ? '✓' : '✗'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">Manage Releases</span>
-              </div>
-            </div>
-
-            {canManage && (
-              <div className="flex gap-2 mt-4">
-                <button
-                  onClick={() => setEditingGroup(group)}
-                  title="Edit permission group"
-                  aria-label="Edit permission group"
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm"
-                >
-                  ✏️
-                </button>
-                {group.IsSystemGroup ? (
-                  <button
-                    onClick={() => handleSync(group)}
-                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-sm"
-                    title={`Reset to global ${group.LinkedRole} defaults`}
-                  >
-                    🔄 Sync
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleDelete(group.Id)}
-                    title="Delete permission group"
-                    aria-label="Delete permission group"
-                    className="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm"
-                  >
-                    🗑️
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+                return (
+                  <tr key={group.Id} className="align-top hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                    <td className="px-3 py-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">
+                          {group.GroupName}
+                        </div>
+                        {!!group.IsSystemGroup && group.LinkedRole && (
+                          <span className="mt-1 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                            Linked: {group.LinkedRole}
+                          </span>
+                        )}
+                        {plainDescription && (
+                          <p className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+                            {plainDescription}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-center text-sm tabular-nums text-gray-700 dark:text-gray-300">
+                      {group.MemberCount || 0}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="mb-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                        {granted.length} of {PERMISSION_GROUP_FLAGS.length} enabled
+                      </div>
+                      {granted.length === 0 ? (
+                        <span className="text-xs italic text-gray-400">No permissions granted</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {granted.map((label) => (
+                            <span
+                              key={label}
+                              className="inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/30 dark:text-emerald-300"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    {canManage && (
+                      <td className="px-3 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setEditingGroup(group)}
+                            title="Edit permission group"
+                            aria-label="Edit permission group"
+                            className="rounded p-1.5 text-gray-400 transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          {group.IsSystemGroup ? (
+                            <button
+                              onClick={() => handleSync(group)}
+                              title={`Reset to global ${group.LinkedRole} defaults`}
+                              aria-label={`Sync ${group.GroupName} from global defaults`}
+                              className="rounded p-1.5 text-gray-400 transition-colors hover:text-purple-600 dark:hover:text-purple-400"
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDelete(group.Id)}
+                              title="Delete permission group"
+                              aria-label="Delete permission group"
+                              className="rounded p-1.5 text-gray-400 transition-colors hover:text-red-600 dark:hover:text-red-400"
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showCreateModal && (
         <PermissionGroupModal
@@ -1881,7 +1677,7 @@ function PermissionsTab({
           onClose={() => setShowCreateModal(false)}
           onSaved={() => {
             setShowCreateModal(false);
-            loadGroups();
+            void loadGroups();
           }}
           token={token}
         />
@@ -1894,7 +1690,7 @@ function PermissionsTab({
           onClose={() => setEditingGroup(null)}
           onSaved={() => {
             setEditingGroup(null);
-            loadGroups();
+            void loadGroups();
           }}
           token={token}
         />
@@ -1903,7 +1699,13 @@ function PermissionsTab({
   );
 }
 
-function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
+function PermissionGroupModal({
+  orgId,
+  group,
+  onClose,
+  onSaved,
+  token,
+}: {
   orgId: number;
   group?: PermissionGroup;
   onClose: () => void;
@@ -1954,45 +1756,46 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
         await permissionGroupsApi.create(formData, token);
       }
       onSaved();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save permission group');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save permission group');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl dark:bg-gray-800">
         <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
+          <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 {group ? 'Edit' : 'Create'} Permission Group
               </h2>
-              {group?.IsSystemGroup && group?.LinkedRole && (
-                <p className="text-sm text-purple-600 dark:text-purple-400 mt-1">
-                  🔗 Linked to global <strong>{group.LinkedRole}</strong> role — editing overrides org defaults
+              {!!group?.IsSystemGroup && group?.LinkedRole && (
+                <p className="mt-1 text-sm text-purple-600 dark:text-purple-400">
+                  Linked to global <strong>{group.LinkedRole}</strong> role — editing overrides org defaults
                 </p>
               )}
             </div>
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
+              className="text-2xl leading-none text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              aria-label="Close"
             >
               ×
             </button>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
+            <div className="mb-4 rounded border border-red-400 bg-red-100 p-3 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Group Name *
               </label>
               <input
@@ -2001,80 +1804,60 @@ function PermissionGroupModal({ orgId, group, onClose, onSaved, token }: {
                 onChange={(e) => setFormData({ ...formData, groupName: e.target.value })}
                 required
                 readOnly={!!group?.IsSystemGroup}
-                className={`w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${group?.IsSystemGroup ? 'opacity-60 cursor-not-allowed' : ''}`}
+                className={`w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white ${group?.IsSystemGroup ? 'cursor-not-allowed opacity-60' : ''}`}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Description
               </label>
               <textarea
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={2}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Permissions
               </label>
-              <div className="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2">
-                {[
-                  { key: 'canManageProjects', label: 'Manage Projects' },
-                  { key: 'canCreateProjects', label: 'Create Projects' },
-                  { key: 'canDeleteProjects', label: 'Delete Projects' },
-                  { key: 'canManageTasks', label: 'Manage Tasks' },
-                  { key: 'canCreateTasks', label: 'Create Tasks' },
-                  { key: 'canDeleteTasks', label: 'Delete Tasks' },
-                  { key: 'canAssignTasks', label: 'Assign Tasks' },
-                  { key: 'canPlanTasks', label: 'Plan Tasks' },
-                  { key: 'canManageTimeEntries', label: 'Manage Time Entries' },
-                  { key: 'canViewReports', label: 'View Reports' },
-                  { key: 'canViewBudgetInfo', label: 'View Budget Info' },
-                  { key: 'canManageTickets', label: 'Manage Tickets' },
-                  { key: 'canCreateTickets', label: 'Create Tickets' },
-                  { key: 'canDeleteTickets', label: 'Delete Tickets' },
-                  { key: 'canAssignTickets', label: 'Assign Tickets' },
-                  { key: 'canCreateTaskFromTicket', label: 'Create Task from Ticket' },
-                  { key: 'canViewOthersPlanning', label: 'View Others Planning' },
-                  { key: 'canViewApplications', label: 'View Applications' },
-                  { key: 'canManageMembers', label: 'Manage Members' },
-                  { key: 'canManageSettings', label: 'Manage Settings' },
-                  { key: 'canManageApplications', label: 'Manage Applications' },
-                  { key: 'canCreateApplications', label: 'Create Applications' },
-                  { key: 'canDeleteApplications', label: 'Delete Applications' },
-                  { key: 'canManageReleases', label: 'Manage Releases' },
-                ].map(({ key, label }) => (
-                  <label key={key} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData[key as keyof typeof formData] as boolean}
-                      onChange={(e) => setFormData({ ...formData, [key]: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
-                  </label>
-                ))}
+              <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {PERMISSION_GROUP_FLAGS.map(({ formKey, label }) => (
+                    <label
+                      key={formKey}
+                      className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData[formKey as keyof CreatePermissionGroupData] as boolean}
+                        onChange={(e) => setFormData({ ...formData, [formKey]: e.target.checked })}
+                        className="h-4 w-4 rounded text-blue-600 focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="flex gap-3 pt-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+                className="flex-1 rounded-lg bg-gray-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-700"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isLoading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-blue-400"
               >
-                {isLoading ? 'Saving...' : group ? 'Update' : 'Create'}
+                {isLoading ? 'Saving…' : group ? 'Update' : 'Create'}
               </button>
             </div>
           </form>
@@ -2233,7 +2016,21 @@ function StatusesTab({
     );
   };
 
-  if (isLoading) return <div>Loading status values...</div>;
+  if (isLoading) return <div className="text-[var(--pm-muted)]">Loading status values...</div>;
+
+  const statusSubTabs = [
+    { id: 'project' as const, label: 'Project Statuses' },
+    { id: 'task' as const, label: 'Task Statuses' },
+    { id: 'priority' as const, label: 'Task Priorities' },
+    { id: 'type' as const, label: 'Task Types' },
+    { id: 'milestone-type' as const, label: 'Milestone Types' },
+    ...(internalTicketsEnabled
+      ? [
+          { id: 'ticket' as const, label: 'Ticket Statuses' },
+          { id: 'ticket-priority' as const, label: 'Ticket Priorities' },
+        ]
+      : []),
+  ];
 
   const currentStatuses = activeType === 'project' ? projectStatuses
     : activeType === 'task' ? taskStatuses
@@ -2243,90 +2040,27 @@ function StatusesTab({
     : activeType === 'ticket' ? ticketStatuses
     : ticketPriorities;
   const buttonLabel = (activeType === 'priority' || activeType === 'ticket-priority') ? 'Add Priority' : (activeType === 'type' || activeType === 'milestone-type') ? 'Add Type' : 'Add Status';
+  const isPriority = activeType === 'priority' || activeType === 'ticket-priority';
+  const isType = activeType === 'type' || activeType === 'milestone-type';
+
+  const displayName = (status: StatusValue) =>
+    isPriority ? status.PriorityName : isType ? status.TypeName : status.StatusName;
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveType('project')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeType === 'project'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-            }`}
-          >
-            Project Statuses
-          </button>
-          <button
-            onClick={() => setActiveType('task')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeType === 'task'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-            }`}
-          >
-            Task Statuses
-          </button>
-          <button
-            onClick={() => setActiveType('priority')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeType === 'priority'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-            }`}
-          >
-            Task Priorities
-          </button>
-          <button
-            onClick={() => setActiveType('type')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeType === 'type'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-            }`}
-          >
-            Task Types
-          </button>
-          <button
-            onClick={() => setActiveType('milestone-type')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeType === 'milestone-type'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-            }`}
-          >
-            Milestone Types
-          </button>
-          {internalTicketsEnabled && (
-            <>
-              <button
-                onClick={() => setActiveType('ticket')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  activeType === 'ticket'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
-              >
-                Ticket Statuses
-              </button>
-              <button
-                onClick={() => setActiveType('ticket-priority')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  activeType === 'ticket-priority'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
-              >
-                Ticket Priorities
-              </button>
-            </>
-          )}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <PageTabs
+            tabs={statusSubTabs}
+            activeId={activeType}
+            onChange={(id) => setActiveType(id as typeof activeType)}
+          />
         </div>
         {canManage && (
           <button
+            type="button"
             onClick={() => setShowCreateModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            className="inline-flex h-9 shrink-0 items-center rounded-lg bg-blue-600 px-3 text-sm font-medium text-white transition-colors hover:bg-blue-700"
           >
             {buttonLabel}
           </button>
@@ -2334,80 +2068,141 @@ function StatusesTab({
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
+        <div className="rounded border border-red-400 bg-red-100 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           {error}
         </div>
       )}
 
-      <div className="space-y-2">
-        {currentStatuses.map((status) => (
-          <div key={status.Id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-            <div className="flex items-center gap-4">
-              {(status.ColorCode || status.Color) && (
-                <div
-                  className="w-6 h-6 rounded"
-                  style={{ backgroundColor: status.ColorCode || status.Color }}
-                />
-              )}
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-gray-900 dark:text-white inline-flex items-center gap-1.5">
-                    {activeType === 'milestone-type' && (
-                      <span className="inline-flex items-center text-gray-600 dark:text-gray-300">
-                        {renderMilestoneTypeIcon(status.IconSvg || 'flag', 'w-4 h-4')}
-                      </span>
-                    )}
-                    {activeType === 'type' && (
-                      <span
-                        className="inline-flex items-center"
-                        style={status.ColorCode ? { color: status.ColorCode } : undefined}
-                      >
-                        <TaskTypeIcon
-                          iconSvg={resolveTaskTypeIcon(status.IconSvg, status.TypeName)}
-                          className="w-4 h-4"
+      {currentStatuses.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-300 py-10 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+          No {isPriority ? 'priorities' : isType ? 'types' : 'statuses'} yet.
+        </div>
+      ) : (
+        <div className="overflow-hidden overflow-x-auto rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 dark:bg-gray-800">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-900">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                  Color
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                  Name
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                  Flags
+                </th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
+                  Order
+                </th>
+                {canManage && (
+                  <th scope="col" className="relative px-3 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {currentStatuses.map((status) => {
+                const color = status.ColorCode || (status as StatusValue & { Color?: string }).Color;
+                return (
+                  <tr key={status.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                    <td className="px-3 py-2.5">
+                      {color ? (
+                        <span
+                          className="inline-block h-5 w-5 rounded border border-gray-200 dark:border-gray-600"
+                          style={{ backgroundColor: color }}
+                          title={color}
                         />
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-900 dark:text-white">
+                        {activeType === 'milestone-type' && (
+                          <span className="inline-flex text-gray-600 dark:text-gray-300">
+                            {renderMilestoneTypeIcon(status.IconSvg || 'flag', 'w-4 h-4')}
+                          </span>
+                        )}
+                        {activeType === 'type' && (
+                          <span
+                            className="inline-flex"
+                            style={status.ColorCode ? { color: status.ColorCode } : undefined}
+                          >
+                            <TaskTypeIcon
+                              iconSvg={resolveTaskTypeIcon(status.IconSvg, status.TypeName)}
+                              className="w-4 h-4"
+                            />
+                          </span>
+                        )}
+                        {displayName(status)}
                       </span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-wrap gap-1">
+                        {!!status.IsDefault && (
+                          <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                            Default
+                          </span>
+                        )}
+                        {!!status.IsClosed && (
+                          <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                            Closed
+                          </span>
+                        )}
+                        {!!status.IsCancelled && (
+                          <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                            Cancelled
+                          </span>
+                        )}
+                        {!!status.HideFromPlanningAndStatistics && (
+                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            Hidden in Planning/Stats
+                          </span>
+                        )}
+                        {!status.IsDefault && !status.IsClosed && !status.IsCancelled && !status.HideFromPlanningAndStatistics && (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-center text-sm tabular-nums text-gray-700 dark:text-gray-300">
+                      {status.SortOrder}
+                    </td>
+                    {canManage && (
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingStatus(status)}
+                            title="Edit value"
+                            aria-label="Edit value"
+                            className="rounded p-1.5 text-gray-400 transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(status.Id, activeType)}
+                            title="Delete value"
+                            aria-label="Delete value"
+                            className="rounded p-1.5 text-gray-400 transition-colors hover:text-red-600 dark:hover:text-red-400"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
                     )}
-                    {(activeType === 'priority' || activeType === 'ticket-priority')
-                      ? status.PriorityName
-                      : (activeType === 'type' || activeType === 'milestone-type')
-                        ? status.TypeName
-                        : status.StatusName}
-                  </span>
-                  {status.IsDefault ? <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded-full">Default</span> : ''}
-                  {status.IsClosed ? <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400 rounded-full">Closed</span> : ''}
-                  {status.IsCancelled ? <span className="text-xs px-2 py-0.5 bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-400 rounded-full">Cancelled</span> : ''}
-                  {status.HideFromPlanningAndStatistics ? <span className="text-xs px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-full">Hidden in Planning/Stats</span> : ''}
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  Order: {status.SortOrder}
-                </div>
-              </div>
-            </div>
-
-            {canManage && (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setEditingStatus(status)}
-                  title="Edit value"
-                  aria-label="Edit value"
-                  className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 px-3 py-1"
-                >
-                  ✏️
-                </button>
-                <button
-                  onClick={() => handleDelete(status.Id, activeType)}
-                  title="Delete value"
-                  aria-label="Delete value"
-                  className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 px-3 py-1"
-                >
-                  🗑️
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showCreateModal && (
         <StatusValueModal
@@ -2508,11 +2303,8 @@ function WorkflowPoliciesTab({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">✅ Workflow Transition Policies (DoR/DoD)</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Validate required fields when moving tasks between statuses.</p>
-        </div>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <p className="text-sm text-gray-500 dark:text-gray-400">Validate required fields when moving tasks between statuses.</p>
         {canManage && (
           <button
             onClick={() => setShowPolicyModal(true)}
@@ -3161,31 +2953,39 @@ function StatusValueModal({ orgId, type, status, onClose, onSaved, token }: {
 
 // Projects Tab Component
 function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: boolean; token: string }) {
+  const decimalHoursToHMS = useFormatHours();
+  const { pillStyle } = useColorVision();
   const [projects, setProjects] = useState<Project[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [transferringProject, setTransferringProject] = useState<Project | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState<number>(0);
+  const [filterText, setFilterText] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterCustomer, setFilterCustomer] = useState('');
+  const [hideCompleted, setHideCompleted] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    loadProjects();
+    void loadProjects();
     if (canManage) {
-      loadOrganizations();
+      void loadOrganizations();
     }
-  }, [orgId]);
+  }, [orgId, canManage]);
 
   const loadProjects = async () => {
     try {
       setIsLoading(true);
-      const response = await projectsApi.getAll(token);
-      // Filter to only projects in this organization
-      const orgProjects = response.projects.filter(p => p.OrganizationId === orgId);
-      setProjects(orgProjects);
+      const response = await fetch(`${getApiUrl()}/api/projects?organizationId=${orgId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to load projects');
+      setProjects(data.projects || []);
       setError('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to load projects');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load projects');
     } finally {
       setIsLoading(false);
     }
@@ -3194,12 +2994,11 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
   const loadOrganizations = async () => {
     try {
       const response = await organizationsApi.getAll(token);
-      // Filter to only organizations where user has admin/owner role, excluding current org
       const adminOrgs = response.organizations.filter(
-        org => (org.Role === 'Owner' || org.Role === 'Admin') && org.Id !== orgId
+        (org) => (org.Role === 'Owner' || org.Role === 'Admin') && org.Id !== orgId
       );
       setOrganizations(adminOrgs);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load organizations:', err);
     }
   };
@@ -3212,128 +3011,338 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
       setTransferringProject(null);
       setSelectedOrgId(0);
       await loadProjects();
-    } catch (err: any) {
-      setError(err.message || 'Failed to transfer project');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to transfer project');
     }
   };
 
+  const statusOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(projects.map((p) => p.StatusName).filter((name): name is string => Boolean(name)))
+    ).sort((a, b) => a.localeCompare(b));
+    return names;
+  }, [projects]);
+
+  const customerOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(projects.map((p) => p.CustomerName).filter((name): name is string => Boolean(name)))
+    ).sort((a, b) => a.localeCompare(b));
+    return names;
+  }, [projects]);
+
+  const filteredProjects = useMemo(() => {
+    const q = filterText.trim().toLowerCase();
+    return projects
+      .filter((project) => {
+        if (hideCompleted && (Number(project.StatusIsClosed || 0) === 1 || Number(project.StatusIsCancelled || 0) === 1)) {
+          return false;
+        }
+        if (filterStatus && project.StatusName !== filterStatus) return false;
+        if (filterCustomer && project.CustomerName !== filterCustomer) return false;
+        if (!q) return true;
+        const haystack = [
+          project.ProjectName,
+          project.CustomerName,
+          project.StatusName,
+          project.CreatorName,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(q);
+      })
+      .sort((a, b) => a.ProjectName.localeCompare(b.ProjectName));
+  }, [projects, filterText, filterStatus, filterCustomer, hideCompleted]);
+
+  const activeFilterCount = [
+    filterText.trim() ? 1 : 0,
+    filterStatus ? 1 : 0,
+    filterCustomer ? 1 : 0,
+    hideCompleted ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return '—';
+    const key = String(value).split('T')[0];
+    const d = new Date(`${key}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const healthDot = (status?: string) => {
+    if (status === 'red') return 'bg-red-500';
+    if (status === 'amber') return 'bg-amber-500';
+    if (status === 'green') return 'bg-green-500';
+    return 'bg-gray-400';
+  };
+
   if (isLoading) {
-    return <div className="text-center py-4">Loading projects...</div>;
+    return <div className="text-center py-4 text-gray-500 dark:text-gray-400">Loading projects…</div>;
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Organization Projects</h2>
-      </div>
-
+    <div className="space-y-2">
       {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
+        <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded">
           {error}
         </div>
       )}
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          {filteredProjects.length === projects.length
+            ? `${projects.length} project${projects.length !== 1 ? 's' : ''}`
+            : `${filteredProjects.length} of ${projects.length} projects`}
+        </p>
+      </div>
+
+      {projects.length > 0 && (
+        <CollapsibleFilterPanel
+          className="mb-2"
+          title="Project filters"
+          activeCount={activeFilterCount}
+          headerExtra={
+            <span className="text-xs text-gray-400">
+              {filteredProjects.length} shown
+            </span>
+          }
+        >
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="relative lg:col-span-2">
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                placeholder="Search projects…"
+                className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+            <select
+              value={filterCustomer}
+              onChange={(e) => setFilterCustomer(e.target.value)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">All customers</option>
+              {customerOptions.map((customer) => (
+                <option key={customer} value={customer}>{customer}</option>
+              ))}
+            </select>
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 sm:col-span-2 lg:col-span-4">
+              <input
+                type="checkbox"
+                checked={hideCompleted}
+                onChange={(e) => setHideCompleted(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Hide completed / cancelled
+            </label>
+            {activeFilterCount > 0 && (
+              <div className="sm:col-span-2 lg:col-span-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterText('');
+                    setFilterStatus('');
+                    setFilterCustomer('');
+                    setHideCompleted(false);
+                  }}
+                  className="rounded-lg bg-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
+          </div>
+        </CollapsibleFilterPanel>
+      )}
+
       {projects.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+        <div className="rounded-lg bg-gray-50 py-12 text-center dark:bg-gray-700/50">
           <div className="text-gray-500 dark:text-gray-400">No projects in this organization</div>
         </div>
+      ) : filteredProjects.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-300 py-10 text-center dark:border-gray-600">
+          <p className="text-sm text-gray-500 dark:text-gray-400">No projects match the current filters.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setFilterText('');
+              setFilterStatus('');
+              setFilterCustomer('');
+              setHideCompleted(false);
+            }}
+            className="mt-2 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+          >
+            Clear filters
+          </button>
+        </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-hidden rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 dark:bg-gray-800">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-900">
+            <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Project Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Created By
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Created At
-                </th>
-                <th scope="col" className="relative px-6 py-3">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Project</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Health</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Status</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Progress</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Hours</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Tickets</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">Dates</th>
+                <th scope="col" className="relative px-3 py-2">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {projects.map((project) => (
-                <tr key={project.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {project.ProjectName}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full" style={{ backgroundColor: project.StatusColor ? `${project.StatusColor}20` : undefined, color: project.StatusColor || undefined }}>
-                      {project.StatusName || 'Unknown'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {project.CreatorName || `User ${project.CreatedBy}`}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {new Date(project.CreatedAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center justify-end gap-1">
-                    <button
-                      onClick={() => router.push(`/projects/${project.Id}`)}
-                      title="View project"
-                      aria-label="View project"
-                      className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7S3.732 16.057 2.458 12z" />
-                      </svg>
-                    </button>
-                    {canManage && organizations.length > 0 && (
-                      <button
-                        onClick={() => setTransferringProject(project)}
-                        title="Transfer project"
-                        aria-label="Transfer project"
-                        className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+            <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+              {filteredProjects.map((project) => {
+                const totalTasks = Number(project.TotalTasks || 0);
+                const completedTasks = Number(project.CompletedTasks || 0);
+                const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                const estimated = Number(project.TotalEstimatedHours || 0);
+                const worked = Number(project.TotalWorkedHours || 0);
+                const openTickets = Number(project.OpenTickets || 0);
+                const overdueTasks = Number(project.OverdueTasks || 0);
+                const unplannedTasks = Number(project.UnplannedTasks || 0);
+
+                return (
+                  <tr
+                    key={project.Id}
+                    onClick={() => router.push(`/projects/${project.Id}`)}
+                    className="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                  >
+                    <td className="px-3 py-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-gray-900 dark:text-white">
+                          {project.ProjectName}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {project.CustomerName ? (
+                            <span>{project.CustomerName}</span>
+                          ) : (
+                            <span className="italic">No customer</span>
+                          )}
+                          {Number(project.IsHobby || 0) === 1 && <span className="text-amber-600 dark:text-amber-400">Hobby</span>}
+                          {Number(project.IsGlobal || 0) === 1 && <span>Global</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      <span
+                        className={`inline-block h-2.5 w-2.5 rounded-full ${healthDot(project.HealthStatus)}`}
+                        title={project.HealthReasons?.join(' · ') || project.HealthStatus || 'Unknown'}
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      <span
+                        className="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
+                        style={pillStyle(project.StatusColor || '#6b7280', { alpha: '25', borderAlpha: '50' }) ?? undefined}
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h11m0 0l-3-3m3 3l-3 3M16 17H5m0 0l3-3m-3 3l3 3" />
-                        </svg>
-                      </button>
-                    )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {project.StatusName || 'Unknown'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="mx-auto w-28">
+                        <div className="mb-1 flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                          <span>{completedTasks}/{totalTasks}</span>
+                          <span>{progressPct}%</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                          <div
+                            className="h-full rounded-full bg-blue-500"
+                            style={{ width: `${Math.min(100, progressPct)}%` }}
+                          />
+                        </div>
+                        {(overdueTasks > 0 || unplannedTasks > 0) && (
+                          <div className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                            {overdueTasks > 0 && <span className="text-red-600 dark:text-red-400">{overdueTasks} overdue</span>}
+                            {overdueTasks > 0 && unplannedTasks > 0 && ' · '}
+                            {unplannedTasks > 0 && <span>{unplannedTasks} unplanned</span>}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-center text-xs text-gray-700 dark:text-gray-300">
+                      <div className="font-medium tabular-nums">{decimalHoursToHMS(worked)}</div>
+                      <div className="text-gray-500 dark:text-gray-400 tabular-nums">
+                        of {decimalHoursToHMS(estimated)}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-center text-sm tabular-nums text-gray-700 dark:text-gray-300">
+                      {openTickets}
+                    </td>
+                    <td className="px-3 py-3 text-center text-xs text-gray-500 dark:text-gray-400">
+                      <div>{formatDate(project.StartDate)}</div>
+                      <div>→ {formatDate(project.EndDate)}</div>
+                    </td>
+                    <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => router.push(`/projects/${project.Id}`)}
+                          title="View project"
+                          aria-label="View project"
+                          className="rounded p-1.5 text-gray-400 transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7S3.732 16.057 2.458 12z" />
+                          </svg>
+                        </button>
+                        {canManage && organizations.length > 0 && (
+                          <button
+                            onClick={() => setTransferringProject(project)}
+                            title="Transfer project"
+                            aria-label="Transfer project"
+                            className="rounded p-1.5 text-gray-400 transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h11m0 0l-3-3m3 3l-3 3M16 17H5m0 0l3-3m-3 3l3 3" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Transfer Project Modal */}
       {transferringProject && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800">
+            <h3 className="mb-4 text-xl font-bold text-gray-900 dark:text-white">
               Transfer Project
             </h3>
-            
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Transfer "{transferringProject.ProjectName}" to another organization
+
+            <p className="mb-4 text-gray-600 dark:text-gray-400">
+              Transfer &quot;{transferringProject.ProjectName}&quot; to another organization
             </p>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Destination Organization
               </label>
               <select
                 value={selectedOrgId}
-                onChange={(e) => setSelectedOrgId(parseInt(e.target.value))}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                onChange={(e) => setSelectedOrgId(parseInt(e.target.value, 10))}
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
               >
-                <option value="0">Select Organization</option>
+                <option value={0}>Select Organization</option>
                 {organizations.map((org) => (
                   <option key={org.Id} value={org.Id}>
                     {org.Name}
@@ -3342,9 +3351,9 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
               </select>
             </div>
 
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-6">
+            <div className="mb-6 rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-800 dark:bg-yellow-900/20">
               <p className="text-sm text-yellow-800 dark:text-yellow-400">
-                ⚠️ This will change project access permissions. Only members of the destination organization will be able to access this project.
+                This will change project access. Only members of the destination organization will be able to access this project.
               </p>
             </div>
 
@@ -3354,14 +3363,14 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
                   setTransferringProject(null);
                   setSelectedOrgId(0);
                 }}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+                className="flex-1 rounded-lg bg-gray-600 px-6 py-2 text-white transition-colors hover:bg-gray-700"
               >
                 Cancel
               </button>
               <button
                 onClick={handleTransfer}
                 disabled={!selectedOrgId}
-                className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white px-6 py-2 rounded-lg transition-colors"
+                className="flex-1 rounded-lg bg-orange-600 px-6 py-2 text-white transition-colors hover:bg-orange-700 disabled:bg-orange-400"
               >
                 Transfer Project
               </button>
@@ -3896,1593 +3905,6 @@ function TagsTab({
   );
 }
 
-// GitHub Integration Card Component
-function GitHubIntegrationCard({
-  integration,
-  token,
-  orgId,
-  onUpdate,
-  setError,
-  setSuccess
-}: {
-  integration: any;
-  token: string;
-  orgId: number;
-  onUpdate: () => void;
-  setError: (error: string) => void;
-  setSuccess: (success: string) => void;
-}) {
-  const [showForm, setShowForm] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const gitHubTokenRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState({
-    isEnabled: true,
-    gitHubUrl: '',
-  });
-
-  useEffect(() => {
-    if (integration) {
-      setFormData({
-        isEnabled: integration.IsEnabled === 1,
-        gitHubUrl: integration.GitHubUrl || '',
-      });
-      clearPasswordInput(gitHubTokenRef);
-    }
-  }, [integration]);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/github-integrations/organization/${orgId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            isEnabled: formData.isEnabled,
-            gitHubUrl: formData.gitHubUrl,
-            gitHubToken: readPasswordInput(gitHubTokenRef),
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.ok) {
-        clearPasswordInput(gitHubTokenRef);
-        setSuccess('GitHub integration saved successfully');
-        setShowForm(false);
-        onUpdate();
-      } else {
-        setError(data.message || 'Failed to save GitHub integration');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to save GitHub integration');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/github-integrations/organization/${orgId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        setSuccess('GitHub integration removed successfully');
-        onUpdate();
-      } else {
-        setError('Failed to delete GitHub integration');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete GitHub integration');
-    } finally {
-      setShowDeleteConfirm(false);
-    }
-  };
-
-  return (
-    <>
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <div className="text-5xl">🐙</div>
-            <div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">GitHub Integration</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Import GitHub issues as tasks
-              </p>
-            </div>
-          </div>
-          {integration && (
-            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-              integration.IsEnabled 
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400'
-            }`}>
-              {integration.IsEnabled ? '✓ Active' : 'Inactive'}
-            </div>
-          )}
-        </div>
-
-        {!integration && !showForm ? (
-          <div className="text-center py-8">
-            <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">🐙</div>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              GitHub integration is not configured for this organization.
-            </p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors"
-            >
-              🔗 Configure GitHub
-            </button>
-          </div>
-        ) : integration && !showForm ? (
-          <div className="space-y-4">
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="grid grid-cols-1 gap-3 text-sm">
-                <div>
-                  <span className="text-gray-500 dark:text-gray-400">GitHub URL:</span>{' '}
-                  <span className="font-medium text-gray-900 dark:text-white">{integration.GitHubUrl}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Last Updated: <span className="text-gray-900 dark:text-white">{new Date(integration.UpdatedAt).toLocaleDateString()}</span>
-            </div>
-
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <p className="text-sm text-blue-800 dark:text-blue-400">
-                ℹ️ Repository configuration is set per project in Project Settings
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowForm(true)}
-                className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors"
-              >
-                ✏️ Edit Configuration
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-              >
-                🗑️ Remove Integration
-              </button>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleSave} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                GitHub URL {!integration && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                type="url"
-                value={formData.gitHubUrl}
-                onChange={(e) => setFormData({ ...formData, gitHubUrl: e.target.value })}
-                placeholder="https://api.github.com"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500"
-                required={!integration}
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Use https://api.github.com for GitHub.com or your GitHub Enterprise API URL
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Personal Access Token {!integration && <span className="text-red-500">*</span>}
-              </label>
-              <PasswordInput
-                ref={gitHubTokenRef}
-                name="gitHubToken"
-                placeholder={integration ? "Leave empty to keep current token" : "ghp_xxxxxxxxxxxxxxxxxxxx"}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-500"
-                required={!integration}
-                autoComplete="new-password"
-                preventAutofill
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Token with 'repo' access to read issues and repositories
-              </p>
-            </div>
-
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <p className="text-sm text-blue-800 dark:text-blue-400">
-                ℹ️ Repository owner and name will be configured per project in Project Settings
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="githubEnabled"
-                checked={formData.isEnabled}
-                onChange={(e) => setFormData({ ...formData, isEnabled: e.target.checked })}
-                className="w-4 h-4 text-gray-600 bg-gray-100 border-gray-300 rounded focus:ring-gray-500"
-              />
-              <label htmlFor="githubEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Enable GitHub integration
-              </label>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-4 py-2 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-400 text-white rounded-lg transition-colors"
-              >
-                {isSaving ? 'Saving...' : '💾 Save Integration'}
-              </button>
-              {integration && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowForm(false);
-                    setFormData({
-                      isEnabled: integration.IsEnabled === 1,
-                      gitHubUrl: integration.GitHubUrl || '',
-                    });
-                    clearPasswordInput(gitHubTokenRef);
-                  }}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-    {showDeleteConfirm && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-          <div className="p-6">
-            <h3 className="text-xl font-semibold mb-3 text-gray-900 dark:text-white">Remove GitHub Integration</h3>
-            <p className="text-gray-700 dark:text-gray-300 mb-6">
-              Are you sure you want to remove the GitHub integration?
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-    </>
-  );
-}
-
-// Gitea Integration Card Component
-function GiteaIntegrationCard({
-  integration,
-  token,
-  orgId,
-  onUpdate,
-  setError,
-  setSuccess
-}: {
-  integration: any;
-  token: string;
-  orgId: number;
-  onUpdate: () => void;
-  setError: (error: string) => void;
-  setSuccess: (success: string) => void;
-}) {
-  const [showForm, setShowForm] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const giteaTokenRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState({
-    isEnabled: true,
-    giteaUrl: '',
-  });
-
-  useEffect(() => {
-    if (integration) {
-      setFormData({
-        isEnabled: integration.IsEnabled === 1,
-        giteaUrl: integration.GiteaUrl || '',
-      });
-      clearPasswordInput(giteaTokenRef);
-    }
-  }, [integration]);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/gitea-integrations/organization/${orgId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            isEnabled: formData.isEnabled,
-            giteaUrl: formData.giteaUrl,
-            giteaToken: readPasswordInput(giteaTokenRef),
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.ok) {
-        clearPasswordInput(giteaTokenRef);
-        setSuccess('Gitea integration saved successfully');
-        setShowForm(false);
-        onUpdate();
-      } else {
-        setError(data.message || 'Failed to save Gitea integration');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to save Gitea integration');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/gitea-integrations/organization/${orgId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        setSuccess('Gitea integration removed successfully');
-        onUpdate();
-      } else {
-        setError('Failed to delete Gitea integration');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete Gitea integration');
-    } finally {
-      setShowDeleteConfirm(false);
-    }
-  };
-
-  return (
-    <>
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <div className="text-5xl">🍵</div>
-            <div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Gitea Integration</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Import Gitea issues as tasks
-              </p>
-            </div>
-          </div>
-          {integration && (
-            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-              integration.IsEnabled 
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400'
-            }`}>
-              {integration.IsEnabled ? '✓ Active' : 'Inactive'}
-            </div>
-          )}
-        </div>
-
-        {!integration && !showForm ? (
-          <div className="text-center py-8">
-            <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">🍵</div>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              Gitea integration is not configured for this organization.
-            </p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-            >
-              🔗 Configure Gitea
-            </button>
-          </div>
-        ) : integration && !showForm ? (
-          <div className="space-y-4">
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="grid grid-cols-1 gap-3 text-sm">
-                <div>
-                  <span className="text-gray-500 dark:text-gray-400">Gitea URL:</span>{' '}
-                  <span className="font-medium text-gray-900 dark:text-white">{integration.GiteaUrl}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Last Updated: <span className="text-gray-900 dark:text-white">{new Date(integration.UpdatedAt).toLocaleDateString()}</span>
-            </div>
-
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <p className="text-sm text-blue-800 dark:text-blue-400">
-                ℹ️ Repository configuration is set per project in Project Settings
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowForm(true)}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-              >
-                ✏️ Edit Configuration
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-              >
-                🗑️ Remove Integration
-              </button>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleSave} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Gitea URL {!integration && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                type="url"
-                value={formData.giteaUrl}
-                onChange={(e) => setFormData({ ...formData, giteaUrl: e.target.value })}
-                placeholder="https://gitea.example.com"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                required={!integration}
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Your Gitea instance URL (e.g., https://gitea.example.com)
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Access Token {!integration && <span className="text-red-500">*</span>}
-              </label>
-              <PasswordInput
-                ref={giteaTokenRef}
-                name="giteaToken"
-                placeholder={integration ? "Leave empty to keep current token" : "Your Gitea access token"}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                required={!integration}
-                autoComplete="new-password"
-                preventAutofill
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Token with read access to repositories and issues (Settings → Applications → Generate New Token)
-              </p>
-            </div>
-
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <p className="text-sm text-blue-800 dark:text-blue-400">
-                ℹ️ Repository owner and name will be configured per project in Project Settings
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="giteaEnabled"
-                checked={formData.isEnabled}
-                onChange={(e) => setFormData({ ...formData, isEnabled: e.target.checked })}
-                className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500"
-              />
-              <label htmlFor="giteaEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Enable Gitea integration
-              </label>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg transition-colors"
-              >
-                {isSaving ? 'Saving...' : '💾 Save Integration'}
-              </button>
-              {integration && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowForm(false);
-                    setFormData({
-                      isEnabled: integration.IsEnabled === 1,
-                      giteaUrl: integration.GiteaUrl || '',
-                    });
-                    clearPasswordInput(giteaTokenRef);
-                  }}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-    {showDeleteConfirm && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-          <div className="p-6">
-            <h3 className="text-xl font-semibold mb-3 text-gray-900 dark:text-white">Remove Gitea Integration</h3>
-            <p className="text-gray-700 dark:text-gray-300 mb-6">
-              Are you sure you want to remove the Gitea integration?
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-    </>
-  );
-}
-
-// Bitbucket Integration Card Component
-function BitbucketIntegrationCard({
-  integration,
-  token,
-  orgId,
-  onUpdate,
-  setError,
-  setSuccess
-}: {
-  integration: any;
-  token: string;
-  orgId: number;
-  onUpdate: () => void;
-  setError: (error: string) => void;
-  setSuccess: (success: string) => void;
-}) {
-  const [showForm, setShowForm] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const bitbucketTokenRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState({
-    isEnabled: true,
-    bitbucketUrl: '',
-    bitbucketUsername: '',
-  });
-
-  useEffect(() => {
-    if (integration) {
-      setFormData({
-        isEnabled: integration.IsEnabled === 1,
-        bitbucketUrl: integration.BitbucketUrl || '',
-        bitbucketUsername: integration.BitbucketUsername || '',
-      });
-      clearPasswordInput(bitbucketTokenRef);
-    }
-  }, [integration]);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/bitbucket-integrations/organization/${orgId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            isEnabled: formData.isEnabled,
-            bitbucketUrl: formData.bitbucketUrl,
-            bitbucketUsername: formData.bitbucketUsername || null,
-            bitbucketToken: readPasswordInput(bitbucketTokenRef),
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.ok) {
-        clearPasswordInput(bitbucketTokenRef);
-        setSuccess('Bitbucket integration saved successfully');
-        setShowForm(false);
-        onUpdate();
-      } else {
-        setError(data.message || 'Failed to save Bitbucket integration');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to save Bitbucket integration');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/bitbucket-integrations/organization/${orgId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        setSuccess('Bitbucket integration removed successfully');
-        onUpdate();
-      } else {
-        setError('Failed to delete Bitbucket integration');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete Bitbucket integration');
-    } finally {
-      setShowDeleteConfirm(false);
-    }
-  };
-
-  return (
-    <>
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <div className="text-5xl">🪣</div>
-            <div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Bitbucket Integration</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Read commit history from Bitbucket Cloud or Server (API tokens)
-              </p>
-            </div>
-          </div>
-          {integration && (
-            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-              integration.IsEnabled
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400'
-            }`}>
-              {integration.IsEnabled ? '✓ Active' : 'Inactive'}
-            </div>
-          )}
-        </div>
-
-        {!integration && !showForm ? (
-          <div className="text-center py-8">
-            <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">🪣</div>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              Bitbucket integration is not configured for this organization.
-            </p>
-            <button
-              onClick={() => setShowForm(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              Configure Bitbucket
-            </button>
-          </div>
-        ) : integration && !showForm ? (
-          <div className="space-y-4">
-            <div className="p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg border border-gray-200 dark:border-gray-800">
-              <div className="grid grid-cols-1 gap-3 text-sm">
-                <div>
-                  <span className="text-gray-500 dark:text-gray-400">Bitbucket URL:</span>{' '}
-                  <span className="font-medium text-gray-900 dark:text-white">{integration.BitbucketUrl}</span>
-                </div>
-                {integration.BitbucketUsername && (
-                  <div>
-                    <span className="text-gray-500 dark:text-gray-400">Atlassian email:</span>{' '}
-                    <span className="font-medium text-gray-900 dark:text-white">{integration.BitbucketUsername}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              Last Updated: <span className="text-gray-900 dark:text-white">{new Date(integration.UpdatedAt).toLocaleDateString()}</span>
-            </div>
-
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <p className="text-sm text-blue-800 dark:text-blue-400">
-                Repository URL is set on each Application. For Cloud, use an Atlassian API token (app passwords are discontinued).
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowForm(true)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                Edit Configuration
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-              >
-                Remove Integration
-              </button>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleSave} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Bitbucket URL {!integration && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                type="url"
-                value={formData.bitbucketUrl}
-                onChange={(e) => setFormData({ ...formData, bitbucketUrl: e.target.value })}
-                placeholder="https://bitbucket.org"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                required={!integration}
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Use https://bitbucket.org for Cloud, or your Bitbucket Server / Data Center base URL
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Atlassian account email (Cloud) {!integration && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                type="email"
-                value={formData.bitbucketUsername}
-                onChange={(e) => setFormData({ ...formData, bitbucketUsername: e.target.value })}
-                placeholder="you@company.com"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                autoComplete="off"
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Required for Bitbucket Cloud API tokens. Use your Atlassian email — not your Bitbucket username.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                API token {!integration && <span className="text-red-500">*</span>}
-              </label>
-              <PasswordInput
-                ref={bitbucketTokenRef}
-                name="bitbucketToken"
-                placeholder={integration ? 'Leave empty to keep current token' : 'Atlassian API token for Bitbucket'}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                required={!integration}
-                autoComplete="new-password"
-                preventAutofill
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Create at Atlassian account → Security → API tokens (select Bitbucket, scopes include repository read).
-                App passwords are discontinued and will return 401.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="bitbucketEnabled"
-                checked={formData.isEnabled}
-                onChange={(e) => setFormData({ ...formData, isEnabled: e.target.checked })}
-                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <label htmlFor="bitbucketEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Enable Bitbucket integration
-              </label>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
-              >
-                {isSaving ? 'Saving...' : 'Save Integration'}
-              </button>
-              {integration && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowForm(false);
-                    setFormData({
-                      isEnabled: integration.IsEnabled === 1,
-                      bitbucketUrl: integration.BitbucketUrl || '',
-                      bitbucketUsername: integration.BitbucketUsername || '',
-                    });
-                    clearPasswordInput(bitbucketTokenRef);
-                  }}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-    {showDeleteConfirm && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-          <div className="p-6">
-            <h3 className="text-xl font-semibold mb-3 text-gray-900 dark:text-white">Remove Bitbucket Integration</h3>
-            <p className="text-gray-700 dark:text-gray-300 mb-6">
-              Are you sure you want to remove the Bitbucket integration?
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-    </>
-  );
-}
-
-// Integrations Tab Component
-function IntegrationsTab({ orgId, token }: { orgId: number; token: string }) {
-  const { showToast } = useToast();
-  const [integration, setIntegration] = useState<any>(null);
-  const [githubIntegration, setGithubIntegration] = useState<any>(null);
-  const [giteaIntegration, setGiteaIntegration] = useState<any>(null);
-  const [bitbucketIntegration, setBitbucketIntegration] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const jiraApiTokenRef = useRef<HTMLInputElement>(null);
-  const jiraProjectsApiTokenRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState({
-    isEnabled: true,
-    jiraUrl: '',
-    jiraEmail: '',
-    jiraProjectKey: '',
-    jiraTicketsJqlFilter: '',
-    hideIntegratedJiraTicketsByDefault: false,
-    jiraProjectsUrl: '',
-    jiraProjectsEmail: '',
-  });
-
-  const setSuccessWithToast = (message: string, title = 'Success') => {
-    setSuccess(message);
-    showToast({ type: 'success', title, message });
-  };
-
-  useEffect(() => {
-    loadIntegration();
-  }, [orgId]);
-
-  const loadIntegration = async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      // Load Jira integration
-      const jiraResponse = await fetch(
-        `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (jiraResponse.ok) {
-        const data = await jiraResponse.json();
-        if (data.integration) {
-          setIntegration(data.integration);
-          setFormData({
-            isEnabled: data.integration.IsEnabled === 1,
-            jiraUrl: data.integration.JiraUrl || '',
-            jiraEmail: data.integration.JiraEmail || '',
-            jiraProjectKey: data.integration.JiraProjectKey || '',
-            jiraTicketsJqlFilter: data.integration.JiraTicketsJqlFilter || '',
-            hideIntegratedJiraTicketsByDefault: data.integration.HideIntegratedJiraTicketsByDefault === 1,
-            jiraProjectsUrl: data.integration.JiraProjectsUrl || '',
-            jiraProjectsEmail: data.integration.JiraProjectsEmail || '',
-          });
-          clearPasswordInput(jiraApiTokenRef);
-          clearPasswordInput(jiraProjectsApiTokenRef);
-        }
-      }
-
-      // Load GitHub integration
-      const githubResponse = await fetch(
-        `${getApiUrl()}/api/github-integrations/organization/${orgId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (githubResponse.ok) {
-        const githubData = await githubResponse.json();
-        if (githubData.integration) {
-          setGithubIntegration(githubData.integration);
-        }
-      }
-
-      // Load Gitea integration
-      const giteaResponse = await fetch(
-        `${getApiUrl()}/api/gitea-integrations/organization/${orgId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (giteaResponse.ok) {
-        const giteaData = await giteaResponse.json();
-        if (giteaData.integration) {
-          setGiteaIntegration(giteaData.integration);
-        }
-      }
-
-      const bitbucketResponse = await fetch(
-        `${getApiUrl()}/api/bitbucket-integrations/organization/${orgId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (bitbucketResponse.ok) {
-        const bitbucketData = await bitbucketResponse.json();
-        setBitbucketIntegration(bitbucketData.integration || null);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load integrations');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleTestConnection = async () => {
-    const jiraApiToken = readPasswordInput(jiraApiTokenRef);
-    if (!formData.jiraUrl || !formData.jiraEmail || !jiraApiToken) {
-      setError('Please fill in Jira for Tickets fields to test connection');
-      return;
-    }
-
-    setIsTesting(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const results: string[] = [];
-      const errors: string[] = [];
-
-      // Test Jira for Tickets
-      try {
-        const response = await fetch(
-          `${getApiUrl()}/api/jira-integrations/organization/${orgId}/test`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              jiraUrl: formData.jiraUrl,
-              jiraEmail: formData.jiraEmail,
-              jiraApiToken,
-            })
-          }
-        );
-
-        const data = await response.json();
-
-        if (response.ok) {
-          results.push(`✅ Jira Tickets: Connected as ${data.jiraUser}`);
-        } else {
-          errors.push(`❌ Jira Tickets: ${data.message || 'Connection failed'}`);
-        }
-      } catch (err: any) {
-        errors.push(`❌ Jira Tickets: ${err.message || 'Connection failed'}`);
-      }
-
-      // Test Jira for Projects if configured
-      const jiraProjectsApiToken = readPasswordInput(jiraProjectsApiTokenRef);
-      if (formData.jiraProjectsUrl && formData.jiraProjectsEmail && jiraProjectsApiToken) {
-        try {
-          const response = await fetch(
-            `${getApiUrl()}/api/jira-integrations/organization/${orgId}/test`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                jiraUrl: formData.jiraProjectsUrl,
-                jiraEmail: formData.jiraProjectsEmail,
-                jiraApiToken: jiraProjectsApiToken,
-              })
-            }
-          );
-
-          const data = await response.json();
-
-          if (response.ok) {
-            results.push(`✅ Jira Projects: Connected as ${data.jiraUser}`);
-          } else {
-            errors.push(`❌ Jira Projects: ${data.message || 'Connection failed'}`);
-          }
-        } catch (err: any) {
-          errors.push(`❌ Jira Projects: ${err.message || 'Connection failed'}`);
-        }
-      }
-
-      // Show combined results
-      if (errors.length > 0) {
-        setError(errors.join('\n'));
-        if (results.length > 0) {
-          setSuccessWithToast(results.join('\n'), 'Connection Test');
-        }
-      } else if (results.length > 0) {
-        setSuccessWithToast(results.join('\n'), 'Connection Test');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to test connection');
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!formData.jiraUrl || !formData.jiraEmail) {
-      setError('Please fill in all required fields');
-      return;
-    }
-
-    setIsSaving(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            ...formData,
-            jiraApiToken: readPasswordInput(jiraApiTokenRef),
-            jiraProjectsApiToken: readPasswordInput(jiraProjectsApiTokenRef),
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.ok) {
-        clearPasswordInput(jiraApiTokenRef);
-        clearPasswordInput(jiraProjectsApiTokenRef);
-        setSuccessWithToast('Jira integration saved successfully', 'Integration Saved');
-        setShowForm(false);
-        loadIntegration();
-      } else {
-        setError(data.message || 'Failed to save integration');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to save integration');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      const response = await fetch(
-        `${getApiUrl()}/api/jira-integrations/organization/${orgId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        setSuccessWithToast('Integration removed successfully', 'Integration Removed');
-        setIntegration(null);
-        setFormData({
-          isEnabled: true,
-          jiraUrl: '',
-          jiraEmail: '',
-          jiraProjectKey: '',
-          jiraTicketsJqlFilter: '',
-          hideIntegratedJiraTicketsByDefault: false,
-          jiraProjectsUrl: '',
-          jiraProjectsEmail: '',
-        });
-        clearPasswordInput(jiraApiTokenRef);
-        clearPasswordInput(jiraProjectsApiTokenRef);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete integration');
-    } finally {
-      setShowDeleteConfirm(false);
-    }
-  };
-
-  if (isLoading) {
-    return <div className="text-center py-8 text-gray-500 dark:text-gray-400">Loading...</div>;
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">🔌 Integrations</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Connect external services to enhance your organization's workflow
-          </p>
-        </div>
-      </div>
-
-      {error && (
-        <div className="p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg whitespace-pre-line">
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Jira Integration Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-        <div className="p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <div className="text-5xl">🔷</div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Jira Integration</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Connect your Jira instance to link external tickets
-                </p>
-              </div>
-            </div>
-            {integration && (
-              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                integration.IsEnabled 
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400'
-              }`}>
-                {integration.IsEnabled ? '✓ Active' : 'Inactive'}
-              </div>
-            )}
-          </div>
-
-          {integration && !showForm ? (
-            <div className="space-y-4">
-              {/* Jira for Tickets */}
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">🔷 Jira for Tickets</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Jira URL</div>
-                    <div className="font-medium text-gray-900 dark:text-white">{integration.JiraUrl}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Email</div>
-                    <div className="font-medium text-gray-900 dark:text-white">{integration.JiraEmail}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Project Key</div>
-                    <div className="font-medium text-gray-900 dark:text-white">{integration.JiraProjectKey || 'Not specified'}</div>
-                  </div>
-                  <div className="col-span-2">
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Base JQL Filter</div>
-                    <div className="font-medium text-gray-900 dark:text-white break-words">{integration.JiraTicketsJqlFilter || 'Not specified'}</div>
-                  </div>
-                  <div className="col-span-2">
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Hide integrated tickets by default</div>
-                    <div className="font-medium text-gray-900 dark:text-white">{integration.HideIntegratedJiraTicketsByDefault ? 'Yes' : 'No'}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Jira for Projects */}
-              {integration.JiraProjectsUrl && (
-                <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                  <h4 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-3">🟢 Jira for Projects / Kanban</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Jira Projects URL</div>
-                      <div className="font-medium text-gray-900 dark:text-white">{integration.JiraProjectsUrl}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Email</div>
-                      <div className="font-medium text-gray-900 dark:text-white">{integration.JiraProjectsEmail || 'Not specified'}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Last Updated */}
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                Last Updated: <span className="text-gray-900 dark:text-white">{new Date(integration.UpdatedAt).toLocaleDateString()}</span>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                >
-                  ✏️ Edit Configuration
-                </button>
-                <button
-                      onClick={() => setShowDeleteConfirm(true)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                >
-                  🗑️ Remove Integration
-                </button>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleSave} className="space-y-6">
-              {/* Jira for Tickets Section */}
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
-                  </svg>
-                  Jira for Tickets
-                </h3>
-                <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Jira URL <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={formData.jiraUrl}
-                    onChange={(e) => setFormData({ ...formData, jiraUrl: e.target.value })}
-                    placeholder="https://your-domain.atlassian.net"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Email <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.jiraEmail}
-                    onChange={(e) => setFormData({ ...formData, jiraEmail: e.target.value })}
-                    placeholder="your-email@company.com"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    API Token {!integration && <span className="text-red-500">*</span>}
-                  </label>
-                  <PasswordInput
-                    ref={jiraApiTokenRef}
-                    name="jiraApiToken"
-                    placeholder={integration ? 'Leave empty to keep current token' : 'Your Jira API Token'}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                    required={!integration}
-                    autoComplete="new-password"
-                    preventAutofill
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Create an API token at: <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Atlassian Account</a>
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Project Key (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.jiraProjectKey}
-                    onChange={(e) => setFormData({ ...formData, jiraProjectKey: e.target.value })}
-                    placeholder="PROJ"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Limit search to specific project
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Jira Tickets Base JQL (optional)
-                  </label>
-                  <textarea
-                    value={formData.jiraTicketsJqlFilter}
-                    onChange={(e) => setFormData({ ...formData, jiraTicketsJqlFilter: e.target.value })}
-                    placeholder='e.g. status NOT IN (Done, Cancelled) AND labels = "support"'
-                    rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Applied automatically when importing from Jira tickets in projects.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="hideIntegratedJiraTicketsByDefault"
-                    checked={formData.hideIntegratedJiraTicketsByDefault}
-                    onChange={(e) => setFormData({ ...formData, hideIntegratedJiraTicketsByDefault: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <label htmlFor="hideIntegratedJiraTicketsByDefault" className="text-sm text-gray-700 dark:text-gray-300">
-                    Hide already integrated Jira tickets by default in "Import from Jira Ticket"
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* Jira for Projects Section */}
-            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-              <h3 className="text-lg font-semibold text-green-900 dark:text-green-100 mb-4 flex items-center gap-2">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M11.53 2c0 2.4 1.97 4.35 4.35 4.35h1.78v1.7c0 2.4 1.94 4.34 4.34 4.34V2.84A.84.84 0 0021.16 2zM2 11.53c2.4 0 4.35 1.97 4.35 4.35v1.78h1.7c2.4 0 4.34 1.94 4.34 4.34H2.84A.84.84 0 012 21.16z" />
-                </svg>
-                Jira for Projects / Kanban Boards
-              </h3>
-              <p className="text-sm text-green-700 dark:text-green-300 mb-4">
-                Configure a separate Jira instance for managing project boards and kanban views (optional)
-              </p>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Jira Projects URL
-                  </label>
-                  <input
-                    type="url"
-                    value={formData.jiraProjectsUrl}
-                    onChange={(e) => setFormData({ ...formData, jiraProjectsUrl: e.target.value })}
-                    placeholder="https://your-projects-domain.atlassian.net"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.jiraProjectsEmail}
-                    onChange={(e) => setFormData({ ...formData, jiraProjectsEmail: e.target.value })}
-                    placeholder="your-email@company.com"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    API Token
-                  </label>
-                  <PasswordInput
-                    ref={jiraProjectsApiTokenRef}
-                    name="jiraProjectsApiToken"
-                    placeholder="Your Jira API Token for Projects instance"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
-                    autoComplete="new-password"
-                    preventAutofill
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    API token for the Projects Jira instance
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Enable Integration Toggle */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="isEnabled"
-                    checked={formData.isEnabled}
-                    onChange={(e) => setFormData({ ...formData, isEnabled: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <label htmlFor="isEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Enable integration
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={handleTestConnection}
-                  disabled={isTesting}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white rounded-lg transition-colors"
-                >
-                  {isTesting ? 'Testing...' : '🔍 Test Connection'}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-                >
-                  {isSaving ? 'Saving...' : '💾 Save Integration'}
-                </button>
-                {integration && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowForm(false);
-                      setFormData({
-                        isEnabled: integration.IsEnabled === 1,
-                        jiraUrl: integration.JiraUrl || '',
-                        jiraEmail: integration.JiraEmail || '',
-                        jiraProjectKey: integration.JiraProjectKey || '',
-                        jiraTicketsJqlFilter: integration.JiraTicketsJqlFilter || '',
-                        hideIntegratedJiraTicketsByDefault: integration.HideIntegratedJiraTicketsByDefault === 1,
-                        jiraProjectsUrl: integration.JiraProjectsUrl || '',
-                        jiraProjectsEmail: integration.JiraProjectsEmail || '',
-                      });
-                      clearPasswordInput(jiraApiTokenRef);
-                      clearPasswordInput(jiraProjectsApiTokenRef);
-                    }}
-                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </form>
-          )} 
-        </div>
-      </div>
-
-      {/* GitHub Integration Card */}
-      <GitHubIntegrationCard 
-        integration={githubIntegration}
-        token={token}
-        orgId={orgId}
-        onUpdate={loadIntegration}
-        setError={setError}
-          setSuccess={setSuccessWithToast}
-      />
-
-      {/* Gitea Integration Card */}
-      <GiteaIntegrationCard 
-        integration={giteaIntegration}
-        token={token}
-        orgId={orgId}
-        onUpdate={loadIntegration}
-        setError={setError}
-          setSuccess={setSuccessWithToast}
-      />
-
-      {/* Bitbucket Integration Card */}
-      <BitbucketIntegrationCard
-        integration={bitbucketIntegration}
-        token={token}
-        orgId={orgId}
-        onUpdate={loadIntegration}
-        setError={setError}
-        setSuccess={setSuccessWithToast}
-      />
-    </div>
-    {showDeleteConfirm && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-          <div className="p-6">
-            <h3 className="text-xl font-semibold mb-3 text-gray-900 dark:text-white">Remove Jira Integration</h3>
-            <p className="text-gray-700 dark:text-gray-300 mb-6">
-              Are you sure you want to remove this integration?
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-    </div>
-  );
-}
 
 // Attachments Tab Component
 function AttachmentsTab({ 
@@ -5594,8 +4016,7 @@ function AttachmentsTab({
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Organization Attachments</h2>
+      <div className="mb-6 flex items-center justify-end">
         <div>
           <input
             type="file"
@@ -5797,15 +4218,28 @@ function SlaTab({
   const saveRule = async () => {
     if (!form.name.trim()) return;
     setIsSaving(true);
+    setError('');
     try {
+      const hoursRaw = form.autoTransitionHours.trim();
+      const statusRaw = form.autoTransitionStatusId.trim();
+      const parsedHours = hoursRaw ? parseFloat(hoursRaw) : null;
+      const parsedStatus = statusRaw ? parseInt(statusRaw, 10) : null;
+      // Auto-transition is optional: both fields required together, otherwise both ignored
+      const autoTransitionEnabled =
+        parsedHours != null &&
+        Number.isFinite(parsedHours) &&
+        parsedHours > 0 &&
+        parsedStatus != null &&
+        Number.isFinite(parsedStatus);
+
       const body = {
         organizationId: orgId,
         name: form.name.trim(),
-        priorityId: form.priorityId ? parseInt(form.priorityId) : null,
+        priorityId: form.priorityId ? parseInt(form.priorityId, 10) : null,
         firstResponseHours: form.firstResponseHours ? parseFloat(form.firstResponseHours) : null,
         resolutionHours: form.resolutionHours ? parseFloat(form.resolutionHours) : null,
-        autoTransitionHours: form.autoTransitionHours ? parseFloat(form.autoTransitionHours) : null,
-        autoTransitionStatusId: form.autoTransitionStatusId ? parseInt(form.autoTransitionStatusId) : null,
+        autoTransitionHours: autoTransitionEnabled ? parsedHours : null,
+        autoTransitionStatusId: autoTransitionEnabled ? parsedStatus : null,
         isActive: form.isActive,
       };
       const url = editingRule ? `${API_URL}/api/sla-rules/${editingRule.Id}` : `${API_URL}/api/sla-rules`;
@@ -5874,13 +4308,10 @@ function SlaTab({
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">⏱️ SLA Rules</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Define response and resolution time targets for tickets. Breached SLAs are shown in the ticket list.
-          </p>
-        </div>
+      <div className="mb-6 flex items-start justify-between">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Define response and resolution time targets for tickets. Breached SLAs are shown in the ticket list.
+        </p>
         {canManage && (
           <button
             onClick={openCreate}
@@ -6116,7 +4547,15 @@ function SlaTab({
                     min="0"
                     step="0.5"
                     value={form.autoTransitionHours}
-                    onChange={e => setForm({ ...form, autoTransitionHours: e.target.value })}
+                    onChange={e => {
+                      const autoTransitionHours = e.target.value;
+                      setForm({
+                        ...form,
+                        autoTransitionHours,
+                        // Clearing hours disables auto-transition
+                        autoTransitionStatusId: autoTransitionHours.trim() ? form.autoTransitionStatusId : '',
+                      });
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
                     placeholder="e.g. 8"
                   />
@@ -6129,14 +4568,17 @@ function SlaTab({
                   <select
                     value={form.autoTransitionStatusId}
                     onChange={e => setForm({ ...form, autoTransitionStatusId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm"
+                    disabled={!form.autoTransitionHours.trim()}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 text-sm disabled:opacity-50"
                   >
-                    <option value="">Disabled</option>
+                    <option value="">
+                      {form.autoTransitionHours.trim() ? 'Select status…' : 'Disabled (set hours first)'}
+                    </option>
                     {statuses.map(s => (
-                      <option key={s.Id} value={s.Id}>{s.StatusName}</option>
+                      <option key={s.Id} value={String(s.Id)}>{s.StatusName}</option>
                     ))}
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">Pick a target status used when the time limit is reached.</p>
+                  <p className="text-xs text-gray-400 mt-1">Required only when auto transition hours are set.</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

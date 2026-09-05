@@ -1452,8 +1452,7 @@ export default function CalendarTab({ tasks, timeEntries, callRecords, taskAlloc
   return (
     <div className="space-y-4">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">📅 Calendar</h2>
+        <div className="mb-4 flex items-center justify-end">
           <div className="flex items-center gap-3">
             {/* Navigation */}
             <button

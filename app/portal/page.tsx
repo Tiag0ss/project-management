@@ -1,3 +1,4 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { useEffect } from 'react';

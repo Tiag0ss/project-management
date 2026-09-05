@@ -2,7 +2,7 @@
 
 import { getApiUrl } from '@/lib/api/config';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi, User, LoginCredentials, RegisterData } from '@/lib/api/auth';
 import {
@@ -37,6 +37,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const hasInitializedRef = useRef(false);
+  const hasHydratedSessionRef = useRef(false);
+
+  // Paint with cached session immediately so AppShell does not flash a blank "Loading…" screen.
+  useLayoutEffect(() => {
+    if (hasHydratedSessionRef.current) return;
+    hasHydratedSessionRef.current = true;
+    const session = readStoredSession();
+    if (!session) return;
+    setToken(session.token);
+    setUser(session.user);
+  }, []);
 
   const clearAuthState = useCallback(() => {
     clearStoredSession();

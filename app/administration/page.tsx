@@ -1,25 +1,49 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
-import { useEffect, useRef, Suspense } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
+import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
+import PageStickyActions, { pageActionButtonClass } from '@/components/PageStickyActions';
 import UsersManagement from '@/components/admin/UsersManagement';
-import RolePermissionsManagement from '@/components/admin/RolePermissionsManagement';
-import SystemSettings from '@/components/admin/SystemSettings';
+import RolePermissionsManagement, {
+  type RolePermissionsActionsState,
+} from '@/components/admin/RolePermissionsManagement';
+import SystemSettings, {
+  type SystemSettingsActionsState,
+} from '@/components/admin/SystemSettings';
 import ActivityLogsManagement from '@/components/admin/ActivityLogsManagement';
 import FrontpageEditor from '@/components/admin/FrontpageEditor';
 import HolidaysManagement from '@/components/admin/HolidaysManagement';
 import CustomFieldsManagement from '@/components/admin/CustomFieldsManagement';
 import CustomTablesManagement from '@/components/admin/CustomTablesManagement';
 import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
-import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
+import TaskFormVisibilitySettingsPanel, {
+  type TaskFormVisibilityActionsState,
+} from '@/components/admin/TaskFormVisibilitySettingsPanel';
+import OrganizationsManagement from '@/components/admin/OrganizationsManagement';
 import { useUrlTab } from '@/hooks/useUrlTab';
 
-type AdminTab = 'users' | 'permissions' | 'settings' | 'task-form' | 'custom-fields' | 'custom-tables' | 'holidays' | 'logs' | 'frontpage' | 'api-tokens';
+type AdminTab =
+  | 'users'
+  | 'organizations'
+  | 'permissions'
+  | 'settings'
+  | 'task-form'
+  | 'custom-fields'
+  | 'custom-tables'
+  | 'holidays'
+  | 'logs'
+  | 'frontpage'
+  | 'api-tokens';
+
 const ADMIN_TABS = [
   'users',
+  'organizations',
   'permissions',
   'settings',
   'task-form',
@@ -31,15 +55,23 @@ const ADMIN_TABS = [
   'api-tokens',
 ] as const;
 
+const ADMIN_TAB_LABELS: { id: AdminTab; label: string }[] = [
+  { id: 'users', label: 'Users' },
+  { id: 'organizations', label: 'Organizations' },
+  { id: 'permissions', label: 'Role Permissions' },
+  { id: 'settings', label: 'System Settings' },
+  { id: 'task-form', label: 'Task Form' },
+  { id: 'custom-fields', label: 'Custom Fields' },
+  { id: 'custom-tables', label: 'Custom Tables' },
+  { id: 'holidays', label: 'Holidays' },
+  { id: 'logs', label: 'Activity Logs' },
+  { id: 'frontpage', label: 'Frontpage' },
+  { id: 'api-tokens', label: 'API Tokens' },
+];
+
 export default function AdministrationPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
-        </div>
-      }
-    >
+    <Suspense fallback={<PageLoadingSkeleton />}>
       <AdministrationPageContent />
     </Suspense>
   );
@@ -48,6 +80,11 @@ export default function AdministrationPage() {
 function AdministrationPageContent() {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [activeTab, setActiveTab] = useUrlTab<AdminTab>(ADMIN_TABS, 'users');
+  const [taskFormActions, setTaskFormActions] = useState<TaskFormVisibilityActionsState | null>(null);
+  const [rolePermissionsActions, setRolePermissionsActions] =
+    useState<RolePermissionsActionsState | null>(null);
+  const [systemSettingsActions, setSystemSettingsActions] =
+    useState<SystemSettingsActionsState | null>(null);
   const { user, token, isLoading } = useAuth();
   const router = useRouter();
 
@@ -58,14 +95,7 @@ function AdministrationPageContent() {
   }, [user, isLoading, router]);
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
-        <div className="flex items-center justify-center h-screen">
-          <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-        </div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!user || !user.isAdmin) {
@@ -73,202 +103,104 @@ function AdministrationPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Navbar />
-
-      <div className="flex flex-col md:flex-row w-full mx-auto min-h-[calc(100vh-64px)]">
-        {/* Mobile tabs */}
-        <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Administration tabs">
-            {([
-              { id: 'users' as const, label: 'Users', icon: '👥' },
-              { id: 'permissions' as const, label: 'Permissions', icon: '🔐' },
-              { id: 'settings' as const, label: 'Settings', icon: '⚙️' },
-              { id: 'task-form' as const, label: 'Task Form', icon: '📝' },
-              { id: 'custom-fields' as const, label: 'Fields', icon: '🧩' },
-              { id: 'custom-tables' as const, label: 'Tables', icon: '🗃️' },
-              { id: 'holidays' as const, label: 'Holidays', icon: '📅' },
-              { id: 'logs' as const, label: 'Logs', icon: '📋' },
-              { id: 'frontpage' as const, label: 'Frontpage', icon: '🏠' },
-              { id: 'api-tokens' as const, label: 'API', icon: '🔑' },
-            ]).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="mr-1">{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PageStickyChrome>
+        <div>
+          <h1 className="text-xl font-semibold text-[var(--pm-text)]">Administration</h1>
+          <p className="text-sm text-[var(--pm-muted)]">Manage system settings and configurations</p>
         </div>
 
-        {/* Sidebar */}
-        <aside className="hidden md:flex w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col shrink-0">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Administration</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Manage system settings and configurations</p>
-          </div>
+        <PageTabs
+          tabs={ADMIN_TAB_LABELS}
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as AdminTab)}
+        />
+      </PageStickyChrome>
 
-          <nav className="flex-1 p-4 space-y-1">
-            <button
-              onClick={() => setActiveTab('users')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'users'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">👥</span>
-              <span className="font-medium">Users</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('permissions')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'permissions'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">🔐</span>
-              <span className="font-medium">Role Permissions</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'settings'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">⚙️</span>
-              <span className="font-medium">System Settings</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('task-form')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'task-form'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">📝</span>
-              <span className="font-medium">Task Form</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('custom-fields')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'custom-fields'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">🧩</span>
-              <span className="font-medium">Custom Fields</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('custom-tables')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'custom-tables'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">🗃️</span>
-              <span className="font-medium">Custom Tables</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('holidays')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'holidays'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">📅</span>
-              <span className="font-medium">Holidays</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'logs'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">📋</span>
-              <span className="font-medium">Activity Logs</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('frontpage')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'frontpage'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">🏠</span>
-              <span className="font-medium">Frontpage</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('api-tokens')}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center gap-3 ${
-                activeTab === 'api-tokens'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }`}
-            >
-              <span className="text-xl">🔑</span>
-              <span className="font-medium">API Tokens</span>
-            </button>
-          </nav>
-        </aside>
-
-        {/* Main Content */}
-        <main ref={scrollContainerRef} className="flex-1 overflow-auto min-w-0">
-          <div className="p-4 sm:p-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow">{activeTab === 'users' && <UsersManagement />}
-          
-          {activeTab === 'permissions' && <RolePermissionsManagement />}
-          
-          {activeTab === 'settings' && <SystemSettings />}
-
+      <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
+        <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] shadow-sm">
+          {activeTab === 'users' && <UsersManagement />}
+          {activeTab === 'organizations' && <OrganizationsManagement />}
+          {activeTab === 'permissions' && (
+            <RolePermissionsManagement
+              actionsPlacement="none"
+              onActionsStateChange={setRolePermissionsActions}
+            />
+          )}
+          {activeTab === 'settings' && (
+            <SystemSettings
+              actionsPlacement="none"
+              onActionsStateChange={setSystemSettingsActions}
+            />
+          )}
           {activeTab === 'task-form' && token && (
-            <div className="p-6">
-              <TaskFormVisibilitySettingsPanel mode="global" token={token} canManage />
+            <div className="p-4 sm:p-6">
+              <TaskFormVisibilitySettingsPanel
+                mode="global"
+                token={token}
+                canManage
+                actionsPlacement="none"
+                onActionsStateChange={setTaskFormActions}
+              />
             </div>
           )}
-
           {activeTab === 'custom-fields' && <CustomFieldsManagement />}
-
           {activeTab === 'custom-tables' && <CustomTablesManagement />}
-
           {activeTab === 'holidays' && <HolidaysManagement />}
-          
           {activeTab === 'logs' && <ActivityLogsManagement />}
-          
           {activeTab === 'frontpage' && <FrontpageEditor />}
-
           {activeTab === 'api-tokens' && <ApiTokensManagement mode="admin" />}
-            </div>
-          </div>
-        </main>
-      </div>
+        </div>
+      </main>
+
+      {activeTab === 'permissions' && rolePermissionsActions?.canSave && (
+        <PageStickyActions>
+          <button
+            type="button"
+            onClick={rolePermissionsActions.onSave}
+            disabled={rolePermissionsActions.saving}
+            className={pageActionButtonClass.primary}
+          >
+            {rolePermissionsActions.saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </PageStickyActions>
+      )}
+
+      {activeTab === 'settings' && systemSettingsActions?.canSave && (
+        <PageStickyActions>
+          {systemSettingsActions.showSyncAiViews && (
+            <button
+              type="button"
+              onClick={systemSettingsActions.onSyncAiViews}
+              disabled={systemSettingsActions.syncingAiViews || systemSettingsActions.saving}
+              className={pageActionButtonClass.secondary}
+            >
+              {systemSettingsActions.syncingAiViews ? 'Syncing…' : 'Sync AI Views Now'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={systemSettingsActions.onSave}
+            disabled={systemSettingsActions.saving}
+            className={pageActionButtonClass.primary}
+          >
+            {systemSettingsActions.saving ? 'Saving…' : 'Save Settings'}
+          </button>
+        </PageStickyActions>
+      )}
+
+      {activeTab === 'task-form' && taskFormActions?.canManage && (
+        <PageStickyActions>
+          <button
+            type="button"
+            onClick={taskFormActions.onSave}
+            disabled={taskFormActions.saving || taskFormActions.syncing}
+            className={pageActionButtonClass.primary}
+          >
+            {taskFormActions.saving ? 'Saving…' : 'Save'}
+          </button>
+        </PageStickyActions>
+      )}
 
       <ScrollToTopButton scrollContainerRef={scrollContainerRef} />
     </div>

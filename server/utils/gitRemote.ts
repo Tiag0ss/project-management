@@ -188,75 +188,121 @@ export function bitbucketAuthHeader(opts: {
 
 /**
  * Resolve org integration credentials for a parsed repo.
+ * When multiple instances exist, prefer explicit integration ids, then host match,
+ * then IsDefault / first enabled.
  */
 export async function resolveGitCredentials(
   organizationId: number,
-  parsed: ParsedRepo
+  parsed: ParsedRepo,
+  opts?: {
+    githubIntegrationId?: number | null;
+    giteaIntegrationId?: number | null;
+    bitbucketIntegrationId?: number | null;
+  }
 ): Promise<GitCredentials | null> {
   const [ghRows] = await pool.execute<RowDataPacket[]>(
-    `SELECT GitHubUrl, GitHubToken FROM OrganizationGitHubIntegrations
-     WHERE OrganizationId = ? AND IsEnabled = 1`,
+    `SELECT Id, GitHubUrl, GitHubToken, IsDefault FROM OrganizationGitHubIntegrations
+     WHERE OrganizationId = ? AND IsEnabled = 1
+     ORDER BY IsDefault DESC, Id ASC`,
     [organizationId]
   );
   const [giteaRows] = await pool.execute<RowDataPacket[]>(
-    `SELECT GiteaUrl, GiteaToken FROM OrganizationGiteaIntegrations
-     WHERE OrganizationId = ? AND IsEnabled = 1`,
+    `SELECT Id, GiteaUrl, GiteaToken, IsDefault FROM OrganizationGiteaIntegrations
+     WHERE OrganizationId = ? AND IsEnabled = 1
+     ORDER BY IsDefault DESC, Id ASC`,
     [organizationId]
   );
   const [bbRows] = await pool.execute<RowDataPacket[]>(
-    `SELECT BitbucketUrl, BitbucketToken, BitbucketUsername FROM OrganizationBitbucketIntegrations
-     WHERE OrganizationId = ? AND IsEnabled = 1`,
+    `SELECT Id, BitbucketUrl, BitbucketToken, BitbucketUsername, IsDefault FROM OrganizationBitbucketIntegrations
+     WHERE OrganizationId = ? AND IsEnabled = 1
+     ORDER BY IsDefault DESC, Id ASC`,
     [organizationId]
   );
 
-  const ghHost = ghRows.length ? hostnameOf(String(ghRows[0].GitHubUrl)) : null;
-  const giteaHost = giteaRows.length ? hostnameOf(String(giteaRows[0].GiteaUrl)) : null;
-  const bbHost = bbRows.length ? hostnameOf(String(bbRows[0].BitbucketUrl)) : null;
+  const pickById = (rows: RowDataPacket[], id?: number | null): RowDataPacket | undefined =>
+    id ? rows.find((r) => Number(r.Id) === Number(id)) : undefined;
+
+  const pickByHost = (rows: RowDataPacket[], urlField: string): RowDataPacket | undefined => {
+    for (const row of rows) {
+      const h = hostnameOf(String(row[urlField]));
+      if (
+        h &&
+        (parsed.host === h ||
+          parsed.host.replace(/^api\./, '') === h.replace(/^api\./, '') ||
+          parsed.host.includes(h) ||
+          h.includes(parsed.host))
+      ) {
+        return row;
+      }
+    }
+    return undefined;
+  };
 
   const isGithubHost =
     parsed.provider === 'github' ||
     parsed.host.includes('github') ||
-    (ghHost != null &&
-      (parsed.host === ghHost ||
-        parsed.host.replace(/^api\./, '') === ghHost.replace(/^api\./, '')));
+    ghRows.some((r) => {
+      const ghHost = hostnameOf(String(r.GitHubUrl));
+      return (
+        ghHost != null &&
+        (parsed.host === ghHost ||
+          parsed.host.replace(/^api\./, '') === ghHost.replace(/^api\./, ''))
+      );
+    });
 
   if (isGithubHost && ghRows.length > 0) {
+    const row =
+      pickById(ghRows, opts?.githubIntegrationId) ||
+      pickByHost(ghRows, 'GitHubUrl') ||
+      ghRows[0];
     return {
       provider: 'github',
-      apiBaseUrl: String(ghRows[0].GitHubUrl).replace(/\/$/, ''),
-      token: decrypt(ghRows[0].GitHubToken),
+      apiBaseUrl: String(row.GitHubUrl).replace(/\/$/, ''),
+      token: decrypt(row.GitHubToken),
     };
   }
 
+  const bbHostCandidates = bbRows.map((r) => hostnameOf(String(r.BitbucketUrl)));
   const isBitbucketCloudHost =
     parsed.bitbucketKind === 'cloud' || parsed.host.includes('bitbucket.org');
-  const isBitbucketServerHost =
-    bbHost != null && parsed.host === bbHost && !isBitbucketCloudHost;
+  const isBitbucketServerHost = bbHostCandidates.some(
+    (bbHost) => bbHost != null && parsed.host === bbHost && !isBitbucketCloudHost
+  );
   const isBitbucket =
     parsed.provider === 'bitbucket' || isBitbucketCloudHost || isBitbucketServerHost;
 
   if (isBitbucket && bbRows.length > 0) {
+    const row =
+      pickById(bbRows, opts?.bitbucketIntegrationId) ||
+      pickByHost(bbRows, 'BitbucketUrl') ||
+      bbRows[0];
+    const bbHost = hostnameOf(String(row.BitbucketUrl));
     const cloud =
       isBitbucketCloudHost ||
       (bbHost != null && (bbHost.includes('bitbucket.org') || bbHost === 'api.bitbucket.org'));
     return {
       provider: 'bitbucket',
-      apiBaseUrl: String(bbRows[0].BitbucketUrl).replace(/\/$/, ''),
-      token: decrypt(bbRows[0].BitbucketToken),
-      username: bbRows[0].BitbucketUsername || null,
+      apiBaseUrl: String(row.BitbucketUrl).replace(/\/$/, ''),
+      token: decrypt(row.BitbucketToken),
+      username: row.BitbucketUsername || null,
       bitbucketKind: cloud ? 'cloud' : 'server',
     };
   }
 
-  if (giteaRows.length > 0 && giteaHost && parsed.host === giteaHost) {
-    return {
-      provider: 'gitea',
-      apiBaseUrl: String(giteaRows[0].GiteaUrl).replace(/\/$/, ''),
-      token: decrypt(giteaRows[0].GiteaToken),
-    };
+  if (giteaRows.length > 0) {
+    const row =
+      pickById(giteaRows, opts?.giteaIntegrationId) ||
+      pickByHost(giteaRows, 'GiteaUrl') ||
+      (parsed.provider === 'gitea' ? giteaRows[0] : undefined);
+    if (row) {
+      return {
+        provider: 'gitea',
+        apiBaseUrl: String(row.GiteaUrl).replace(/\/$/, ''),
+        token: decrypt(row.GiteaToken),
+      };
+    }
   }
 
-  // Unknown self-hosted URL classified as gitea: use Gitea integration when host matches only
   return null;
 }
 
@@ -275,7 +321,8 @@ export async function resolveProjectRepoCredentials(
   if (opts.gitHubOwner && opts.gitHubRepo) {
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT GitHubUrl, GitHubToken FROM OrganizationGitHubIntegrations
-       WHERE OrganizationId = ? AND IsEnabled = 1`,
+       WHERE OrganizationId = ? AND IsEnabled = 1
+       ORDER BY IsDefault DESC, Id ASC`,
       [organizationId]
     );
     if (rows.length > 0) {
@@ -299,7 +346,8 @@ export async function resolveProjectRepoCredentials(
   if (opts.giteaOwner && opts.giteaRepo) {
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT GiteaUrl, GiteaToken FROM OrganizationGiteaIntegrations
-       WHERE OrganizationId = ? AND IsEnabled = 1`,
+       WHERE OrganizationId = ? AND IsEnabled = 1
+       ORDER BY IsDefault DESC, Id ASC`,
       [organizationId]
     );
     if (rows.length > 0) {

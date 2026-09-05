@@ -1,13 +1,16 @@
 'use client';
 
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 
-import { useState, useEffect, use, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, use, useRef, Suspense } from 'react';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageTabs from '@/components/PageTabs';
+import PageStickyChrome from '@/components/PageStickyChrome';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import TaskDetailModal from '@/components/TaskDetailModal';
@@ -17,6 +20,7 @@ import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useUrlTab } from '@/hooks/useUrlTab';
+import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 
 type TabType = 'overview' | 'users' | 'settings' | 'attachments' | 'history';
 const CUSTOMER_DETAIL_TABS = ['overview', 'users', 'settings', 'attachments', 'history'] as const;
@@ -158,9 +162,7 @@ export default function CustomerDetailPage(props: { params: Promise<{ id: string
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
-        </div>
+        <PageLoadingSkeleton />
       }
     >
       <CustomerDetailPageContent {...props} />
@@ -208,6 +210,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
   // Attachments state
   const [attachments, setAttachments] = useState<any[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   
   // Settings form
   const [settingsForm, setSettingsForm] = useState({
@@ -244,7 +247,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
     }
   }, [user, authLoading, router]);
 
@@ -282,6 +285,15 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
       loadData();
     }
   }, [token, customerId, featureFlagsLoaded]);
+
+  useEffect(() => {
+    if (!customer?.Id || !customer.Name) return;
+    recordRecentNavAccess(
+      'customers',
+      { id: customer.Id, label: customer.Name, href: `/customers/${customer.Id}` },
+      user?.id
+    );
+  }, [customer?.Id, customer?.Name, user?.id]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -850,9 +862,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
 
   if (authLoading || isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
@@ -861,12 +871,11 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
   if (!customer) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        <Navbar />
         <div className="max-w-7xl mx-auto py-6 px-4">
           <div className="text-center py-12">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Customer not found</h2>
             <button
-              onClick={() => router.push('/customers')}
+              onClick={() => router.push(oldPath('/customers'))}
               className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
             >
               Back to Customers
@@ -877,128 +886,47 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
     );
   }
 
+  const customerTabs = [
+    { id: 'overview' as const, label: 'Overview' },
+    { id: 'users' as const, label: 'Users' },
+    { id: 'settings' as const, label: 'Settings' },
+    { id: 'attachments' as const, label: 'Attachments' },
+    { id: 'history' as const, label: 'History' },
+  ];
+
   return (
     <CustomerUserGuard>
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
-      
-      <div className="flex flex-col md:flex-row w-full mx-auto">
-        {/* Mobile tabs */}
-        <div className="md:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-          <div className="px-3 pt-2">
-            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{customer.Name}</p>
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <PageStickyChrome>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-[var(--pm-text)] truncate">{customer.Name}</h1>
+            {projectManager && (
+              <p className="mt-1 text-sm text-[var(--pm-muted)]">
+                PM: {projectManager.FirstName} {projectManager.LastName}
+              </p>
+            )}
           </div>
-          <nav className="flex overflow-x-auto px-2 py-2 gap-1" aria-label="Customer tabs">
-            {([
-              { id: 'overview' as const, label: 'Overview', icon: '📊' },
-              { id: 'users' as const, label: 'Users', icon: '👥' },
-              { id: 'settings' as const, label: 'Settings', icon: '⚙️' },
-              { id: 'attachments' as const, label: 'Files', icon: '📎' },
-              { id: 'history' as const, label: 'History', icon: '📜' },
-            ]).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  if (tab.id === 'attachments') loadAttachments();
-                }}
-                className={`shrink-0 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="mr-1">{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+          <button
+            type="button"
+            onClick={() => router.push(oldPath('/customers'))}
+            className="text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
+          >
+            ← Back to Customers
+          </button>
         </div>
 
-        {/* Sidebar */}
-        <aside className="hidden md:block w-64 bg-white dark:bg-gray-800 min-h-[calc(100vh-64px)] border-r border-gray-200 dark:border-gray-700 shrink-0">
-          <div className="p-4">
-            {/* Customer Header */}
-            <div className="mb-6">
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{customer.Name}</h1>
-              {projectManager && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  PM: {projectManager.FirstName} {projectManager.LastName}
-                </p>
-              )}
-            </div>
+        <PageTabs
+          tabs={customerTabs}
+          activeId={activeTab}
+          onChange={(id) => {
+            setActiveTab(id as TabType);
+            if (id === 'attachments') loadAttachments();
+          }}
+        />
+      </PageStickyChrome>
 
-            {/* Navigation */}
-            <nav className="space-y-1">
-              <button
-                onClick={() => setActiveTab('overview')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'overview'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📊 Overview
-              </button>
-              <button
-                onClick={() => setActiveTab('users')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'users'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                👥 Users
-              </button>
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'settings'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                ⚙️ Settings
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('attachments');
-                  loadAttachments();
-                }}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'attachments'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📎 Attachments
-              </button>
-              <button
-                onClick={() => setActiveTab('history')}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                  activeTab === 'history'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                📜 History
-              </button>
-            </nav>
-
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => router.push('/customers')}
-                className="block w-full text-center px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-              >
-                ← Back to Customers
-              </button>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 p-3 sm:p-6 min-w-0">
+      <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
           {error && (
             <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
               {error}
@@ -1766,12 +1694,10 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
 
         {activeTab === 'history' && (
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">📜 Change History</h2>
             <ChangeHistory entityType="customer" entityId={customerId} />
           </div>
         )}
       </main>
-    </div>
 
       {/* Add User Modal */}
       {showAddUserModal && (
@@ -1997,7 +1923,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
         </>
       )}
 
-      <ScrollToTopButton />
+      <ScrollToTopButton scrollContainerRef={scrollContainerRef} />
     </div>
     </CustomerUserGuard>
   );
@@ -2072,8 +1998,7 @@ function AttachmentsTab({
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">Customer Attachments</h2>
+      <div className="mb-6 flex items-center justify-end">
         <div>
           <input
             type="file"

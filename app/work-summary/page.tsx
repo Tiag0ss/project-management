@@ -1,7 +1,8 @@
 'use client';
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 
 import { useEffect, useMemo, useState } from 'react';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import { useAuth } from '@/contexts/AuthContext';
@@ -516,22 +517,23 @@ export default function WorkSummaryPage() {
   }, [combinedEntries, projectFilter]);
 
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center"><div className="text-xl">Loading...</div></div>;
+    return <PageLoadingSkeleton />;
   }
 
   return (
     <CustomerUserGuard>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
+      <div className="w-full">
         <main className="w-full mx-auto py-4 sm:py-6 px-4 sm:px-6 lg:px-8">
-          <div className="px-0 sm:px-0">
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow p-4 sm:p-6 text-white mb-6">
-              <h1 className="text-3xl font-bold">Work Summary</h1>
-              <p className="text-blue-100 mt-1">Combined view of Time Entries and Call Records</p>
+          <div className="px-0 sm:px-0 space-y-4">
+            <div>
+              <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Work Summary</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Combined view of time entries and call records.
+              </p>
             </div>
 
             {error && (
-              <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
+              <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
                 {error}
               </div>
             )}

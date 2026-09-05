@@ -1,3 +1,4 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
@@ -5,9 +6,10 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
-import { useRouter } from 'next/navigation';
-import Navbar from '@/components/Navbar';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import EmptyState from '@/components/EmptyState';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
@@ -27,6 +29,30 @@ interface Application {
   VersionCount: number;
   Customers: { Id: number; Name: string }[];
   CreatedAt: string;
+  GitHubIntegrationId?: number | null;
+  GiteaIntegrationId?: number | null;
+  BitbucketIntegrationId?: number | null;
+}
+
+interface VcsIntegrationOption {
+  Id: number;
+  Name: string;
+  IsEnabled: number;
+}
+
+type VcsProviderKind = 'github' | 'gitea' | 'bitbucket';
+
+function detectAppVcsProvider(repoUrl: string): VcsProviderKind | null {
+  if (!repoUrl.trim()) return null;
+  const lower = repoUrl.toLowerCase();
+  if (lower.includes('github.com') || lower.includes('github.')) return 'github';
+  if (lower.includes('bitbucket.org') || lower.includes('bitbucket.')) return 'bitbucket';
+  if (lower.includes('gitea.') || lower.includes('/gitea')) return 'gitea';
+  return null;
+}
+
+function emptyVcsFks() {
+  return { GitHubIntegrationId: 0, GiteaIntegrationId: 0, BitbucketIntegrationId: 0 };
 }
 
 interface Organization {
@@ -78,7 +104,13 @@ export default function ApplicationsPage() {
     IsCustomerSpecific: false,
     OrganizationId: 0,
     CustomerIds: [] as number[],
+    GitHubIntegrationId: 0,
+    GiteaIntegrationId: 0,
+    BitbucketIntegrationId: 0,
   });
+  const [githubIntegrations, setGithubIntegrations] = useState<VcsIntegrationOption[]>([]);
+  const [giteaIntegrations, setGiteaIntegrations] = useState<VcsIntegrationOption[]>([]);
+  const [bitbucketIntegrations, setBitbucketIntegrations] = useState<VcsIntegrationOption[]>([]);
 
   // Confirm modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -95,12 +127,56 @@ export default function ApplicationsPage() {
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!authLoading && !user) router.push('/login');
+    if (!authLoading && !user) router.push(oldPath('/login'));
   }, [user, authLoading, router]);
 
   useEffect(() => {
     if (token) loadData();
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !showModal || !formData.OrganizationId) {
+      setGithubIntegrations([]);
+      setGiteaIntegrations([]);
+      setBitbucketIntegrations([]);
+      return;
+    }
+
+    let cancelled = false;
+    const orgId = formData.OrganizationId;
+    const headers = { Authorization: `Bearer ${token}` };
+
+    (async () => {
+      try {
+        const [ghRes, gtRes, bbRes] = await Promise.all([
+          fetch(`${getApiUrl()}/api/github-integrations/organization/${orgId}`, { headers }),
+          fetch(`${getApiUrl()}/api/gitea-integrations/organization/${orgId}`, { headers }),
+          fetch(`${getApiUrl()}/api/bitbucket-integrations/organization/${orgId}`, { headers }),
+        ]);
+        const [ghData, gtData, bbData] = await Promise.all([ghRes.json(), gtRes.json(), bbRes.json()]);
+        if (cancelled) return;
+        setGithubIntegrations(
+          ((ghData.integrations || []) as VcsIntegrationOption[]).filter((i) => Number(i.IsEnabled) === 1)
+        );
+        setGiteaIntegrations(
+          ((gtData.integrations || []) as VcsIntegrationOption[]).filter((i) => Number(i.IsEnabled) === 1)
+        );
+        setBitbucketIntegrations(
+          ((bbData.integrations || []) as VcsIntegrationOption[]).filter((i) => Number(i.IsEnabled) === 1)
+        );
+      } catch {
+        if (!cancelled) {
+          setGithubIntegrations([]);
+          setGiteaIntegrations([]);
+          setBitbucketIntegrations([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, showModal, formData.OrganizationId]);
 
   useEffect(() => {
     window.localStorage.setItem('applications:viewMode', viewMode);
@@ -374,6 +450,9 @@ export default function ApplicationsPage() {
       IsCustomerSpecific: false,
       OrganizationId: organizations.length === 1 ? organizations[0].Id : 0,
       CustomerIds: [],
+      GitHubIntegrationId: 0,
+      GiteaIntegrationId: 0,
+      BitbucketIntegrationId: 0,
     });
     setImageFile(null);
     setImagePreview(null);
@@ -384,6 +463,18 @@ export default function ApplicationsPage() {
 
   const openEditModal = (app: Application) => {
     setEditingApp(app);
+    const exclusive = (() => {
+      if (app.GitHubIntegrationId) {
+        return { GitHubIntegrationId: app.GitHubIntegrationId, GiteaIntegrationId: 0, BitbucketIntegrationId: 0 };
+      }
+      if (app.GiteaIntegrationId) {
+        return { GitHubIntegrationId: 0, GiteaIntegrationId: app.GiteaIntegrationId, BitbucketIntegrationId: 0 };
+      }
+      if (app.BitbucketIntegrationId) {
+        return { GitHubIntegrationId: 0, GiteaIntegrationId: 0, BitbucketIntegrationId: app.BitbucketIntegrationId };
+      }
+      return emptyVcsFks();
+    })();
     setFormData({
       Name: app.Name,
       Description: app.Description || '',
@@ -391,6 +482,7 @@ export default function ApplicationsPage() {
       IsCustomerSpecific: !!app.IsCustomerSpecific,
       OrganizationId: app.OrganizationId,
       CustomerIds: app.Customers?.map((c) => c.Id) || [],
+      ...exclusive,
     });
     setImageFile(null);
     setImagePreview(app.ImagePath || null);
@@ -461,9 +553,53 @@ export default function ApplicationsPage() {
 
       const method = editingApp ? 'PUT' : 'POST';
 
+      const vcsFields = (() => {
+        if (formData.GitHubIntegrationId) {
+          return {
+            GitHubIntegrationId: formData.GitHubIntegrationId,
+            GiteaIntegrationId: null,
+            BitbucketIntegrationId: null,
+          };
+        }
+        if (formData.GiteaIntegrationId) {
+          return {
+            GitHubIntegrationId: null,
+            GiteaIntegrationId: formData.GiteaIntegrationId,
+            BitbucketIntegrationId: null,
+          };
+        }
+        if (formData.BitbucketIntegrationId) {
+          return {
+            GitHubIntegrationId: null,
+            GiteaIntegrationId: null,
+            BitbucketIntegrationId: formData.BitbucketIntegrationId,
+          };
+        }
+        return {
+          GitHubIntegrationId: null,
+          GiteaIntegrationId: null,
+          BitbucketIntegrationId: null,
+        };
+      })();
+
       const body = editingApp
-        ? { Name: formData.Name, Description: formData.Description, RepositoryUrl: formData.RepositoryUrl, IsCustomerSpecific: formData.IsCustomerSpecific, CustomerIds: formData.CustomerIds }
-        : { Name: formData.Name, Description: formData.Description, RepositoryUrl: formData.RepositoryUrl, IsCustomerSpecific: formData.IsCustomerSpecific, OrganizationId: formData.OrganizationId, CustomerIds: formData.CustomerIds };
+        ? {
+            Name: formData.Name,
+            Description: formData.Description,
+            RepositoryUrl: formData.RepositoryUrl,
+            IsCustomerSpecific: formData.IsCustomerSpecific,
+            CustomerIds: formData.CustomerIds,
+            ...vcsFields,
+          }
+        : {
+            Name: formData.Name,
+            Description: formData.Description,
+            RepositoryUrl: formData.RepositoryUrl,
+            IsCustomerSpecific: formData.IsCustomerSpecific,
+            OrganizationId: formData.OrganizationId,
+            CustomerIds: formData.CustomerIds,
+            ...vcsFields,
+          };
 
       const res = await fetch(url, {
         method,
@@ -652,8 +788,7 @@ export default function ApplicationsPage() {
 
   if (authLoading || permissionsLoading || isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
+      <div className="w-full">
         <div className="w-full mx-auto px-4 py-8">
           <div className="space-y-5 animate-pulse">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-20" />
@@ -668,36 +803,32 @@ export default function ApplicationsPage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Navbar />
-      <div className="w-full mx-auto px-4 py-8">
-
-        {/* Header */}
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-5">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Applications</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+    <div className="w-full">
+      <div className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Applications</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               {applications.length} application{applications.length !== 1 ? 's' : ''} across your organisations
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
-            {/* View Toggle */}
-            <div className="hidden sm:flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden sm:flex items-center rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-700">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                className={`rounded p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-white shadow dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-600'}`}
                 title="Grid view"
               >
-                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-4 w-4 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
                 </svg>
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                className={`rounded p-1.5 transition-colors ${viewMode === 'list' ? 'bg-white shadow dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-600'}`}
                 title="List view"
               >
-                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-4 w-4 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                 </svg>
               </button>
@@ -731,8 +862,24 @@ export default function ApplicationsPage() {
 
         {/* Filters */}
         {applications.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <CollapsibleFilterPanel
+            className="mb-2"
+            title="Application filters"
+            activeCount={[
+              searchQuery.trim() ? 1 : 0,
+              filterOrg ? 1 : 0,
+              filterVersions !== 'all' ? 1 : 0,
+            ].reduce((a, b) => a + b, 0)}
+            bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
+            headerExtra={
+              <span className="text-xs text-gray-400">
+                {filteredAndSortedApplications.length !== applications.length
+                  ? `${filteredAndSortedApplications.length} of ${applications.length} applications`
+                  : `${applications.length} application${applications.length !== 1 ? 's' : ''}`}
+              </span>
+            }
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               {/* Search - 2 columns on large screens */}
               <div className="relative lg:col-span-1">
                 <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -787,14 +934,7 @@ export default function ApplicationsPage() {
                 <option value="customers-asc">Customers (least)</option>
               </select>
             </div>
-            <div className="flex items-center justify-end mt-3">
-              <span className="text-xs text-gray-400">
-                {filteredAndSortedApplications.length !== applications.length
-                  ? `${filteredAndSortedApplications.length} of ${applications.length} applications`
-                  : `${applications.length} application${applications.length !== 1 ? 's' : ''}`}
-              </span>
-            </div>
-          </div>
+          </CollapsibleFilterPanel>
         )}
 
         {error && (
@@ -1107,7 +1247,7 @@ export default function ApplicationsPage() {
                   Name,Description,RepositoryUrl,OrganizationName,IsCustomerSpecific,CustomerNames
                 </code>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a href="/templates/applications_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  <a href={oldPath("/templates/applications_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                 </p>
               </div>
 
@@ -1187,11 +1327,114 @@ export default function ApplicationsPage() {
                   <input
                     type="url"
                     value={formData.RepositoryUrl}
-                    onChange={(e) => setFormData({ ...formData, RepositoryUrl: e.target.value })}
+                    onChange={(e) => {
+                      const RepositoryUrl = e.target.value;
+                      const provider = detectAppVcsProvider(RepositoryUrl);
+                      const cleared = emptyVcsFks();
+                      // Keep current integration only if it still matches the detected provider
+                      if (provider === 'github' && formData.GitHubIntegrationId) {
+                        cleared.GitHubIntegrationId = formData.GitHubIntegrationId;
+                      } else if (provider === 'gitea' && formData.GiteaIntegrationId) {
+                        cleared.GiteaIntegrationId = formData.GiteaIntegrationId;
+                      } else if (provider === 'bitbucket' && formData.BitbucketIntegrationId) {
+                        cleared.BitbucketIntegrationId = formData.BitbucketIntegrationId;
+                      } else if (!provider) {
+                        // Unknown host (e.g. self-hosted): keep whichever single FK is set
+                        if (formData.GitHubIntegrationId) cleared.GitHubIntegrationId = formData.GitHubIntegrationId;
+                        else if (formData.GiteaIntegrationId) cleared.GiteaIntegrationId = formData.GiteaIntegrationId;
+                        else if (formData.BitbucketIntegrationId) {
+                          cleared.BitbucketIntegrationId = formData.BitbucketIntegrationId;
+                        }
+                      }
+                      setFormData({ ...formData, RepositoryUrl, ...cleared });
+                    }}
                     placeholder="https://github.com/org/repo"
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
+
+                {formData.OrganizationId > 0 && (() => {
+                  const provider = detectAppVcsProvider(formData.RepositoryUrl);
+                  const options: { value: string; label: string }[] = [];
+                  if (!provider || provider === 'github') {
+                    for (const row of githubIntegrations) {
+                      options.push({
+                        value: `github:${row.Id}`,
+                        label: provider ? row.Name : `GitHub — ${row.Name}`,
+                      });
+                    }
+                  }
+                  if (!provider || provider === 'gitea') {
+                    for (const row of giteaIntegrations) {
+                      options.push({
+                        value: `gitea:${row.Id}`,
+                        label: provider ? row.Name : `Gitea — ${row.Name}`,
+                      });
+                    }
+                  }
+                  if (!provider || provider === 'bitbucket') {
+                    for (const row of bitbucketIntegrations) {
+                      options.push({
+                        value: `bitbucket:${row.Id}`,
+                        label: provider ? row.Name : `Bitbucket — ${row.Name}`,
+                      });
+                    }
+                  }
+
+                  const selectedValue = formData.GitHubIntegrationId
+                    ? `github:${formData.GitHubIntegrationId}`
+                    : formData.GiteaIntegrationId
+                      ? `gitea:${formData.GiteaIntegrationId}`
+                      : formData.BitbucketIntegrationId
+                        ? `bitbucket:${formData.BitbucketIntegrationId}`
+                        : '';
+
+                  const providerLabel =
+                    provider === 'github'
+                      ? 'GitHub'
+                      : provider === 'gitea'
+                        ? 'Gitea'
+                        : provider === 'bitbucket'
+                          ? 'Bitbucket'
+                          : 'VCS';
+
+                  return (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        {providerLabel} integration
+                      </label>
+                      <select
+                        value={selectedValue}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const next = { ...formData, ...emptyVcsFks() };
+                          if (raw) {
+                            const [kind, idStr] = raw.split(':');
+                            const id = Number(idStr);
+                            if (kind === 'github') next.GitHubIntegrationId = id;
+                            else if (kind === 'gitea') next.GiteaIntegrationId = id;
+                            else if (kind === 'bitbucket') next.BitbucketIntegrationId = id;
+                          }
+                          setFormData(next);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      >
+                        <option value="">None</option>
+                        {options.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        One repository URL uses one org credential instance
+                        {provider
+                          ? ` (${providerLabel}).`
+                          : '. For self-hosted URLs, pick the matching provider instance.'}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

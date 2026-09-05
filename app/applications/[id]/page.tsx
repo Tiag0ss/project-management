@@ -1,11 +1,12 @@
 'use client';
 
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, use, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { useRouter } from 'next/navigation';
-import Navbar from '@/components/Navbar';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
@@ -17,6 +18,7 @@ import { Task, tasksApi } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useUrlTab } from '@/hooks/useUrlTab';
+import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 
 type Tab = 'overview' | 'versions' | 'commits';
 const APPLICATION_DETAIL_TABS = ['overview', 'versions', 'commits'] as const;
@@ -101,9 +103,7 @@ export default function ApplicationDetailPage(props: { params: Promise<{ id: str
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
-        </div>
+        <PageLoadingSkeleton />
       }
     >
       <ApplicationDetailPageContent {...props} />
@@ -188,7 +188,7 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   const [taskSearch, setTaskSearch] = useState('');
 
   useEffect(() => {
-    if (!authLoading && !user) router.push('/login');
+    if (!authLoading && !user) router.push(oldPath('/login'));
   }, [user, authLoading, router]);
 
   useEffect(() => {
@@ -202,6 +202,15 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
       void loadCommits(1, false);
     }
   }, [activeTab, token, id, commitsLoaded, commitsLoading]);
+
+  useEffect(() => {
+    if (!application?.Id || !application.Name) return;
+    recordRecentNavAccess(
+      'applications',
+      { id: application.Id, label: application.Name, href: `/applications/${application.Id}` },
+      user?.id
+    );
+  }, [application?.Id, application?.Name, user?.id]);
 
   const loadApplication = async () => {
     setIsLoading(true);
@@ -701,21 +710,12 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   );
 
   if (authLoading || isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-3 text-gray-600 dark:text-gray-400">Loading...</span>
-        </div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!user || !application) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
         <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-600 dark:text-gray-400">
           {error || 'Application not found.'}
         </div>
@@ -725,13 +725,12 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Navbar />
       <div className="w-full mx-auto px-4 py-8">
 
         {/* Back + Header */}
         <div className="mb-6">
           <button
-            onClick={() => router.push('/applications')}
+            onClick={() => router.push(oldPath('/applications'))}
             className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 mb-3 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

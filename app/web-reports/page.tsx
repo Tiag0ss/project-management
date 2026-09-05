@@ -1,18 +1,20 @@
 'use client';
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 
 import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import { useColorVision } from '@/hooks/useColorVision';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import DynamicQueryBuilder from '@/components/DynamicQueryBuilder';
 import * as savedReportsApi from '@/lib/api/savedReports';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
-import Link from 'next/link';
+import Link from 'next/link'
+import { oldPath } from '@/lib/oldPath';
 
 interface ReportField {
   key: string;
@@ -107,7 +109,7 @@ interface ChartPoint {
 
 export default function WebReportsPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<PageLoadingSkeleton />}>
       <WebReportsPageFromQuery />
     </Suspense>
   );
@@ -1365,9 +1367,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 
@@ -1377,8 +1377,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
 
   if (isCustomerUser || (!isLoadingPermissions && (!permissions?.canViewReports || !canExplore))) {
     return (
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-        {!embed && <Navbar />}
+      <div className="w-full">
         <main className="w-full py-6 px-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
             <div className="text-5xl mb-4">🔒</div>
@@ -1386,7 +1385,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
             <p className="text-gray-500 dark:text-gray-400 mb-4">
               Explore (Advanced Reports) is limited to admins and managers.
             </p>
-            <Link href="/reporting" className="text-blue-600 dark:text-blue-400 hover:underline">
+            <Link href={oldPath("/reporting")} className="text-blue-600 dark:text-blue-400 hover:underline">
               Back to Reporting
             </Link>
           </div>
@@ -1397,14 +1396,12 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
 
   return (
     <CustomerUserGuard>
-      <div className={embed ? 'w-full' : 'min-h-screen bg-gray-100 dark:bg-gray-900'}>
-        {!embed && <Navbar />}
-
+      <div className={embed ? 'w-full' : 'w-full'}>
         <main className={embed ? 'w-full' : 'w-full mx-auto py-6 sm:px-6 lg:px-8'}>
           <div className={embed ? 'w-full' : 'px-4 py-6 sm:px-0'}>
             {!embed && (
               <div className="mb-4">
-                <Link href="/reporting?tab=explore" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                <Link href={oldPath("/reporting?tab=explore")} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
                   ← Reporting hub
                 </Link>
               </div>

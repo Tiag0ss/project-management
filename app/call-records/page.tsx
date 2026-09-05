@@ -1,12 +1,14 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
 import { extractCustomFieldValues } from '@/lib/customFields';
 
@@ -73,7 +75,7 @@ export default function CallRecordsPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
     }
   }, [user, isLoading, router]);
 
@@ -365,21 +367,15 @@ export default function CallRecordsPage() {
   };
 
   if (isLoading || !user) {
-    return (
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <Navbar />
-      <main className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-            📞 Call Records
+    <div className="w-full">
+      <main className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">
+            Call Records
           </h1>
           <div className="flex flex-wrap gap-2">
             <button
@@ -389,7 +385,7 @@ export default function CallRecordsPage() {
               }}
               className="h-10 px-3 sm:px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
-              📅 Import Teams Calls
+              Import Teams Calls
             </button>
             <button
               onClick={() => {
@@ -398,7 +394,7 @@ export default function CallRecordsPage() {
               }}
               className="h-10 px-3 sm:px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center"
             >
-              📥 Import CSV
+              Import CSV
             </button>
             <button
               onClick={() => {
@@ -414,12 +410,12 @@ export default function CallRecordsPage() {
 
         {/* Messages */}
         {message && (
-          <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 text-green-700 dark:text-green-400 rounded-lg">
+          <div className="p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 text-green-700 dark:text-green-400 rounded-lg">
             {message}
           </div>
         )}
         {error && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg">
+          <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded-lg">
             {error}
             <button onClick={() => setError('')} className="ml-2 font-bold">×</button>
           </div>
@@ -476,7 +472,7 @@ export default function CallRecordsPage() {
                     Example: 2026-02-03,14:30,45,Teams,"John, Mary",Project Meeting,Discussed requirements
                   </p>
                   <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                    <a href="/templates/call_records_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                    <a href={oldPath("/templates/call_records_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                   </p>
                 </div>
 

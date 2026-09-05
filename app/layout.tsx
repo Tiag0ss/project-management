@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { DM_Sans, Geist, Geist_Mono, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PermissionsProvider } from "@/contexts/PermissionsContext";
@@ -7,9 +7,8 @@ import { ToastProvider } from "@/contexts/ToastContext";
 import BrandingRuntime from "@/components/BrandingRuntime";
 import PreferencesRuntime from "@/components/PreferencesRuntime";
 import PwaRegister from "@/components/PwaRegister";
+import AuthenticatedAppGate from "@/components/AuthenticatedAppGate";
 import { PREFERENCES_EARLY_APPLY_SCRIPT } from "@/lib/colorVision";
-import GlobalGridEnhancer from "@/components/GlobalGridEnhancer";
-import AIAssistantWidget from "@/components/AIAssistantWidget";
 import { getPublicBranding, inferFaviconType } from "@/lib/branding/publicBranding.server";
 
 const geistSans = Geist({
@@ -22,8 +21,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/** Synapse shell fonts (see pm-synapse / rebuild plan). */
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  variable: "--font-dm-sans",
+  display: "swap",
+});
+
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-ibm-plex-mono",
+  display: "swap",
+});
+
 export const viewport: Viewport = {
-  themeColor: "#2563eb",
+  themeColor: "#0a0e13",
   width: "device-width",
   initialScale: 1,
 };
@@ -66,7 +80,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: PREFERENCES_EARLY_APPLY_SCRIPT }} />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${dmSans.variable} ${ibmPlexMono.variable} antialiased`}
       >
         <AuthProvider>
           <PermissionsProvider>
@@ -74,9 +88,7 @@ export default function RootLayout({
               <PreferencesRuntime />
               <BrandingRuntime />
               <PwaRegister />
-              <GlobalGridEnhancer />
-              {children}
-              <AIAssistantWidget />
+              <AuthenticatedAppGate>{children}</AuthenticatedAppGate>
             </ToastProvider>
           </PermissionsProvider>
         </AuthProvider>

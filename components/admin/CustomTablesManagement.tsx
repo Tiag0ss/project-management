@@ -367,7 +367,6 @@ export default function CustomTablesManagement() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Custom Tables</h2>
         <p className="text-gray-600 dark:text-gray-400">
           Create custom lookup tables with rows and extra columns. Link them to custom fields to get a searchable dropdown.
         </p>

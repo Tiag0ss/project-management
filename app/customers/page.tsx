@@ -1,14 +1,16 @@
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
 
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'
+import { oldPath } from '@/lib/oldPath';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
-import Navbar from '@/components/Navbar';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import CustomerFormModal, { CustomerFormValues } from '@/components/CustomerFormModal';
 import EmptyState from '@/components/EmptyState';
@@ -106,7 +108,7 @@ export default function CustomersPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/login');
+      router.push(oldPath('/login'));
     }
   }, [user, authLoading, router]);
 
@@ -697,8 +699,7 @@ export default function CustomersPage() {
 
   if (authLoading || isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
+      <div className="w-full">
         <div className="w-full mx-auto px-4 py-8">
           <div className="space-y-5 animate-pulse">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow h-20" />
@@ -714,8 +715,7 @@ export default function CustomersPage() {
 
   if (!isLoadingPermissions && !permissions?.canViewCustomers) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
+      <div className="w-full">
         <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
             <div className="text-5xl mb-4">🔒</div>
@@ -729,28 +729,53 @@ export default function CustomersPage() {
 
   return (
     <CustomerUserGuard>
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Navbar />
-      <div className="w-full mx-auto px-4 py-8">
-        <div className="flex flex-wrap justify-between items-center gap-4 mb-5">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Customers</h1>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
-            <div className="hidden sm:flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+    <div className="w-full">
+      <div className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+            <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Customers</h1>
+            {customers.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-blue-600 dark:text-blue-400">{customerIndicators.total}</span> total
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">{customerIndicators.inView}</span> in view
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-green-600 dark:text-green-400">{customerIndicators.activeInView}</span> active
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-amber-600 dark:text-amber-400">{customerIndicators.withProjects}</span> with projects
+                  {internalTicketsEnabled && (
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {' '}({customerIndicators.openTickets} open tickets)
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden sm:flex items-center rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-700">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                className={`rounded p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-white shadow dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-600'}`}
                 title="Grid view"
               >
-                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-4 w-4 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
                 </svg>
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                className={`rounded p-1.5 transition-colors ${viewMode === 'list' ? 'bg-white shadow dark:bg-gray-600' : 'hover:bg-gray-200 dark:hover:bg-gray-600'}`}
                 title="List view"
               >
-                <svg className="w-5 h-5 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-4 w-4 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                 </svg>
               </button>
@@ -784,38 +809,19 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        {customers.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-3 sm:p-4 text-center sm:text-left">
-              <div className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 font-medium">👥 Total</div>
-              <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">{customerIndicators.total}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">all customers</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-3 sm:p-4 text-center sm:text-left">
-              <div className="text-xs sm:text-sm text-indigo-600 dark:text-indigo-400 font-medium">👁 In View</div>
-              <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">{customerIndicators.inView}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">after current filters</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-3 sm:p-4 text-center sm:text-left">
-              <div className="text-xs sm:text-sm text-green-600 dark:text-green-400 font-medium">✓ Active</div>
-              <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">{customerIndicators.activeInView}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">active customers in view</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-3 py-3 sm:p-4 text-center sm:text-left">
-              <div className="text-xs sm:text-sm text-amber-600 dark:text-amber-400 font-medium">📁 Projects</div>
-              <div className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mt-1">{customerIndicators.withProjects}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
-                {internalTicketsEnabled
-                  ? `${customerIndicators.openTickets} open tickets`
-                  : 'customers linked to projects'}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Filters */}
-        <div className="mb-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <CollapsibleFilterPanel
+          className="mb-2"
+          title="Customer filters"
+          activeCount={[
+            searchQuery.trim() ? 1 : 0,
+            statusFilter !== 'all' ? 1 : 0,
+            organizationFilterId !== 'all' ? 1 : 0,
+            internalTicketsEnabled && ticketFilter !== 'all' ? 1 : 0,
+          ].reduce((a, b) => a + b, 0)}
+          bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">Search</label>
               <div className="relative">
@@ -886,7 +892,7 @@ export default function CustomersPage() {
               </button>
             </div>
           )}
-        </div>
+        </CollapsibleFilterPanel>
 
         {error && (
           <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1239,7 +1245,7 @@ export default function CustomersPage() {
                   Name,ExternalName,Email,Phone,Address,Notes,OrganizationNames,DefaultSupportUsername,CreateDefaultProject,DefaultProjectName
                 </code>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a href="/templates/customers_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  <a href={oldPath("/templates/customers_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                 </p>
               </div>
 
