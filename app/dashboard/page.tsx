@@ -35,6 +35,17 @@ import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
 import InstallAppPrompt from '@/components/InstallAppPrompt';
 import { useColorVision } from '@/hooks/useColorVision';
 import SearchableSelect from '@/components/SearchableSelect';
+import {
+  filterVisibleStatuses,
+  getHiddenStatusIdsForOrg,
+  getHiddenStatusesByOrgFromCookie,
+  getKanbanOrgFilterFromCookie,
+  setHiddenStatusesByOrgCookie,
+  setKanbanOrgFilterCookie,
+  withHiddenStatusToggled,
+  type HiddenStatusesByOrg,
+  type KanbanOrgFilter,
+} from '@/lib/dashboardKanbanPrefs';
 import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
 import { useFormatHours } from '@/lib/useFormatHours';
@@ -85,11 +96,15 @@ function AssignedKanbanTab({
   const [organizationNamesById, setOrganizationNamesById] = useState<Record<number, string>>({});
   const [loadingStatuses, setLoadingStatuses] = useState(false);
   const [isDraggingTask, setIsDraggingTask] = useState(false);
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState<number | null>(null);
+  const [selectedOrganizationFilter, setSelectedOrganizationFilter] = useState<KanbanOrgFilter>('all');
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [selectedSprintFilter, setSelectedSprintFilter] = useState<KanbanSprintFilter>('all');
   const [sprints, setSprints] = useState<KanbanSprintOption[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(false);
+  const [hiddenStatusesByOrg, setHiddenStatusesByOrg] = useState<HiddenStatusesByOrg>({});
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
+  const [statusConfigOrgId, setStatusConfigOrgId] = useState<number | null>(null);
+  const prefsHydratedRef = useRef(false);
 
   const getTaskOrganizationId = (task: TaskWithProject): number => {
     const organizationId = Number((task as any).OrganizationId || 0);
@@ -274,6 +289,13 @@ function AssignedKanbanTab({
     return result;
   }, [assignedTasks]);
 
+  useEffect(() => {
+    if (prefsHydratedRef.current) return;
+    prefsHydratedRef.current = true;
+    setSelectedOrganizationFilter(getKanbanOrgFilterFromCookie());
+    setHiddenStatusesByOrg(getHiddenStatusesByOrgFromCookie());
+  }, []);
+
   const groupedTasksByOrganization = useMemo(() => {
     const grouped = new Map<number, { organizationId: number; organizationName: string; tasks: TaskWithProject[] }>();
 
@@ -299,25 +321,22 @@ function AssignedKanbanTab({
   }, [localTasks, organizationNamesById]);
 
   useEffect(() => {
-    if (groupedTasksByOrganization.length === 0) {
-      setSelectedOrganizationId(null);
-      return;
-    }
-
-    const selectedExists = groupedTasksByOrganization.some(
-      (group) => group.organizationId === selectedOrganizationId
+    if (selectedOrganizationFilter === 'all') return;
+    const stillExists = groupedTasksByOrganization.some(
+      (group) => group.organizationId === selectedOrganizationFilter
     );
-
-    if (!selectedExists) {
-      setSelectedOrganizationId(groupedTasksByOrganization[0].organizationId);
+    if (!stillExists) {
+      setSelectedOrganizationFilter('all');
+      setKanbanOrgFilterCookie('all');
     }
-  }, [groupedTasksByOrganization, selectedOrganizationId]);
+  }, [groupedTasksByOrganization, selectedOrganizationFilter]);
 
   useEffect(() => {
     setSelectedProjectId(null);
     setSelectedSprintFilter('all');
     setSprints([]);
-  }, [selectedOrganizationId]);
+    setStatusPickerOpen(false);
+  }, [selectedOrganizationFilter]);
 
   useEffect(() => {
     if (!selectedProjectId || !token) {
@@ -355,15 +374,34 @@ function AssignedKanbanTab({
     };
   }, [selectedProjectId, token]);
 
-  const activeOrganizationId =
-    selectedOrganizationId ?? groupedTasksByOrganization[0]?.organizationId ?? null;
+  const visibleOrganizationGroups = useMemo(() => {
+    if (selectedOrganizationFilter === 'all') return groupedTasksByOrganization;
+    return groupedTasksByOrganization.filter(
+      (group) => group.organizationId === selectedOrganizationFilter
+    );
+  }, [groupedTasksByOrganization, selectedOrganizationFilter]);
 
-  const projectsInActiveOrg = useMemo(() => {
-    if (!activeOrganizationId) return [] as { id: number; name: string }[];
+  const statusPickerOrganizationId = useMemo(() => {
+    if (selectedOrganizationFilter !== 'all') return selectedOrganizationFilter;
+    if (
+      statusConfigOrgId &&
+      visibleOrganizationGroups.some((group) => group.organizationId === statusConfigOrgId)
+    ) {
+      return statusConfigOrgId;
+    }
+    return visibleOrganizationGroups[0]?.organizationId ?? null;
+  }, [selectedOrganizationFilter, statusConfigOrgId, visibleOrganizationGroups]);
 
+  const projectsInFilterScope = useMemo(() => {
     const byProject = new Map<number, string>();
     localTasks.forEach((task) => {
-      if (getTaskOrganizationId(task) !== activeOrganizationId) return;
+      const organizationId = getTaskOrganizationId(task);
+      if (
+        selectedOrganizationFilter !== 'all' &&
+        organizationId !== selectedOrganizationFilter
+      ) {
+        return;
+      }
       const projectId = Number(task.ProjectId || 0);
       if (!Number.isFinite(projectId) || projectId <= 0) return;
       byProject.set(projectId, task.ProjectName || `Project #${projectId}`);
@@ -372,10 +410,16 @@ function AssignedKanbanTab({
     return Array.from(byProject.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  }, [localTasks, activeOrganizationId]);
+  }, [localTasks, selectedOrganizationFilter]);
 
   const taskMatchesKanbanFilters = (task: TaskWithProject, organizationId: number) => {
     if (getTaskOrganizationId(task) !== organizationId) return false;
+    if (
+      selectedOrganizationFilter !== 'all' &&
+      organizationId !== selectedOrganizationFilter
+    ) {
+      return false;
+    }
     if (selectedProjectId && Number(task.ProjectId) !== selectedProjectId) return false;
     if (selectedSprintFilter === 'all') return true;
     const sprintId = task.SprintId == null ? null : Number(task.SprintId);
@@ -385,6 +429,23 @@ function AssignedKanbanTab({
 
   const filteredTaskCountForOrg = (organizationId: number) =>
     localTasks.filter((task) => taskMatchesKanbanFilters(task, organizationId)).length;
+
+  const filteredAssignedCount = useMemo(
+    () =>
+      localTasks.filter((task) =>
+        visibleOrganizationGroups.some((group) =>
+          taskMatchesKanbanFilters(task, group.organizationId)
+        )
+      ).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers close over filter state
+    [
+      localTasks,
+      visibleOrganizationGroups,
+      selectedOrganizationFilter,
+      selectedProjectId,
+      selectedSprintFilter,
+    ]
+  );
 
   const getStatusesForOrganization = (organizationId: number) => {
     const catalog = statusCatalogByOrganization[organizationId];
@@ -398,6 +459,27 @@ function AssignedKanbanTab({
     }
 
     return inferredStatusesByOrganization[organizationId] || [];
+  };
+
+  const getVisibleStatusesForOrganization = (organizationId: number) => {
+    const statuses = getStatusesForOrganization(organizationId);
+    return filterVisibleStatuses(
+      statuses,
+      getHiddenStatusIdsForOrg(hiddenStatusesByOrg, organizationId)
+    );
+  };
+
+  const updateOrganizationFilter = (next: KanbanOrgFilter) => {
+    setSelectedOrganizationFilter(next);
+    setKanbanOrgFilterCookie(next);
+  };
+
+  const toggleStatusVisibility = (organizationId: number, statusId: number, visible: boolean) => {
+    setHiddenStatusesByOrg((prev) => {
+      const next = withHiddenStatusToggled(prev, organizationId, statusId, !visible);
+      setHiddenStatusesByOrgCookie(next);
+      return next;
+    });
   };
 
   const getTasksByStatus = (organizationId: number, statusId: number) => {
@@ -552,7 +634,7 @@ function AssignedKanbanTab({
 
   return (
     <div
-      className={`h-[calc(100vh-220px)] min-h-[360px] md:min-h-[560px] flex flex-col ${isDraggingTask ? 'select-none' : ''}`}
+      className={`h-[calc(100vh-200px)] min-h-[320px] md:min-h-[480px] flex flex-col gap-2 ${isDraggingTask ? 'select-none' : ''}`}
       onDragEnterCapture={(e) => {
         if (!canManage) return;
         e.preventDefault();
@@ -576,232 +658,330 @@ function AssignedKanbanTab({
         e.preventDefault();
       }}
     >
-      <div
-        className="mb-4 flex items-center justify-end"
-        onDragEnter={(e) => {
-          if (!canManage) return;
-          e.preventDefault();
-        }}
-        onDragOver={(e) => {
-          if (!canManage) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-        }}
-      >
-        <span className="px-3 py-1 rounded-full text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
-          {assignedTasks.length} assigned task{assignedTasks.length === 1 ? '' : 's'}
-        </span>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        {groupedTasksByOrganization.map((group) => (
-          <button
-            key={`kanban-org-menu-${group.organizationId}`}
-            type="button"
-            onClick={() => setSelectedOrganizationId(group.organizationId)}
-            className={`h-9 px-3 rounded-lg text-sm font-medium border transition-colors ${
-              selectedOrganizationId === group.organizationId
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-            }`}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-[180px] flex-1 sm:flex-none sm:min-w-[200px]">
+          <label
+            htmlFor="kanban-org-filter"
+            className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
           >
-            {group.organizationName} ({group.tasks.length})
+            Organization
+          </label>
+          <select
+            id="kanban-org-filter"
+            value={selectedOrganizationFilter === 'all' ? 'all' : String(selectedOrganizationFilter)}
+            onChange={(e) => {
+              const value = e.target.value;
+              updateOrganizationFilter(value === 'all' ? 'all' : Number(value));
+            }}
+            className="w-full h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          >
+            <option value="all">All organizations</option>
+            {groupedTasksByOrganization.map((group) => (
+              <option key={`kanban-org-${group.organizationId}`} value={group.organizationId}>
+                {group.organizationName} ({group.tasks.length})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="min-w-[180px] flex-1 sm:flex-none sm:min-w-[200px]">
+          <label
+            htmlFor="kanban-project-filter"
+            className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+          >
+            Project
+          </label>
+          <select
+            id="kanban-project-filter"
+            value={selectedProjectId ?? ''}
+            onChange={(e) => {
+              const value = e.target.value;
+              setSelectedProjectId(value ? Number(value) : null);
+            }}
+            className="w-full h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          >
+            <option value="">All projects</option>
+            {projectsInFilterScope.map((project) => (
+              <option key={`kanban-project-${project.id}`} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="min-w-[180px] flex-1 sm:flex-none sm:min-w-[200px]">
+          <label
+            htmlFor="kanban-sprint-filter"
+            className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+          >
+            Sprint
+          </label>
+          <select
+            id="kanban-sprint-filter"
+            value={
+              selectedSprintFilter === 'all'
+                ? 'all'
+                : selectedSprintFilter === 'backlog'
+                  ? 'backlog'
+                  : String(selectedSprintFilter)
+            }
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === 'all') setSelectedSprintFilter('all');
+              else if (value === 'backlog') setSelectedSprintFilter('backlog');
+              else setSelectedSprintFilter(Number(value));
+            }}
+            disabled={!selectedProjectId || loadingSprints}
+            className="w-full h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
+          >
+            <option value="all">All sprints</option>
+            <option value="backlog">Backlog (no sprint)</option>
+            {sprints.map((sprint) => (
+              <option key={`kanban-sprint-${sprint.Id}`} value={sprint.Id}>
+                {sprint.Name}
+                {sprint.Status === 'active' ? ' (active)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="relative min-w-[160px]">
+          <span className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+            Statuses
+          </span>
+          <button
+            type="button"
+            onClick={() => setStatusPickerOpen((open) => !open)}
+            disabled={!statusPickerOrganizationId}
+            className="w-full h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60 text-left"
+          >
+            {statusPickerOrganizationId
+              ? (() => {
+                  const all = getStatusesForOrganization(statusPickerOrganizationId);
+                  const hidden = getHiddenStatusIdsForOrg(
+                    hiddenStatusesByOrg,
+                    statusPickerOrganizationId
+                  ).length;
+                  if (hidden === 0) return 'All statuses';
+                  return `${all.length - hidden}/${all.length} visible`;
+                })()
+              : 'Statuses'}
           </button>
-        ))}
+          {statusPickerOpen && statusPickerOrganizationId && (
+            <div className="absolute z-30 mt-1 w-72 max-h-72 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg p-2">
+              {selectedOrganizationFilter === 'all' && groupedTasksByOrganization.length > 1 && (
+                <div className="mb-2">
+                  <label
+                    htmlFor="kanban-status-org"
+                    className="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1"
+                  >
+                    Organization statuses
+                  </label>
+                  <select
+                    id="kanban-status-org"
+                    value={statusPickerOrganizationId}
+                    onChange={(e) => setStatusConfigOrgId(Number(e.target.value))}
+                    className="w-full h-8 px-2 rounded-md text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                  >
+                    {groupedTasksByOrganization.map((group) => (
+                      <option key={`status-org-${group.organizationId}`} value={group.organizationId}>
+                        {group.organizationName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <p className="px-1 pb-2 text-[11px] text-gray-500 dark:text-gray-400">
+                Choose which status columns to show
+              </p>
+              {getStatusesForOrganization(statusPickerOrganizationId).map((status) => {
+                const hiddenIds = getHiddenStatusIdsForOrg(
+                  hiddenStatusesByOrg,
+                  statusPickerOrganizationId
+                );
+                const visible = !hiddenIds.includes(status.Id);
+                return (
+                  <label
+                    key={`kanban-status-toggle-${status.Id}`}
+                    className="flex items-center gap-2 px-1 py-1.5 text-sm text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/60 rounded cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visible}
+                      onChange={(e) =>
+                        toggleStatusVisibility(
+                          statusPickerOrganizationId,
+                          status.Id,
+                          e.target.checked
+                        )
+                      }
+                    />
+                    <span
+                      className="truncate"
+                      style={status.ColorCode ? { color: mapColor(status.ColorCode) } : undefined}
+                    >
+                      {status.StatusName}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center pb-0.5">
+          <span className="px-2.5 py-1 rounded-full text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">
+            {filteredAssignedCount} task{filteredAssignedCount === 1 ? '' : 's'}
+            {(selectedProjectId || selectedSprintFilter !== 'all') && (
+              <span className="opacity-70"> · filtered</span>
+            )}
+          </span>
+        </div>
       </div>
 
-      {activeOrganizationId && (
-        <div className="mb-4 flex flex-wrap items-end gap-3">
-          <div className="min-w-[220px]">
-            <label
-              htmlFor="kanban-project-filter"
-              className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
+        {visibleOrganizationGroups.map((activeGroup) => {
+          const statuses = getVisibleStatusesForOrganization(activeGroup.organizationId);
+          const allStatuses = getStatusesForOrganization(activeGroup.organizationId);
+          const columnsPerRow = Math.min(Math.max(statuses.length, 1), 6);
+          const hiddenCount =
+            allStatuses.length - getVisibleStatusesForOrganization(activeGroup.organizationId).length;
+
+          return (
+            <section
+              key={`kanban-org-board-${activeGroup.organizationId}`}
+              className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-2.5 overflow-hidden"
             >
-              Project
-            </label>
-            <select
-              id="kanban-project-filter"
-              value={selectedProjectId ?? ''}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSelectedProjectId(value ? Number(value) : null);
-              }}
-              className="w-full h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              <option value="">All projects</option>
-              {projectsInActiveOrg.map((project) => (
-                <option key={`kanban-project-${project.id}`} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="min-w-[220px]">
-            <label
-              htmlFor="kanban-sprint-filter"
-              className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
-            >
-              Sprint
-            </label>
-            <select
-              id="kanban-sprint-filter"
-              value={
-                selectedSprintFilter === 'all'
-                  ? 'all'
-                  : selectedSprintFilter === 'backlog'
-                    ? 'backlog'
-                    : String(selectedSprintFilter)
-              }
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === 'all') setSelectedSprintFilter('all');
-                else if (value === 'backlog') setSelectedSprintFilter('backlog');
-                else setSelectedSprintFilter(Number(value));
-              }}
-              disabled={!selectedProjectId || loadingSprints}
-              className="w-full h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white disabled:opacity-60"
-            >
-              <option value="all">All sprints</option>
-              <option value="backlog">Backlog (no sprint)</option>
-              {sprints.map((sprint) => (
-                <option key={`kanban-sprint-${sprint.Id}`} value={sprint.Id}>
-                  {sprint.Name}
-                  {sprint.Status === 'active' ? ' (active)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-
-      {(() => {
-        const activeGroup =
-          groupedTasksByOrganization.find((group) => group.organizationId === selectedOrganizationId) ||
-          groupedTasksByOrganization[0];
-
-        if (!activeGroup) {
-          return null;
-        }
-
-        const statuses = getStatusesForOrganization(activeGroup.organizationId);
-        const columnsPerRow = Math.min(Math.max(statuses.length, 1), 6);
-
-        return (
-          <section className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-1 min-h-0">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {activeGroup.organizationName}
-              </h2>
-              <span className="px-2.5 py-1 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium">
-                {filteredTaskCountForOrg(activeGroup.organizationId)} task
-                {filteredTaskCountForOrg(activeGroup.organizationId) === 1 ? '' : 's'}
-                {(selectedProjectId || selectedSprintFilter !== 'all') && (
-                  <span className="text-gray-500 dark:text-gray-400"> (filtered)</span>
-                )}
-              </span>
-            </div>
-
-            <div className="w-full overflow-x-auto">
-              <div
-                className="grid gap-4"
-                style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(260px, 1fr))` }}
-                onDragEnter={(e) => {
-                  if (!canManage) return;
-                  e.preventDefault();
-                }}
-                onDragOver={(e) => {
-                  if (!canManage) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                }}
-              >
-                {statuses.map((status) => (
-                  <div
-                    key={`${activeGroup.organizationId}-${status.Id}`}
-                    className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-4 h-[calc(100vh-430px)] min-h-[380px] flex flex-col overflow-hidden"
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDropOnColumn(e, activeGroup.organizationId, status.Id)}
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <h3
-                        className="font-bold text-gray-900 dark:text-white"
-                        style={status.ColorCode ? { color: mapColor(status.ColorCode) } : undefined}
-                      >
-                        {status.StatusName}
-                      </h3>
-                      <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold px-2 py-1 rounded-full">
-                        {getTasksByStatus(activeGroup.organizationId, status.Id).length}
-                      </span>
-                    </div>
-
-                    <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-                      {getTasksByStatus(activeGroup.organizationId, status.Id).map((task) => {
-                        const isDraggedOver = draggedOverTask === task.Id;
-
-                        return (
-                          <div
-                            key={task.Id}
-                            draggable={canManage}
-                            onDragStart={(e) => handleDragStart(e, task.Id)}
-                            onDragEnd={handleDragEnd}
-                            onDragOver={(e) => handleDragOverTask(e, task.Id)}
-                            onDragLeave={handleDragLeave}
-                            onDrop={(e) => handleDropOnTask(e, task)}
-                            onClick={() => onOpenTask({ Id: task.Id, ProjectId: task.ProjectId })}
-                            className={`bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition-all ${
-                              isDraggedOver ? 'border-2 border-blue-500 border-dashed' : ''
-                            }`}
-                            style={getPriorityBorder(task)}
-                          >
-                            <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-2 flex items-center gap-1.5 min-w-0">
-                              <TaskTypeIconMark
-                                name={task.TaskTypeName}
-                                iconSvg={task.TaskTypeIconSvg}
-                                color={task.TaskTypeColor}
-                                className="w-3.5 h-3.5"
-                              />
-                              <span className="truncate">{task.TaskName}</span>
-                            </h4>
-
-                            {task.Description && (() => {
-                              const plainText = String(task.Description).replace(/<[^>]*>/g, '').trim();
-                              return plainText ? (
-                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">{plainText}</p>
-                              ) : null;
-                            })()}
-
-                            <div className="flex items-center flex-wrap gap-2 text-xs mb-2">
-                              <span
-                                className="px-2 py-1 rounded"
-                                style={pillStyle(task.PriorityColor, { alpha: '20' })}
-                              >
-                                {task.PriorityName || 'No Priority'}
-                              </span>
-
-                              {task.EstimatedHours && (
-                                <span className="text-gray-500 dark:text-gray-400">⏱️ {task.EstimatedHours}h</span>
-                              )}
-
-                              {task.DueDate && (
-                                <span className="text-gray-500 dark:text-gray-400">
-                                  📅 {new Date(task.DueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="text-xs text-gray-600 dark:text-gray-400 truncate">📁 {task.ProjectName || 'Project'}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between gap-2 mb-2 min-h-7">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                  {activeGroup.organizationName}
+                </h2>
+                <div className="flex items-center gap-2 shrink-0">
+                  {hiddenCount > 0 && (
+                    <button
+                      type="button"
+                      className="text-[11px] text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                      onClick={() => {
+                        updateOrganizationFilter(activeGroup.organizationId);
+                        setStatusPickerOpen(true);
+                      }}
+                    >
+                      {hiddenCount} status{hiddenCount === 1 ? '' : 'es'} hidden
+                    </button>
+                  )}
+                  <span className="px-2 py-0.5 rounded-full text-[11px] bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium">
+                    {filteredTaskCountForOrg(activeGroup.organizationId)}
+                  </span>
+                </div>
               </div>
-            </div>
-          </section>
-        );
-      })()}
+
+              {statuses.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
+                  All statuses are hidden for this organization.
+                </p>
+              ) : (
+                <div className="w-full overflow-x-auto">
+                  <div
+                    className="grid gap-2"
+                    style={{ gridTemplateColumns: `repeat(${columnsPerRow}, minmax(220px, 1fr))` }}
+                    onDragEnter={(e) => {
+                      if (!canManage) return;
+                      e.preventDefault();
+                    }}
+                    onDragOver={(e) => {
+                      if (!canManage) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                  >
+                    {statuses.map((status) => (
+                      <div
+                        key={`${activeGroup.organizationId}-${status.Id}`}
+                        className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-2 h-[calc(100vh-340px)] min-h-[280px] flex flex-col overflow-hidden"
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDropOnColumn(e, activeGroup.organizationId, status.Id)}
+                      >
+                        <div className="flex items-center justify-between mb-2 gap-2">
+                          <h3
+                            className="font-semibold text-sm text-gray-900 dark:text-white truncate"
+                            style={status.ColorCode ? { color: mapColor(status.ColorCode) } : undefined}
+                          >
+                            {status.StatusName}
+                          </h3>
+                          <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-[11px] font-semibold px-1.5 py-0.5 rounded-full shrink-0">
+                            {getTasksByStatus(activeGroup.organizationId, status.Id).length}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 flex-1 overflow-y-auto pr-0.5">
+                          {getTasksByStatus(activeGroup.organizationId, status.Id).map((task) => {
+                            const isDraggedOver = draggedOverTask === task.Id;
+
+                            return (
+                              <div
+                                key={task.Id}
+                                draggable={canManage}
+                                onDragStart={(e) => handleDragStart(e, task.Id)}
+                                onDragEnd={handleDragEnd}
+                                onDragOver={(e) => handleDragOverTask(e, task.Id)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDropOnTask(e, task)}
+                                onClick={() => onOpenTask({ Id: task.Id, ProjectId: task.ProjectId })}
+                                className={`bg-white dark:bg-gray-700 rounded-lg p-2.5 shadow-sm cursor-pointer hover:shadow-md transition-all ${
+                                  isDraggedOver ? 'border-2 border-blue-500 border-dashed' : ''
+                                }`}
+                                style={getPriorityBorder(task)}
+                              >
+                                <h4 className="font-semibold text-gray-900 dark:text-white text-sm mb-1.5 flex items-center gap-1.5 min-w-0">
+                                  <TaskTypeIconMark
+                                    name={task.TaskTypeName}
+                                    iconSvg={task.TaskTypeIconSvg}
+                                    color={task.TaskTypeColor}
+                                    className="w-3.5 h-3.5"
+                                  />
+                                  <span className="truncate">{task.TaskName}</span>
+                                </h4>
+
+                                {task.Description && (() => {
+                                  const plainText = String(task.Description).replace(/<[^>]*>/g, '').trim();
+                                  return plainText ? (
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 line-clamp-2">{plainText}</p>
+                                  ) : null;
+                                })()}
+
+                                <div className="flex items-center flex-wrap gap-1.5 text-xs mb-1.5">
+                                  <span
+                                    className="px-1.5 py-0.5 rounded"
+                                    style={pillStyle(task.PriorityColor, { alpha: '20' })}
+                                  >
+                                    {task.PriorityName || 'No Priority'}
+                                  </span>
+
+                                  {task.EstimatedHours && (
+                                    <span className="text-gray-500 dark:text-gray-400">⏱️ {task.EstimatedHours}h</span>
+                                  )}
+
+                                  {task.DueDate && (
+                                    <span className="text-gray-500 dark:text-gray-400">
+                                      📅 {new Date(task.DueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="text-xs text-gray-600 dark:text-gray-400 truncate">📁 {task.ProjectName || 'Project'}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }

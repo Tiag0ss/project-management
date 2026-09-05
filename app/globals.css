@@ -114,8 +114,31 @@ table.grid-density-compact td {
   animation: timer-glow-pulse-other 1.6s ease-in-out infinite;
 }
 
-/* Synapse tokens — available on all routes (auth/frontpage are outside AppShell) */
-:root {
+/* Synapse tokens — light defaults; dark overrides when html.dark is set */
+:root,
+html.light {
+  --pm-bg: #f4f7fb;
+  --pm-bg-glow: #dbeafe;
+  --pm-panel: #ffffff;
+  --pm-surface: #f8fafc;
+  --pm-surface-2: #eef2f7;
+  --pm-border: #e2e8f0;
+  --pm-border-strong: #cbd5e1;
+  --pm-text: #0f172a;
+  --pm-muted: #64748b;
+  --pm-accent: #0d9488;
+  --pm-accent-fg: #ffffff;
+  --pm-accent-soft: #0f766e;
+  --pm-danger: #dc2626;
+  --pm-warn: #d97706;
+  --pm-radius: 0.75rem;
+  --pm-radius-sm: 0.5rem;
+  --pm-font-sans: var(--font-dm-sans), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --pm-font-mono: var(--font-ibm-plex-mono), var(--font-geist-mono), ui-monospace, monospace;
+  --pm-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+html.dark {
   --pm-bg: #0a0e13;
   --pm-bg-glow: #12202e;
   --pm-panel: #111820;
@@ -130,22 +153,19 @@ table.grid-density-compact td {
   --pm-accent-soft: #5eead4;
   --pm-danger: #f87171;
   --pm-warn: #fbbf24;
-  --pm-radius: 0.75rem;
-  --pm-radius-sm: 0.5rem;
-  --pm-font-sans: var(--font-dm-sans), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --pm-font-mono: var(--font-ibm-plex-mono), var(--font-geist-mono), ui-monospace, monospace;
+  --pm-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
-/* New AppShell (Synapse) — scoped under .pm-app; source: pm-synapse/app/globals.css */
+/* New AppShell (Synapse) — scoped under .pm-app; tokens follow html.light / html.dark */
 .pm-app {
-  color-scheme: dark;
+  color-scheme: inherit;
   font-family: var(--pm-font-sans);
   font-size: 0.875rem;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   background:
     radial-gradient(1200px 600px at 12% -10%, color-mix(in srgb, var(--pm-bg-glow) 70%, transparent), transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, color-mix(in srgb, #0f3d3a 35%, transparent), transparent 50%),
+    radial-gradient(900px 500px at 90% 0%, color-mix(in srgb, var(--pm-accent) 12%, transparent), transparent 50%),
     var(--pm-bg);
   color: var(--pm-text);
 }
@@ -219,7 +239,7 @@ body:has(.pm-app).nav-left-fixed-collapsed {
 .pm-app .shadow-lg,
 .pm-app .shadow-xl,
 .pm-app .shadow-sm {
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  box-shadow: var(--pm-shadow);
 }
 
 /*
