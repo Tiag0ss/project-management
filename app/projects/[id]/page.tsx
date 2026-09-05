@@ -27,6 +27,7 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProjectExpensesSection from '@/components/ProjectExpensesSection';
 import { TaskAnalyticsCharts } from '@/components/reporting/TaskAnalyticsCharts';
 import { buildTaskAnalytics } from '@/lib/reporting/taskAnalytics';
+import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
@@ -236,6 +237,15 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   const showAlert = (title: string, message: string) => {
     setModalMessage({ type: 'alert', title, message });
   };
+
+  useEffect(() => {
+    if (!project?.Id || !project.ProjectName) return;
+    recordRecentNavAccess(
+      'projects',
+      { id: project.Id, label: project.ProjectName, href: `/projects/${project.Id}` },
+      user?.id
+    );
+  }, [project?.Id, project?.ProjectName, user?.id]);
 
   const parseMappingJson = (value: any): Record<string, string> => {
     if (!value || typeof value !== 'string') return {};

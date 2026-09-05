@@ -2,10 +2,11 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import RichTextEditor from '@/components/RichTextEditor';
 import { getMemos, createMemo, updateMemo, deleteMemo, Memo } from '@/lib/api/memos';
-import { useRouter } from 'next/navigation'
+import { recordRecentNavAccess } from '@/lib/recentNavAccess';
+import { useRouter, useSearchParams } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
@@ -16,8 +17,24 @@ const MEMO_CALENDAR_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const normalizeMemoTag = (tag: string): string => tag.trim().replace(/\s+/g, ' ');
 
 export default function MemosPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[40vh] items-center justify-center text-gray-600 dark:text-gray-300">
+          Loading…
+        </div>
+      }
+    >
+      <MemosPageContent />
+    </Suspense>
+  );
+}
+
+function MemosPageContent() {
   const { user, token, isLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const memoIdFromUrl = Number(searchParams.get('memoId'));
   const [memos, setMemos] = useState<Memo[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [error, setError] = useState('');
@@ -30,6 +47,7 @@ export default function MemosPage() {
   const [filterVisibility, setFilterVisibility] = useState<'all' | 'private' | 'organizations' | 'public'>('all');
   const [filterText, setFilterText] = useState('');
   const [focusedMemoId, setFocusedMemoId] = useState<number | null>(null);
+  const deepLinkedMemoRef = useRef<number | null>(null);
 
   // Form state
   const [memoForm, setMemoForm] = useState({
@@ -86,14 +104,31 @@ export default function MemosPage() {
     });
     setSelectedMemo(memo);
     setShowMemoModal(true);
+    recordRecentNavAccess(
+      'memos',
+      { id: memo.Id, label: memo.Title || `Memo #${memo.Id}`, href: `/memos?memoId=${memo.Id}` },
+      user?.id
+    );
+    router.replace(`/memos?memoId=${memo.Id}`, { scroll: false });
   };
 
   const handleOpenMemo = (memoId: number) => {
+    deepLinkedMemoRef.current = memoId;
     setEnableDateFilter(false);
     setFilterTag(null);
     setFilterVisibility('all');
     setFilterText('');
     setFocusedMemoId(memoId);
+
+    const memo = memos.find((entry) => entry.Id === memoId);
+    if (memo) {
+      recordRecentNavAccess(
+        'memos',
+        { id: memo.Id, label: memo.Title || `Memo #${memo.Id}`, href: `/memos?memoId=${memo.Id}` },
+        user?.id
+      );
+    }
+    router.replace(`/memos?memoId=${memoId}`, { scroll: false });
 
     setTimeout(() => {
       const targetElement = document.getElementById(`memo-${memoId}`);
@@ -106,6 +141,16 @@ export default function MemosPage() {
       setFocusedMemoId((current) => (current === memoId ? null : current));
     }, 2600);
   };
+
+  useEffect(() => {
+    if (isLoadingData || memos.length === 0) return;
+    if (!Number.isFinite(memoIdFromUrl) || memoIdFromUrl <= 0) return;
+    if (deepLinkedMemoRef.current === memoIdFromUrl) return;
+    if (!memos.some((memo) => memo.Id === memoIdFromUrl)) return;
+    deepLinkedMemoRef.current = memoIdFromUrl;
+    handleOpenMemo(memoIdFromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open when memoId query changes
+  }, [isLoadingData, memos, memoIdFromUrl]);
 
   const handleSaveMemo = async () => {
     if (!token || !memoForm.title.trim()) {

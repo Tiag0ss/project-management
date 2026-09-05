@@ -24,15 +24,40 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useActiveOrganization } from '@/contexts/ActiveOrganizationContext';
 import AppChromeTools from '@/components/AppChromeTools';
 import { getApiUrl } from '@/lib/api/config';
+import { useRecentNavAccess } from '@/hooks/useRecentNavAccess';
+import {
+  recordRecentNavAccess,
+  recentNavParentHref,
+  type RecentNavKind,
+} from '@/lib/recentNavAccess';
 
+const SIDEBAR_PINNED_KEY = 'pm:appshell:sidebar-pinned';
+
+function readSidebarPinned(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(SIDEBAR_PINNED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeSidebarPinned(pinned: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SIDEBAR_PINNED_KEY, pinned ? '1' : '0');
+  } catch {
+    // ignore quota / private mode
+  }
+}
 type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   section?: string;
+  recentKind?: RecentNavKind;
 };
 
 type FeatureFlags = {
@@ -45,7 +70,7 @@ type FeatureFlags = {
 function buildNav(flags: FeatureFlags): NavItem[] {
   return [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/projects', label: 'Projects', icon: FolderKanban, section: 'Delivery' },
+    { href: '/projects', label: 'Projects', icon: FolderKanban, section: 'Delivery', recentKind: 'projects' },
     { href: '/planning', label: 'Planning', icon: GanttChart, section: 'Delivery' },
     { href: '/timesheet', label: 'Timesheet', icon: Timer, section: 'Work' },
     ...(flags.expensesEnabled
@@ -57,10 +82,10 @@ function buildNav(flags: FeatureFlags): NavItem[] {
       ? [{ href: '/tickets', label: 'Tickets', icon: Ticket, section: 'Service' } as NavItem]
       : []),
     ...(flags.memosEnabled
-      ? [{ href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service' } as NavItem]
+      ? [{ href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service', recentKind: 'memos' } as NavItem]
       : []),
-    { href: '/customers', label: 'Customers', icon: Building2, section: 'Management' },
-    { href: '/applications', label: 'Applications', icon: Boxes, section: 'Management' },
+    { href: '/customers', label: 'Customers', icon: Building2, section: 'Management', recentKind: 'customers' },
+    { href: '/applications', label: 'Applications', icon: Boxes, section: 'Management', recentKind: 'applications' },
     {
       href: '/approvals',
       label: flags.expensesEnabled ? 'Approvals & Expenses' : 'Approvals',
@@ -91,20 +116,59 @@ function SectionSplitter({ title, expanded }: { title: string; expanded: boolean
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [pinnedExpanded, setPinnedExpanded] = useState(false);
+  const [pinnedHydrated, setPinnedHydrated] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [activeMemoId, setActiveMemoId] = useState<string | null>(null);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({
     expensesEnabled: false,
     internalTicketsEnabled: true,
     memosEnabled: true,
   });
+  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const [isDemoMode, setIsDemoMode] = useState(false);
   const expanded = pinnedExpanded || hovered;
   // Hover-only expand overlays; pinned expand must reserve content width.
   const contentOffsetClass = pinnedExpanded ? 'w-72' : 'w-16';
   const pathname = usePathname();
   const { user, token, isCustomerUser } = useAuth();
-  const { organizations, activeOrganizationId, setActiveOrganizationId, loading: orgLoading } =
-    useActiveOrganization();
+  const recentNav = useRecentNavAccess(user?.id);
+  const brandLabel = (companyName || '').trim() || 'Project Management';
+  const brandInitial = brandLabel.charAt(0).toUpperCase() || 'P';
+
+  useEffect(() => {
+    setPinnedExpanded(readSidebarPinned());
+    setPinnedHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!pinnedHydrated) return;
+    writeSidebarPinned(pinnedExpanded);
+  }, [pinnedExpanded, pinnedHydrated]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setActiveMemoId(new URLSearchParams(window.location.search).get('memoId'));
+  }, [pathname, recentNav.memos]);
+  useEffect(() => {
+    const match = pathname.match(/^\/(projects|customers|applications)\/(\d+)(?:\/|$)/);
+    if (!match) return;
+    const segment = match[1] as 'projects' | 'customers' | 'applications';
+    const id = Number(match[2]);
+    if (!Number.isFinite(id) || id <= 0) return;
+    const kind: RecentNavKind = segment;
+    const existing = recentNav[kind].find((item) => item.id === id);
+    const fallbackLabel =
+      existing?.label ||
+      (kind === 'projects' ? `Project #${id}` : kind === 'customers' ? `Customer #${id}` : `Application #${id}`);
+    recordRecentNavAccess(
+      kind,
+      { id, label: fallbackLabel, href: `${recentNavParentHref(kind)}/${id}` },
+      user?.id
+    );
+    // Only re-run on route changes; recentNav is read for label reuse at touch time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: pathname-driven touch
+  }, [pathname, user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,12 +177,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         const publicRes = await fetch(`${getApiUrl()}/api/system-settings/public`);
         if (publicRes.ok && !cancelled) {
           const publicData = await publicRes.json();
+          setCompanyName(publicData.companyName || 'Project Management');
+          setCompanyLogoUrl(publicData.companyLogoUrl || '');
           setIsDemoMode(publicData.demoMode === true);
         } else if (!cancelled) {
+          setCompanyName('Project Management');
+          setCompanyLogoUrl('');
           setIsDemoMode(false);
         }
       } catch {
-        if (!cancelled) setIsDemoMode(false);
+        if (!cancelled) {
+          setCompanyName('Project Management');
+          setCompanyLogoUrl('');
+          setIsDemoMode(false);
+        }
       }
     })();
     return () => {
@@ -210,9 +282,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         ].join(' ')}
       >
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-[var(--pm-border)] px-3">
-          <span className="flex h-[18px] w-5 shrink-0 items-center justify-center text-[var(--pm-muted)]" aria-hidden>
-            ☰
-          </span>
+          {companyLogoUrl ? (
+            <img
+              src={companyLogoUrl}
+              alt=""
+              className="h-[18px] w-5 shrink-0 rounded object-contain"
+              aria-hidden
+            />
+          ) : (
+            <span className="flex h-[18px] w-5 shrink-0 items-center justify-center text-[var(--pm-muted)]" aria-hidden>
+              ☰
+            </span>
+          )}
           {/* Keep header slots mounted so icon column never shifts */}
           <Link
             href="/dashboard"
@@ -222,8 +303,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ].join(' ')}
             tabIndex={expanded ? 0 : -1}
             aria-hidden={!expanded}
+            title={brandLabel}
           >
-            PM
+            {brandLabel}
           </Link>
           <button
             type="button"
@@ -251,30 +333,55 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const recentItems = item.recentKind ? recentNav[item.recentKind] : [];
                 return (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    title={item.label}
-                    className={[
-                      'flex h-9 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md px-3 text-sm leading-none no-underline',
-                      active
-                        ? 'bg-[var(--pm-surface-2)] text-[var(--pm-accent-soft)]'
-                        : 'text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]',
-                    ].join(' ')}
-                  >
-                    <span className="flex h-[18px] w-5 shrink-0 items-center justify-center">
-                      <Icon size={18} className="opacity-90" strokeWidth={1.75} />
-                    </span>
-                    <span
+                  <div key={item.href} className="space-y-0.5">
+                    <a
+                      href={item.href}
+                      title={item.label}
                       className={[
-                        'min-w-0 truncate leading-none',
-                        expanded ? '' : 'invisible w-0 overflow-hidden',
+                        'flex h-9 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md px-3 text-sm leading-none no-underline',
+                        active
+                          ? 'bg-[var(--pm-surface-2)] text-[var(--pm-accent-soft)]'
+                          : 'text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]',
                       ].join(' ')}
                     >
-                      {item.label}
-                    </span>
-                  </a>
+                      <span className="flex h-[18px] w-5 shrink-0 items-center justify-center">
+                        <Icon size={18} className="opacity-90" strokeWidth={1.75} />
+                      </span>
+                      <span
+                        className={[
+                          'min-w-0 truncate leading-none',
+                          expanded ? '' : 'invisible w-0 overflow-hidden',
+                        ].join(' ')}
+                      >
+                        {item.label}
+                      </span>
+                    </a>
+                    {expanded &&
+                      recentItems.map((recent) => {
+                        const recentPath = recent.href.split('?')[0];
+                        const recentActive =
+                          item.recentKind === 'memos'
+                            ? pathname.startsWith('/memos') && activeMemoId === String(recent.id)
+                            : pathname === recentPath || pathname.startsWith(`${recentPath}/`);
+                        return (
+                          <a
+                            key={`${item.recentKind}-${recent.id}`}
+                            href={recent.href}
+                            title={recent.label}
+                            className={[
+                              'flex h-8 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md py-0 pl-10 pr-3 text-xs leading-none no-underline',
+                              recentActive
+                                ? 'bg-[var(--pm-surface-2)] text-[var(--pm-accent-soft)]'
+                                : 'text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]',
+                            ].join(' ')}
+                          >
+                            <span className="min-w-0 truncate">{recent.label}</span>
+                          </a>
+                        );
+                      })}
+                  </div>
                 );
               })}
             </div>
@@ -287,28 +394,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <AppChromeTools
             toolsOnly
             leading={
-              <div className="flex min-w-0 max-w-[min(100%,18rem)] items-center gap-2 sm:max-w-[22rem]">
-                <Building2 size={16} className="shrink-0 text-[var(--pm-accent)]" />
-                {orgLoading ? (
-                  <span className="text-sm text-[var(--pm-muted)]">Organizations…</span>
-                ) : organizations.length <= 1 ? (
-                  <span className="truncate text-sm font-medium" title={organizations[0]?.Name}>
-                    {organizations[0]?.Name ?? 'No organization'}
-                  </span>
+              <div className="flex min-w-0 max-w-[min(100%,20rem)] items-center gap-2 sm:max-w-[24rem]">
+                {companyLogoUrl ? (
+                  <img
+                    src={companyLogoUrl}
+                    alt={brandLabel}
+                    className="h-8 w-8 shrink-0 rounded-md bg-[var(--pm-surface)] object-contain ring-1 ring-[var(--pm-border)]"
+                  />
                 ) : (
-                  <select
-                    className="w-full max-w-[14rem] rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-2 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
-                    value={activeOrganizationId ?? ''}
-                    onChange={(e) => setActiveOrganizationId(Number(e.target.value) || null)}
-                    aria-label="Active organization"
-                  >
-                    {organizations.map((o) => (
-                      <option key={o.Id} value={o.Id}>
-                        {o.Name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-600 text-sm font-bold text-white">
+                    {brandInitial}
+                  </div>
                 )}
+                <span className="truncate text-sm font-semibold text-[var(--pm-text)]" title={brandLabel}>
+                  {brandLabel}
+                </span>
                 {isDemoMode && (
                   <span
                     className="hidden shrink-0 items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 sm:inline-flex dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300"

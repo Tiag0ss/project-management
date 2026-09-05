@@ -17,6 +17,7 @@ import { Task, tasksApi } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useUrlTab } from '@/hooks/useUrlTab';
+import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 
 type Tab = 'overview' | 'versions' | 'commits';
 const APPLICATION_DETAIL_TABS = ['overview', 'versions', 'commits'] as const;
@@ -202,6 +203,15 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
       void loadCommits(1, false);
     }
   }, [activeTab, token, id, commitsLoaded, commitsLoading]);
+
+  useEffect(() => {
+    if (!application?.Id || !application.Name) return;
+    recordRecentNavAccess(
+      'applications',
+      { id: application.Id, label: application.Name, href: `/applications/${application.Id}` },
+      user?.id
+    );
+  }, [application?.Id, application?.Name, user?.id]);
 
   const loadApplication = async () => {
     setIsLoading(true);

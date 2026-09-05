@@ -19,6 +19,7 @@ import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useUrlTab } from '@/hooks/useUrlTab';
+import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 
 type TabType = 'overview' | 'users' | 'settings' | 'attachments' | 'history';
 const CUSTOMER_DETAIL_TABS = ['overview', 'users', 'settings', 'attachments', 'history'] as const;
@@ -285,6 +286,15 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
       loadData();
     }
   }, [token, customerId, featureFlagsLoaded]);
+
+  useEffect(() => {
+    if (!customer?.Id || !customer.Name) return;
+    recordRecentNavAccess(
+      'customers',
+      { id: customer.Id, label: customer.Name, href: `/customers/${customer.Id}` },
+      user?.id
+    );
+  }, [customer?.Id, customer?.Name, user?.id]);
 
   const loadData = async () => {
     setIsLoading(true);
