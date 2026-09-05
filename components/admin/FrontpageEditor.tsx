@@ -312,46 +312,16 @@ export default function FrontpageEditor() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          Frontpage Editor
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400">
-          Edit the HTML content of your frontpage. Changes will be reflected in the preview on the right.
-        </p>
-      </div>
+    <div className="p-4 sm:p-6">
+      <p className="mb-4 text-xs text-[var(--pm-muted)]">
+        Edit the HTML content of your frontpage. Changes are reflected in the preview on the right.
+      </p>
 
       {error && (
         <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400 rounded">
           {error}
         </div>
       )}
-
-      {/* Action Buttons */}
-      <div className="mb-4 flex gap-2">
-        <button
-          onClick={handleSave}
-          disabled={isDemoMode || isSaving || content === originalContent}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-        >
-          {isSaving ? 'Saving...' : 'Save Changes'}
-        </button>
-        <button
-          onClick={handleReset}
-          disabled={isDemoMode || content === originalContent}
-          className="px-4 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-        >
-          Reset to Saved
-        </button>
-        <button
-          onClick={handleResetToDefault}
-          disabled={isDemoMode}
-          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors"
-        >
-          Reset to Default
-        </button>
-      </div>
 
       {/* Editor and Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -388,14 +358,41 @@ export default function FrontpageEditor() {
 
       {/* Tips */}
       <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-        <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">💡 Tips:</h3>
+        <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">Tips</h3>
         <ul className="text-sm text-blue-800 dark:text-blue-400 space-y-1">
           <li>• Use Tailwind CSS classes for styling</li>
           <li>• Dark mode classes (dark:) are supported</li>
           <li>• Changes are saved to the database and will persist across restarts</li>
           <li>• The preview updates in real-time as you type</li>
-          <li>• Use "Reset to Default" to restore the original template</li>
+          <li>• Use &quot;Reset to Default&quot; to restore the original template</li>
         </ul>
+      </div>
+
+      <div className="sticky bottom-0 z-10 -mx-4 mt-4 flex flex-wrap justify-end gap-2 border-t border-[var(--pm-border)] bg-[var(--pm-panel)] px-4 py-3 sm:-mx-6 sm:px-6">
+        <button
+          type="button"
+          onClick={handleResetToDefault}
+          disabled={isDemoMode}
+          className="h-10 rounded-lg bg-orange-600 px-4 text-sm font-medium text-white transition-colors hover:bg-orange-700 disabled:bg-gray-400"
+        >
+          Reset to Default
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={isDemoMode || content === originalContent}
+          className="h-10 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-surface)] px-4 text-sm font-medium text-[var(--pm-text)] transition-colors hover:bg-[var(--pm-surface-2)] disabled:opacity-50"
+        >
+          Reset to Saved
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isDemoMode || isSaving || content === originalContent}
+          className="h-10 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-gray-400"
+        >
+          {isSaving ? 'Saving…' : 'Save Changes'}
+        </button>
       </div>
     </div>
   );

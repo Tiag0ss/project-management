@@ -15,6 +15,8 @@ import ProfileTaskFormVisibility from '@/components/profile/ProfileTaskFormVisib
 import ApiTokensManagement from '@/components/admin/ApiTokensManagement';
 import PageTabs from '@/components/PageTabs';
 import PageStickyChrome from '@/components/PageStickyChrome';
+import PageStickyActions, { pageActionButtonClass } from '@/components/PageStickyActions';
+import type { TaskFormVisibilityActionsState } from '@/components/admin/TaskFormVisibilitySettingsPanel';
 import { useUrlTab } from '@/hooks/useUrlTab';
 
 const PROFILE_TABS = [
@@ -151,6 +153,7 @@ function ProfilePageContent() {
   const [activeTab, setActiveTab] = useUrlTab<ProfileTab>(PROFILE_TABS, 'info');
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [taskFormActions, setTaskFormActions] = useState<TaskFormVisibilityActionsState | null>(null);
   
   // Profile edit state
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -1216,9 +1219,9 @@ function ProfilePageContent() {
       </PageStickyChrome>
 
       <main ref={scrollContainerRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto pt-3">
-        <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] p-6 shadow-sm">
+        <div className="rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] p-4 shadow-sm">
               {message && (
-                <div className={`mb-4 p-3 rounded ${
+                <div className={`mb-3 rounded px-3 py-2 text-sm ${
                   message.includes('successfully') || message.includes('Success')
                     ? 'bg-green-100 dark:bg-green-900/30 border border-green-400 text-green-700 dark:text-green-400'
                     : 'bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-400'
@@ -1228,305 +1231,190 @@ function ProfilePageContent() {
               )}
               
               {activeTab === 'info' && (
-                <div className="space-y-6">
-                  <div className="mb-4 flex justify-end items-center">
-                    {!isEditingProfile ? (
-                      <button
-                        onClick={() => setIsEditingProfile(true)}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                      >
-                        ✏️ Edit Profile
-                      </button>
-                    ) : (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setIsEditingProfile(false);
-                            loadUserProfile();
-                          }}
-                          className="px-4 py-2 bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-900 dark:text-white rounded-lg transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSaveProfile}
-                          disabled={isSaving}
-                          className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
-                        >
-                          {isSaving ? 'Saving...' : '💾 Save Changes'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Username
-                    </label>
-                    <p className="text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded">
-                      {user.username}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Username cannot be changed</p>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      First Name
-                    </label>
-                    {isEditingProfile ? (
-                      <input
-                        type="text"
-                        value={profileForm.firstName}
-                        onChange={(e) => setProfileForm(prev => ({ ...prev, firstName: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                    ) : (
-                      <p className="text-gray-900 dark:text-white">{user.firstName || 'Not set'}</p>
-                    )}
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Last Name
-                    </label>
-                    {isEditingProfile ? (
-                      <input
-                        type="text"
-                        value={profileForm.lastName}
-                        onChange={(e) => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                    ) : (
-                      <p className="text-gray-900 dark:text-white">{user.lastName || 'Not set'}</p>
-                    )}
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Email
-                    </label>
-                    {isEditingProfile ? (
-                      <input
-                        type="email"
-                        value={profileForm.email}
-                        onChange={(e) => setProfileForm(prev => ({ ...prev, email: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                    ) : (
-                      <p className="text-gray-900 dark:text-white">{user.email}</p>
-                    )}
-                  </div>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Username</label>
+                      <p className="rounded border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)]">
+                        {user.username}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">Cannot be changed</p>
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Azure AD Object ID
-                    </label>
-                    {isEditingProfile ? (
-                      <>
+                    <div>
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">First Name</label>
+                      {isEditingProfile ? (
                         <input
                           type="text"
-                          value={profileForm.azureAdObjectId}
-                          onChange={(e) => setProfileForm(prev => ({ ...prev, azureAdObjectId: e.target.value }))}
-                          placeholder="00000000-0000-0000-0000-000000000000"
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                          value={profileForm.firstName}
+                          onChange={(e) => setProfileForm(prev => ({ ...prev, firstName: e.target.value }))}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                         />
-                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          Required to import your Microsoft Teams call records. Find your &quot;oid&quot; at{' '}
-                          <a href="https://myaccount.microsoft.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline">
-                            myaccount.microsoft.com
-                          </a>{' '}
-                          → Profile → Show JSON.
+                      ) : (
+                        <p className="px-0.5 py-1.5 text-sm text-[var(--pm-text)]">{user.firstName || 'Not set'}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Last Name</label>
+                      {isEditingProfile ? (
+                        <input
+                          type="text"
+                          value={profileForm.lastName}
+                          onChange={(e) => setProfileForm(prev => ({ ...prev, lastName: e.target.value }))}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
+                        />
+                      ) : (
+                        <p className="px-0.5 py-1.5 text-sm text-[var(--pm-text)]">{user.lastName || 'Not set'}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Email</label>
+                      {isEditingProfile ? (
+                        <input
+                          type="email"
+                          value={profileForm.email}
+                          onChange={(e) => setProfileForm(prev => ({ ...prev, email: e.target.value }))}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
+                        />
+                      ) : (
+                        <p className="truncate px-0.5 py-1.5 text-sm text-[var(--pm-text)]" title={user.email}>{user.email}</p>
+                      )}
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Azure AD Object ID</label>
+                      {isEditingProfile ? (
+                        <>
+                          <input
+                            type="text"
+                            value={profileForm.azureAdObjectId}
+                            onChange={(e) => setProfileForm(prev => ({ ...prev, azureAdObjectId: e.target.value }))}
+                            placeholder="00000000-0000-0000-0000-000000000000"
+                            className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 font-mono text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
+                          />
+                          <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
+                            Needed for Teams call import. Find &quot;oid&quot; at{' '}
+                            <a href="https://myaccount.microsoft.com" target="_blank" rel="noopener noreferrer" className="text-[var(--pm-accent-soft)] underline">
+                              myaccount.microsoft.com
+                            </a>
+                            {' '}→ Profile → Show JSON.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="truncate px-0.5 py-1.5 font-mono text-sm text-[var(--pm-text)]">
+                          {profileForm.azureAdObjectId || <span className="italic text-[var(--pm-muted)]">Not set</span>}
                         </p>
-                      </>
-                    ) : (
-                      <p className="text-gray-900 dark:text-white font-mono text-sm">
-                        {profileForm.azureAdObjectId || <span className="text-gray-400 italic">Not set</span>}
-                      </p>
-                    )}
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Timezone
-                    </label>
-                    {isEditingProfile ? (
-                      <select
-                        value={profileForm.timezone}
-                        onChange={(e) => setProfileForm(prev => ({ ...prev, timezone: e.target.value }))}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      >
-                        {TIMEZONES.map(tz => (
-                          <option key={tz.value} value={tz.value}>{tz.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <p className="text-gray-900 dark:text-white">
-                        {profileForm.timezone ? TIMEZONES.find(tz => tz.value === profileForm.timezone)?.label || profileForm.timezone : 'System default'}
-                      </p>
-                    )}
-                  </div>
+                      )}
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Country
-                    </label>
-                    {isEditingProfile ? (
-                      <input
-                        type="text"
-                        value={profileForm.countryCode}
-                        onChange={(e) => {
-                          const val = e.target.value.toUpperCase().slice(0, 2);
-                          setProfileForm(prev => ({ ...prev, countryCode: val, regionCode: '' }));
-                        }}
-                        placeholder="e.g. PT, DE, US"
-                        maxLength={2}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                    ) : (
-                      <p className="text-gray-900 dark:text-white">{profileForm.countryCode || '—'}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Region / Subdivision
-                    </label>
-                    {isEditingProfile ? (
-                      profileRegions.length > 0 ? (
+                    <div>
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Timezone</label>
+                      {isEditingProfile ? (
                         <select
-                          value={profileForm.regionCode}
-                          onChange={(e) => setProfileForm(prev => ({ ...prev, regionCode: e.target.value }))}
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          value={profileForm.timezone}
+                          onChange={(e) => setProfileForm(prev => ({ ...prev, timezone: e.target.value }))}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                         >
-                          <option value="">— National (no region) —</option>
-                          {profileRegions.map((r) => (
-                            <option key={r.code} value={r.code}>{r.name}</option>
+                          {TIMEZONES.map(tz => (
+                            <option key={tz.value} value={tz.value}>{tz.label}</option>
                           ))}
                         </select>
                       ) : (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 italic">
-                          {profileForm.countryCode
-                            ? 'No regional holidays configured for this country'
-                            : 'Set a country first to see available regions'}
-                        </p>
-                      )
-                    ) : (
-                      <p className="text-gray-900 dark:text-white">{profileForm.regionCode || '—'}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Navbar Menu Layout
-                    </label>
-                    {isEditingProfile ? (
-                      <select
-                        value={profileForm.navbarMenuLayout}
-                        onChange={(e) => setProfileForm(prev => ({
-                          ...prev,
-                          navbarMenuLayout: e.target.value === 'left' ? 'left' : 'top',
-                        }))}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      >
-                        <option value="top">Top (current)</option>
-                        <option value="left">Left sidebar</option>
-                      </select>
-                    ) : (
-                      <p className="text-gray-900 dark:text-white">
-                        {profileForm.navbarMenuLayout === 'left' ? 'Left sidebar' : 'Top (current)'}
-                      </p>
-                    )}
-                  </div>
-
-                  {profileForm.navbarMenuLayout === 'left' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Left Sidebar Mode
-                      </label>
-                      {isEditingProfile ? (
-                        <select
-                          value={profileForm.navbarLeftMode}
-                          onChange={(e) => setProfileForm(prev => ({
-                            ...prev,
-                            navbarLeftMode: e.target.value === 'floating' ? 'floating' : 'fixed',
-                          }))}
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        >
-                          <option value="fixed">Fixed</option>
-                          <option value="floating">Floating</option>
-                        </select>
-                      ) : (
-                        <p className="text-gray-900 dark:text-white">
-                          {profileForm.navbarLeftMode === 'floating' ? 'Floating' : 'Fixed'}
+                        <p className="px-0.5 py-1.5 text-sm text-[var(--pm-text)]">
+                          {profileForm.timezone ? TIMEZONES.find(tz => tz.value === profileForm.timezone)?.label || profileForm.timezone : 'System default'}
                         </p>
                       )}
                     </div>
-                  )}
 
-                  {profileForm.navbarMenuLayout === 'left' && (
-                    <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">Start Sidebar Collapsed</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">You can still expand/collapse from the navbar button.</p>
-                      </div>
+                    <div>
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Country</label>
                       {isEditingProfile ? (
                         <input
-                          type="checkbox"
-                          checked={profileForm.navbarLeftCollapsed}
-                          onChange={(e) => setProfileForm(prev => ({ ...prev, navbarLeftCollapsed: e.target.checked }))}
-                          className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          type="text"
+                          value={profileForm.countryCode}
+                          onChange={(e) => {
+                            const val = e.target.value.toUpperCase().slice(0, 2);
+                            setProfileForm(prev => ({ ...prev, countryCode: val, regionCode: '' }));
+                          }}
+                          placeholder="e.g. PT, DE, US"
+                          maxLength={2}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                         />
                       ) : (
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
-                          {profileForm.navbarLeftCollapsed ? 'Yes' : 'No'}
-                        </span>
+                        <p className="px-0.5 py-1.5 text-sm text-[var(--pm-text)]">{profileForm.countryCode || '—'}</p>
                       )}
                     </div>
-                  )}
 
-                  <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60">
                     <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Show Calendar in Dashboard Overview</p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">When enabled, calendar appears inside Overview and the separate Dashboard calendar menu is hidden.</p>
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Region / Subdivision</label>
+                      {isEditingProfile ? (
+                        profileRegions.length > 0 ? (
+                          <select
+                            value={profileForm.regionCode}
+                            onChange={(e) => setProfileForm(prev => ({ ...prev, regionCode: e.target.value }))}
+                            className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
+                          >
+                            <option value="">— National (no region) —</option>
+                            {profileRegions.map((r) => (
+                              <option key={r.code} value={r.code}>{r.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p className="px-0.5 py-1.5 text-sm italic text-[var(--pm-muted)]">
+                            {profileForm.countryCode
+                              ? 'No regional holidays for this country'
+                              : 'Set a country first'}
+                          </p>
+                        )
+                      ) : (
+                        <p className="px-0.5 py-1.5 text-sm text-[var(--pm-text)]">{profileForm.regionCode || '—'}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Hours Display Format</label>
+                      {isEditingProfile ? (
+                        <select
+                          value={profileForm.hoursDisplayFormat}
+                          onChange={(e) => setProfileForm(prev => ({
+                            ...prev,
+                            hoursDisplayFormat: e.target.value === 'decimal' ? 'decimal' : 'hms',
+                          }))}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
+                        >
+                          <option value="hms">hh:MM:ss (e.g. 01:30:00)</option>
+                          <option value="decimal">Decimal (e.g. 1.50h)</option>
+                        </select>
+                      ) : (
+                        <p className="px-0.5 py-1.5 text-sm text-[var(--pm-text)]">
+                          {profileForm.hoursDisplayFormat === 'decimal' ? 'Decimal (e.g. 1.50h)' : 'hh:MM:ss (e.g. 01:30:00)'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-[var(--pm-text)]">Show Calendar in Dashboard Overview</p>
+                      <p className="text-[11px] text-[var(--pm-muted)]">
+                        When enabled, calendar appears in Overview and the separate calendar menu is hidden.
+                      </p>
                     </div>
                     {isEditingProfile ? (
                       <input
                         type="checkbox"
                         checked={profileForm.dashboardCalendarInOverview}
                         onChange={(e) => setProfileForm(prev => ({ ...prev, dashboardCalendarInOverview: e.target.checked }))}
-                        className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
                       />
                     ) : (
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="shrink-0 text-sm text-[var(--pm-muted)]">
                         {profileForm.dashboardCalendarInOverview ? 'Yes' : 'No'}
                       </span>
                     )}
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Hours Display Format
-                    </label>
-                    {isEditingProfile ? (
-                      <select
-                        value={profileForm.hoursDisplayFormat}
-                        onChange={(e) => setProfileForm(prev => ({
-                          ...prev,
-                          hoursDisplayFormat: e.target.value === 'decimal' ? 'decimal' : 'hms',
-                        }))}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      >
-                        <option value="hms">hh:MM:ss (e.g. 01:30:00)</option>
-                        <option value="decimal">Decimal (e.g. 1.50h)</option>
-                      </select>
-                    ) : (
-                      <p className="text-gray-900 dark:text-white">
-                        {profileForm.hoursDisplayFormat === 'decimal' ? 'Decimal (e.g. 1.50h)' : 'hh:MM:ss (e.g. 01:30:00)'}
-                      </p>
-                    )}
-                  </div>
-
-
                 </div>
               )}
 
@@ -1579,84 +1467,78 @@ function ProfilePageContent() {
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   </div>
-                  
-                  <button
-                    onClick={handleChangePassword}
-                    disabled={isSaving || !canChangePassword}
-                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
-                  >
-                    {isSaving ? 'Changing Password...' : '🔒 Change Password'}
-                  </button>
                 </div>
               )}
 
               {activeTab === 'apiTokens' && <ApiTokensManagement mode="self" />}
 
               {activeTab === 'workHours' && (
-                <div>
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                <div className="space-y-3">
+                    <p className="text-sm text-[var(--pm-muted)]">
                       Configure your work and hobby schedule for each day of the week.
                     </p>
 
-                    {/* Grid Table */}
                     <div className="overflow-x-auto" data-grid-enhancer-ignore="true">
-                      <table className="w-full border-collapse">
+                      <table className="w-full table-fixed border-collapse">
+                        <colgroup>
+                          <col className="w-[22%]" />
+                          <col className="w-[19.5%]" />
+                          <col className="w-[19.5%]" />
+                          <col className="w-[19.5%]" />
+                          <col className="w-[19.5%]" />
+                        </colgroup>
                         <thead>
-                          <tr className="bg-gray-50 dark:bg-gray-700">
-                            <th className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          <tr className="bg-[var(--pm-surface)]">
+                            <th className="border border-[var(--pm-border)] px-3 py-2 text-left text-xs font-semibold text-[var(--pm-muted)]">
                               Day of Week
                             </th>
-                            <th className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-center text-sm font-semibold text-blue-700 dark:text-blue-300" colSpan={2}>
-                              💼 Work
+                            <th className="border border-[var(--pm-border)] px-3 py-2 text-center text-xs font-semibold text-blue-700 dark:text-blue-300" colSpan={2}>
+                              Work
                             </th>
-                            <th className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-center text-sm font-semibold text-purple-700 dark:text-purple-300" colSpan={2}>
-                              🎨 Hobby
+                            <th className="border border-[var(--pm-border)] px-3 py-2 text-center text-xs font-semibold text-purple-700 dark:text-purple-300" colSpan={2}>
+                              Hobby
                             </th>
                           </tr>
-                          <tr className="bg-gray-50 dark:bg-gray-700">
-                            <th className="border border-gray-300 dark:border-gray-600 px-4 py-2"></th>
-                            <th className="border border-gray-300 dark:border-gray-600 px-4 py-2 text-xs font-medium text-gray-600 dark:text-gray-400">
+                          <tr className="bg-[var(--pm-surface)]">
+                            <th className="border border-[var(--pm-border)] px-3 py-1.5"></th>
+                            <th className="border border-[var(--pm-border)] px-3 py-1.5 text-xs font-medium text-[var(--pm-muted)]">
                               Start Time
                             </th>
-                            <th className="border border-gray-300 dark:border-gray-600 px-4 py-2 text-xs font-medium text-gray-600 dark:text-gray-400">
+                            <th className="border border-[var(--pm-border)] px-3 py-1.5 text-xs font-medium text-[var(--pm-muted)]">
                               Hours
                             </th>
-                            <th className="border border-gray-300 dark:border-gray-600 px-4 py-2 text-xs font-medium text-purple-600 dark:text-purple-400">
+                            <th className="border border-[var(--pm-border)] px-3 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400">
                               Start Time
                             </th>
-                            <th className="border border-gray-300 dark:border-gray-600 px-4 py-2 text-xs font-medium text-purple-600 dark:text-purple-400">
+                            <th className="border border-[var(--pm-border)] px-3 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400">
                               Hours
                             </th>
                           </tr>
                         </thead>
                         <tbody>
                           {[
-                            { key: 'monday', label: 'Monday', icon: '📅' },
-                            { key: 'tuesday', label: 'Tuesday', icon: '📅' },
-                            { key: 'wednesday', label: 'Wednesday', icon: '📅' },
-                            { key: 'thursday', label: 'Thursday', icon: '📅' },
-                            { key: 'friday', label: 'Friday', icon: '📅' },
-                            { key: 'saturday', label: 'Saturday', icon: '📅' },
-                            { key: 'sunday', label: 'Sunday', icon: '📅' },
-                          ].map(({ key, label, icon }) => (
-                            <tr key={key} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xl">{icon}</span>
-                                  <span className="font-medium text-gray-900 dark:text-white">{label}</span>
-                                </div>
+                            { key: 'monday', label: 'Monday' },
+                            { key: 'tuesday', label: 'Tuesday' },
+                            { key: 'wednesday', label: 'Wednesday' },
+                            { key: 'thursday', label: 'Thursday' },
+                            { key: 'friday', label: 'Friday' },
+                            { key: 'saturday', label: 'Saturday' },
+                            { key: 'sunday', label: 'Sunday' },
+                          ].map(({ key, label }) => (
+                            <tr key={key} className="hover:bg-[var(--pm-surface)]">
+                              <td className="border border-[var(--pm-border)] px-3 py-2">
+                                <span className="text-sm font-medium text-[var(--pm-text)]">{label}</span>
                               </td>
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3">
+                              <td className="border border-[var(--pm-border)] px-2 py-1.5">
                                 <input
                                   type="time"
                                   value={workStartTimes[key as keyof typeof workStartTimes]}
                                   onChange={(e) => updateWorkStartTime(key as keyof typeof workStartTimes, e.target.value)}
-                                  className="w-28 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                  className="box-border w-full min-w-0 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-2 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                                 />
                               </td>
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3">
-                                <div className="flex items-center gap-1">
+                              <td className="border border-[var(--pm-border)] px-2 py-1.5">
+                                <div className="flex w-full min-w-0 items-center gap-1">
                                   <input
                                     type="number"
                                     min="0"
@@ -1664,21 +1546,21 @@ function ProfilePageContent() {
                                     step="0.5"
                                     value={workHours[key as keyof typeof workHours]}
                                     onChange={(e) => updateWorkHour(key as keyof typeof workHours, parseFloat(e.target.value) || 0)}
-                                    className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                    className="box-border min-w-0 w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-2 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                                   />
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">h</span>
+                                  <span className="shrink-0 text-xs text-[var(--pm-muted)]">h</span>
                                 </div>
                               </td>
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 bg-purple-50/50 dark:bg-purple-900/10">
+                              <td className="border border-[var(--pm-border)] bg-purple-50/40 px-2 py-1.5 dark:bg-purple-900/10">
                                 <input
                                   type="time"
                                   value={hobbyStartTimes[key as keyof typeof hobbyStartTimes]}
                                   onChange={(e) => updateHobbyStartTime(key as keyof typeof hobbyStartTimes, e.target.value)}
-                                  className="w-28 px-2 py-1 border border-purple-300 dark:border-purple-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                  className="box-border w-full min-w-0 rounded-md border border-purple-300 bg-[var(--pm-panel)] px-2 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-purple-500 dark:border-purple-600"
                                 />
                               </td>
-                              <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 bg-purple-50/50 dark:bg-purple-900/10">
-                                <div className="flex items-center gap-1">
+                              <td className="border border-[var(--pm-border)] bg-purple-50/40 px-2 py-1.5 dark:bg-purple-900/10">
+                                <div className="flex w-full min-w-0 items-center gap-1">
                                   <input
                                     type="number"
                                     min="0"
@@ -1686,28 +1568,28 @@ function ProfilePageContent() {
                                     step="0.5"
                                     value={hobbyHours[key as keyof typeof hobbyHours]}
                                     onChange={(e) => updateHobbyHour(key as keyof typeof hobbyHours, parseFloat(e.target.value) || 0)}
-                                    className="w-16 px-2 py-1 border border-purple-300 dark:border-purple-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                                    className="box-border min-w-0 w-full rounded-md border border-purple-300 bg-[var(--pm-panel)] px-2 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-purple-500 dark:border-purple-600"
                                   />
-                                  <span className="text-xs text-purple-500 dark:text-purple-400">h</span>
+                                  <span className="shrink-0 text-xs text-purple-500 dark:text-purple-400">h</span>
                                 </div>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                         <tfoot>
-                          <tr className="bg-gray-100 dark:bg-gray-700">
-                            <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
+                          <tr className="bg-[var(--pm-surface)]">
+                            <td className="border border-[var(--pm-border)] px-3 py-2 text-right text-sm font-semibold text-[var(--pm-text)]">
                               Weekly Totals:
                             </td>
-                            <td className="border border-gray-300 dark:border-gray-600 px-4 py-3"></td>
-                            <td className="border border-gray-300 dark:border-gray-600 px-4 py-3">
-                              <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                            <td className="border border-[var(--pm-border)] px-2 py-2"></td>
+                            <td className="border border-[var(--pm-border)] px-2 py-2">
+                              <span className="text-sm font-semibold tabular-nums text-blue-600 dark:text-blue-400">
                                 {getTotalWeeklyHours().toFixed(1)}h
                               </span>
                             </td>
-                            <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 bg-purple-50/50 dark:bg-purple-900/10"></td>
-                            <td className="border border-gray-300 dark:border-gray-600 px-4 py-3 bg-purple-50/50 dark:bg-purple-900/10">
-                              <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                            <td className="border border-[var(--pm-border)] bg-purple-50/40 px-2 py-2 dark:bg-purple-900/10"></td>
+                            <td className="border border-[var(--pm-border)] bg-purple-50/40 px-2 py-2 dark:bg-purple-900/10">
+                              <span className="text-sm font-semibold tabular-nums text-purple-600 dark:text-purple-400">
                                 {getTotalWeeklyHobbyHours().toFixed(1)}h
                               </span>
                             </td>
@@ -1716,31 +1598,28 @@ function ProfilePageContent() {
                       </table>
                     </div>
 
-                    {/* Lunch Break Settings */}
-                    <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                        🍽️ Lunch Break Settings
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+                      <h3 className="mb-3 text-sm font-semibold text-[var(--pm-text)]">Lunch Break Settings</h3>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                             Lunch Time
                           </label>
                           <input
                             type="time"
                             value={lunchTime}
                             onChange={(e) => setLunchTime(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            className="box-border w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                           />
-                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                             When your lunch break typically starts
                           </p>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">
                             Lunch Duration
                           </label>
-                          <div className="flex items-center gap-2">
+                          <div className="flex w-full items-center gap-2">
                             <input
                               type="number"
                               min="0"
@@ -1748,27 +1627,16 @@ function ProfilePageContent() {
                               step="15"
                               value={lunchDuration}
                               onChange={(e) => setLunchDuration(parseInt(e.target.value) || 0)}
-                              className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              className="box-border min-w-0 w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                             />
-                            <span className="text-sm text-gray-500 dark:text-gray-400">minutes</span>
+                            <span className="shrink-0 text-sm text-[var(--pm-muted)]">minutes</span>
                           </div>
-                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          <p className="mt-0.5 text-[11px] text-[var(--pm-muted)]">
                             How long your lunch break usually lasts
                           </p>
                         </div>
                       </div>
                     </div>
-
-                    <div className="flex gap-3 mt-6">
-                      <button
-                        onClick={handleSaveWorkHours}
-                        disabled={isSaving}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-                      >
-                        {isSaving ? 'Saving...' : 'Save Settings'}
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -1826,92 +1694,53 @@ function ProfilePageContent() {
               )}
 
               {activeTab === 'taskForm' && token && !isCustomerUser && (
-                <div className="space-y-4">
-                  <ProfileTaskFormVisibility token={token} />
-                </div>
+                <ProfileTaskFormVisibility token={token} onActionsStateChange={setTaskFormActions} />
               )}
 
-              {/* Email Alerts Tab */}
               {activeTab === 'emailAlerts' && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
-                  <div className="mb-6 flex items-center justify-between">
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Choose which notifications you want to receive via email
-                    </p>
-                    <button
-                      onClick={saveEmailPreferences}
-                      disabled={isSavingEmailPrefs}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
-                    >
-                      {isSavingEmailPrefs ? 'Saving...' : 'Save Preferences'}
-                    </button>
-                  </div>
+                <div className="space-y-3">
+                  <p className="text-xs text-[var(--pm-muted)]">
+                    Choose which notifications you want to receive via email.
+                  </p>
 
-                  {/* Group preferences by category */}
                   {['Tasks', 'Projects', 'Tickets', 'Planning', 'Summaries'].map(category => {
                     const categoryPrefs = emailPreferences.filter(pref => pref.category === category);
                     if (categoryPrefs.length === 0) return null;
 
                     return (
-                      <div key={category} className="mb-6">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
-                          {category === 'Summaries' ? '📊 ' + category : category}
+                      <div key={category} className="space-y-1.5">
+                        <h3 className="border-b border-[var(--pm-border)] pb-1 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">
+                          {category}
                         </h3>
-                        <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                           {categoryPrefs.map(pref => (
                             <div
                               key={pref.type}
-                              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                              className="flex items-start gap-2 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-2.5 py-2"
                             >
-                              <div className="flex items-center gap-3 flex-1">
-                                <label className="flex items-center cursor-pointer flex-1">
-                                  <input
-                                    type="checkbox"
-                                    checked={pref.emailEnabled}
-                                    onChange={() => toggleEmailPreference(pref.type)}
-                                    className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                                  />
-                                  <div className="ml-3 flex-1">
-                                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                      {pref.label}
-                                    </span>
-                                    {pref.description && (
-                                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                        {pref.description}
-                                      </p>
-                                    )}
-                                  </div>
-                                </label>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {/* Test button for summary emails */}
-                                {(pref.type === 'daily_work_summary' || pref.type === 'weekly_work_summary') && (
-                                  <button
-                                    onClick={() => sendTestSummaryEmail(pref.type === 'daily_work_summary' ? 'daily' : 'weekly')}
-                                    disabled={sendingTestEmail !== null}
-                                    className="text-xs px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    {sendingTestEmail === pref.type ? (
-                                      <span className="flex items-center gap-1">
-                                        <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Sending...
-                                      </span>
-                                    ) : (
-                                      '📧 Send Test'
-                                    )}
-                                  </button>
+                              <input
+                                type="checkbox"
+                                id={`email-pref-${pref.type}`}
+                                checked={pref.emailEnabled}
+                                onChange={() => toggleEmailPreference(pref.type)}
+                                className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[var(--pm-accent)] focus:ring-[var(--pm-accent)]"
+                              />
+                              <label htmlFor={`email-pref-${pref.type}`} className="min-w-0 flex-1 cursor-pointer">
+                                <span className="block text-sm font-medium text-[var(--pm-text)]">{pref.label}</span>
+                                {pref.description && (
+                                  <span className="mt-0.5 block text-[11px] text-[var(--pm-muted)]">{pref.description}</span>
                                 )}
-                                <span className={`text-xs px-2 py-1 rounded ${
-                                  pref.emailEnabled
-                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
-                                }`}>
-                                  {pref.emailEnabled ? 'Enabled' : 'Disabled'}
-                                </span>
-                              </div>
+                              </label>
+                              {(pref.type === 'daily_work_summary' || pref.type === 'weekly_work_summary') && (
+                                <button
+                                  type="button"
+                                  onClick={() => sendTestSummaryEmail(pref.type === 'daily_work_summary' ? 'daily' : 'weekly')}
+                                  disabled={sendingTestEmail !== null}
+                                  className="shrink-0 rounded border border-[var(--pm-border)] px-2 py-0.5 text-[11px] text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)] disabled:opacity-50"
+                                >
+                                  {sendingTestEmail === pref.type ? 'Sending…' : 'Send test'}
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1920,8 +1749,8 @@ function ProfilePageContent() {
                   })}
 
                   {emailPreferences.length === 0 && (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      Loading preferences...
+                    <div className="py-6 text-center text-sm text-[var(--pm-muted)]">
+                      Loading preferences…
                     </div>
                   )}
                 </div>
@@ -2007,98 +1836,100 @@ function ProfilePageContent() {
               )}
 
               {activeTab === 'vacations' && (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Annual Total</p>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white">{vacationSummary.annualTotal}</p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                      <p className="text-[11px] text-[var(--pm-muted)]">Annual Total</p>
+                      <p className="text-base font-semibold tabular-nums text-[var(--pm-text)]">{vacationSummary.annualTotal}</p>
                     </div>
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Approved</p>
-                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">{vacationSummary.approvedDays}</p>
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                      <p className="text-[11px] text-[var(--pm-muted)]">Approved</p>
+                      <p className="text-base font-semibold tabular-nums text-green-600 dark:text-green-400">{vacationSummary.approvedDays}</p>
                     </div>
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Pending</p>
-                      <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{vacationSummary.pendingDays}</p>
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                      <p className="text-[11px] text-[var(--pm-muted)]">Pending</p>
+                      <p className="text-base font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">{vacationSummary.pendingDays}</p>
                     </div>
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Remaining</p>
-                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{vacationSummary.remainingDays}</p>
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                      <p className="text-[11px] text-[var(--pm-muted)]">Remaining</p>
+                      <p className="text-base font-semibold tabular-nums text-blue-600 dark:text-blue-400">{vacationSummary.remainingDays}</p>
                     </div>
                   </div>
 
                   {vacationSummary.isOverLimit && (
-                    <div className="p-3 rounded border border-red-400 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+                    <div className="rounded border border-red-400 bg-red-100 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-400">
                       Warning: Vacation allocation exceeds annual limit.
                     </div>
                   )}
 
-                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Request Vacation</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+                    <h3 className="text-sm font-semibold text-[var(--pm-text)]">Request Vacation</h3>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Start Date</label>
                         <input
                           type="date"
                           value={vacationStartDate}
                           onChange={(e) => setVacationStartDate(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">End Date</label>
                         <input
                           type="date"
                           value={vacationEndDate}
                           onChange={(e) => setVacationEndDate(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)]"
                         />
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Day Portion</label>
-                      <select
-                        value={vacationDayPortion}
-                        onChange={(e) => setVacationDayPortion(e.target.value as LeaveDayPortion)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      >
-                        <option value="full">Full Day (default)</option>
-                        <option value="half">Half Day</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
-                      <input
-                        type="text"
-                        value={vacationNotes}
-                        onChange={(e) => setVacationNotes(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        placeholder="Optional notes"
-                      />
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Day Portion</label>
+                        <select
+                          value={vacationDayPortion}
+                          onChange={(e) => setVacationDayPortion(e.target.value as LeaveDayPortion)}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)]"
+                        >
+                          <option value="full">Full Day (default)</option>
+                          <option value="half">Half Day</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Notes</label>
+                        <input
+                          type="text"
+                          value={vacationNotes}
+                          onChange={(e) => setVacationNotes(e.target.value)}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)]"
+                          placeholder="Optional notes"
+                        />
+                      </div>
                     </div>
                     <button
                       onClick={handleRequestVacation}
                       disabled={isSavingVacation}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg"
+                      className="h-9 rounded-lg bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-400"
                     >
-                      {isSavingVacation ? 'Submitting...' : `Request ${formatLeaveUnits(getVacationRequestUnits())} day(s)`}
+                      {isSavingVacation ? 'Submitting…' : `Request ${formatLeaveUnits(getVacationRequestUnits())} day(s)`}
                     </button>
                   </div>
 
-                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">My Vacation Days</h3>
+                  <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+                    <h3 className="mb-2 text-sm font-semibold text-[var(--pm-text)]">My Vacation Days</h3>
                     {vacationEntries.length === 0 ? (
-                      <p className="text-sm text-gray-500 dark:text-gray-400">No vacation records yet.</p>
+                      <p className="text-sm text-[var(--pm-muted)]">No vacation records yet.</p>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         {vacationEntries.map((entry) => (
-                          <div key={entry.Id} className="flex items-center justify-between p-2 rounded bg-gray-50 dark:bg-gray-700/50">
-                            <span className="text-sm text-gray-900 dark:text-white">{String(entry.VacationDate).split('T')[0]}</span>
+                          <div key={entry.Id} className="flex items-center justify-between rounded bg-[var(--pm-panel)] px-2 py-1.5">
+                            <span className="text-sm text-[var(--pm-text)]">{String(entry.VacationDate).split('T')[0]}</span>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-100">
+                              <span className="rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-800 dark:bg-gray-600 dark:text-gray-100">
                                 {normalizeLeaveDayPortion(entry.DayPortion) === 'half' ? 'Half Day' : 'Full Day'}
                               </span>
-                              <span className={`text-xs px-2 py-1 rounded ${String(entry.Status).toLowerCase() === 'approved'
+                              <span className={`rounded px-2 py-0.5 text-xs ${String(entry.Status).toLowerCase() === 'approved'
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : String(entry.Status).toLowerCase() === 'rejected'
                                   ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
@@ -2107,7 +1938,7 @@ function ProfilePageContent() {
                               </span>
                               <button
                                 onClick={() => setVacationDeleteTarget({ id: entry.Id, date: String(entry.VacationDate).split('T')[0] })}
-                                className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
+                                className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700"
                               >
                                 Delete
                               </button>
@@ -2121,92 +1952,94 @@ function ProfilePageContent() {
               )}
 
               {activeTab === 'outOfOffice' && (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Approved</p>
-                      <p className="text-2xl font-bold text-green-600 dark:text-green-400">{outOfOfficeSummary.approvedDays}</p>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                      <p className="text-[11px] text-[var(--pm-muted)]">Approved</p>
+                      <p className="text-base font-semibold tabular-nums text-green-600 dark:text-green-400">{outOfOfficeSummary.approvedDays}</p>
                     </div>
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Pending</p>
-                      <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{outOfOfficeSummary.pendingDays}</p>
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                      <p className="text-[11px] text-[var(--pm-muted)]">Pending</p>
+                      <p className="text-base font-semibold tabular-nums text-yellow-600 dark:text-yellow-400">{outOfOfficeSummary.pendingDays}</p>
                     </div>
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Rejected</p>
-                      <p className="text-2xl font-bold text-red-600 dark:text-red-400">{outOfOfficeSummary.rejectedDays}</p>
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                      <p className="text-[11px] text-[var(--pm-muted)]">Rejected</p>
+                      <p className="text-base font-semibold tabular-nums text-red-600 dark:text-red-400">{outOfOfficeSummary.rejectedDays}</p>
                     </div>
-                    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Reserved</p>
-                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{outOfOfficeSummary.reservedDays}</p>
+                    <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] px-3 py-2">
+                      <p className="text-[11px] text-[var(--pm-muted)]">Reserved</p>
+                      <p className="text-base font-semibold tabular-nums text-blue-600 dark:text-blue-400">{outOfOfficeSummary.reservedDays}</p>
                     </div>
                   </div>
 
-                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Request Out Of Office</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-3 rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+                    <h3 className="text-sm font-semibold text-[var(--pm-text)]">Request Out Of Office</h3>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Start Date</label>
                         <input
                           type="date"
                           value={outOfOfficeStartDate}
                           onChange={(e) => setOutOfOfficeStartDate(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">End Date</label>
                         <input
                           type="date"
                           value={outOfOfficeEndDate}
                           onChange={(e) => setOutOfOfficeEndDate(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)]"
                         />
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Day Portion</label>
-                      <select
-                        value={outOfOfficeDayPortion}
-                        onChange={(e) => setOutOfOfficeDayPortion(e.target.value as LeaveDayPortion)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      >
-                        <option value="full">Full Day (default)</option>
-                        <option value="half">Half Day</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
-                      <input
-                        type="text"
-                        value={outOfOfficeNotes}
-                        onChange={(e) => setOutOfOfficeNotes(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                        placeholder="Optional notes"
-                      />
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Day Portion</label>
+                        <select
+                          value={outOfOfficeDayPortion}
+                          onChange={(e) => setOutOfOfficeDayPortion(e.target.value as LeaveDayPortion)}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)]"
+                        >
+                          <option value="full">Full Day (default)</option>
+                          <option value="half">Half Day</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-0.5 block text-xs font-medium text-[var(--pm-muted)]">Notes</label>
+                        <input
+                          type="text"
+                          value={outOfOfficeNotes}
+                          onChange={(e) => setOutOfOfficeNotes(e.target.value)}
+                          className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)]"
+                          placeholder="Optional notes"
+                        />
+                      </div>
                     </div>
                     <button
                       onClick={handleRequestOutOfOffice}
                       disabled={isSavingOutOfOffice}
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-gray-400 text-white rounded-lg"
+                      className="h-9 rounded-lg bg-rose-600 px-3 text-sm font-medium text-white hover:bg-rose-700 disabled:bg-gray-400"
                     >
-                      {isSavingOutOfOffice ? 'Submitting...' : `Request ${formatLeaveUnits(getOutOfOfficeRequestUnits())} day(s)`}
+                      {isSavingOutOfOffice ? 'Submitting…' : `Request ${formatLeaveUnits(getOutOfOfficeRequestUnits())} day(s)`}
                     </button>
                   </div>
 
-                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">My Out Of Office Days</h3>
+                  <div className="rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)] p-3">
+                    <h3 className="mb-2 text-sm font-semibold text-[var(--pm-text)]">My Out Of Office Days</h3>
                     {outOfOfficeEntries.length === 0 ? (
-                      <p className="text-sm text-gray-500 dark:text-gray-400">No out-of-office records yet.</p>
+                      <p className="text-sm text-[var(--pm-muted)]">No out-of-office records yet.</p>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         {outOfOfficeEntries.map((entry) => (
-                          <div key={entry.Id} className="flex items-center justify-between p-2 rounded bg-gray-50 dark:bg-gray-700/50">
-                            <span className="text-sm text-gray-900 dark:text-white">{String(entry.OutOfOfficeDate || entry.VacationDate).split('T')[0]}</span>
+                          <div key={entry.Id} className="flex items-center justify-between rounded bg-[var(--pm-panel)] px-2 py-1.5">
+                            <span className="text-sm text-[var(--pm-text)]">{String(entry.OutOfOfficeDate || entry.VacationDate).split('T')[0]}</span>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-100">
+                              <span className="rounded bg-gray-200 px-2 py-0.5 text-xs text-gray-800 dark:bg-gray-600 dark:text-gray-100">
                                 {normalizeLeaveDayPortion(entry.DayPortion) === 'half' ? 'Half Day' : 'Full Day'}
                               </span>
-                              <span className={`text-xs px-2 py-1 rounded ${String(entry.Status).toLowerCase() === 'approved'
+                              <span className={`rounded px-2 py-0.5 text-xs ${String(entry.Status).toLowerCase() === 'approved'
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : String(entry.Status).toLowerCase() === 'rejected'
                                   ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
@@ -2215,7 +2048,7 @@ function ProfilePageContent() {
                               </span>
                               <button
                                 onClick={() => setOutOfOfficeDeleteTarget({ id: entry.Id, date: String(entry.OutOfOfficeDate || entry.VacationDate).split('T')[0] })}
-                                className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
+                                className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700"
                               >
                                 Delete
                               </button>
@@ -2485,6 +2318,103 @@ function ProfilePageContent() {
 
         </div>
       </main>
+
+      {(activeTab === 'info' ||
+        activeTab === 'workHours' ||
+        activeTab === 'security' ||
+        activeTab === 'emailAlerts' ||
+        activeTab === 'taskForm') && (
+        <PageStickyActions>
+          {activeTab === 'info' && (
+            <>
+              {!isEditingProfile ? (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingProfile(true)}
+                  className={pageActionButtonClass.primary}
+                >
+                  Edit Profile
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingProfile(false);
+                      loadUserProfile();
+                    }}
+                    className={pageActionButtonClass.secondary}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveProfile}
+                    disabled={isSaving}
+                    className={pageActionButtonClass.success}
+                  >
+                    {isSaving ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </>
+              )}
+            </>
+          )}
+          {activeTab === 'workHours' && (
+            <button
+              type="button"
+              onClick={handleSaveWorkHours}
+              disabled={isSaving}
+              className={pageActionButtonClass.primary}
+            >
+              {isSaving ? 'Saving…' : 'Save Settings'}
+            </button>
+          )}
+          {activeTab === 'security' && (
+            <button
+              type="button"
+              onClick={handleChangePassword}
+              disabled={isSaving || !canChangePassword}
+              className={pageActionButtonClass.primary}
+            >
+              {isSaving ? 'Changing Password…' : 'Change Password'}
+            </button>
+          )}
+          {activeTab === 'emailAlerts' && (
+            <button
+              type="button"
+              onClick={saveEmailPreferences}
+              disabled={isSavingEmailPrefs || emailPreferences.length === 0}
+              className={pageActionButtonClass.primary}
+            >
+              {isSavingEmailPrefs ? 'Saving…' : 'Save Preferences'}
+            </button>
+          )}
+          {activeTab === 'taskForm' && taskFormActions && (
+            <>
+              {taskFormActions.hasUserOverride && (
+                <button
+                  type="button"
+                  onClick={taskFormActions.onReset}
+                  disabled={taskFormActions.saving || taskFormActions.syncing}
+                  className={pageActionButtonClass.secondary}
+                >
+                  {taskFormActions.syncing ? 'Resetting…' : 'Use organization default'}
+                </button>
+              )}
+              {taskFormActions.canManage && (
+                <button
+                  type="button"
+                  onClick={taskFormActions.onSave}
+                  disabled={taskFormActions.saving || taskFormActions.syncing}
+                  className={pageActionButtonClass.primary}
+                >
+                  {taskFormActions.saving ? 'Saving…' : 'Save personal override'}
+                </button>
+              )}
+            </>
+          )}
+        </PageStickyActions>
+      )}
 
       <ScrollToTopButton scrollContainerRef={scrollContainerRef} />
 

@@ -168,253 +168,250 @@ export default function UsersManagement() {
   }, [currentPage, totalPages]);
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          User Management
-        </h2>
-        {(user?.isAdmin || permissions?.canManageUsers) && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create User
-          </button>
-        )}
-      </div>
-
-      <div className="mb-4 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-        <div className="w-full md:max-w-md">
+    <div className="space-y-3 p-4 sm:p-6">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1 lg:max-w-xl">
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search by username, email, name, customer, country, or Jira ID"
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none placeholder:text-[var(--pm-muted)] focus:border-[var(--pm-accent)]"
           />
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-          <span>Rows per page</span>
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-          >
-            <option value={10}>10</option>
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-          </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex items-center gap-1.5 text-xs text-[var(--pm-muted)]">
+            <span className="whitespace-nowrap">Rows</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-9 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-2 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+          </label>
+          {(user?.isAdmin || permissions?.canManageUsers) && (
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            >
+              <span className="text-base leading-none">+</span>
+              Create User
+            </button>
+          )}
         </div>
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-800 text-red-700 dark:text-red-400 rounded-lg">
+        <div className="rounded border border-red-400 bg-red-100 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           {error}
         </div>
       )}
 
       {isLoadingUsers ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="text-xl text-gray-600 dark:text-gray-400">Loading users...</div>
+        <div className="flex h-40 items-center justify-center text-sm text-[var(--pm-muted)]">
+          Loading users…
         </div>
       ) : (
-        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg shadow overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-100 dark:bg-gray-700">
+        <div className="overflow-x-auto rounded-md border border-[var(--pm-border)] bg-[var(--pm-surface)]">
+          <table className="min-w-full divide-y divide-[var(--pm-border)]">
+            <thead className="bg-[var(--pm-panel)]">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   User
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   Email
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   Jira ID
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   Role
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   Team Leader
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   Country
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--pm-muted)]">
                   Created
                 </th>
-                <th scope="col" className="relative px-6 py-3">
+                <th scope="col" className="relative px-3 py-2">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            <tbody className="divide-y divide-[var(--pm-border)]">
               {pagedUsers.map((u) => (
-                <tr key={u.Id} className={(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? 'bg-orange-50/30 dark:bg-orange-900/10' : ''}>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                <tr
+                  key={u.Id}
+                  className={`hover:bg-[var(--pm-panel)] ${
+                    (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer'
+                      ? 'bg-orange-50/30 dark:bg-orange-900/10'
+                      : ''
+                  }`}
+                >
+                  <td className="whitespace-nowrap px-3 py-2">
                     <div className="flex items-center">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 text-sm font-medium ${
-                        (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer'
-                          ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400'
-                          : (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'fictitious'
-                          ? 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-                          : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400'
-                      }`}>
-                        {(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? '👤' : (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'fictitious' ? '🧪' : '🏢'}
+                      <div
+                        className={`mr-2 flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium ${
+                          (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer'
+                            ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400'
+                            : (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'fictitious'
+                              ? 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400'
+                        }`}
+                      >
+                        {(u.FirstName || u.Username || '?').charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {u.Username}
-                        </div>
+                        <div className="text-sm font-medium text-[var(--pm-text)]">{u.Username}</div>
                         {(u.FirstName || u.LastName) && (
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                          <div className="text-xs text-[var(--pm-muted)]">
                             {u.FirstName} {u.LastName}
                           </div>
                         )}
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {u.Email}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                    {u.JiraId || '—'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-text)]">{u.Email}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-muted)]">{u.JiraId || '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2">
                     {(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? (
                       <div>
-                        <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                        <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
                           Customer
                         </span>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {u.CustomerName}
-                        </div>
+                        <div className="mt-0.5 text-[11px] text-[var(--pm-muted)]">{u.CustomerName}</div>
                       </div>
                     ) : (u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'fictitious' ? (
-                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                      <span className="inline-flex rounded-full bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-800 dark:bg-gray-700 dark:text-gray-300">
                         Fictitious
                       </span>
                     ) : (
-                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                      <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
                         Internal
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="whitespace-nowrap px-3 py-2">
                     {(u.UserType || (u.CustomerId ? 'customer' : 'internal')) === 'customer' ? (
-                      <span className="text-gray-400 dark:text-gray-500">-</span>
+                      <span className="text-[var(--pm-muted)]">—</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {!!u.IsAdmin && (
-                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
+                          <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
                             Admin
                           </span>
                         )}
                         {!!u.IsDeveloper && (
-                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
                             Developer
                           </span>
                         )}
                         {!!u.IsSupport && (
-                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400">
+                          <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-800 dark:bg-teal-900/30 dark:text-teal-400">
                             Support
                           </span>
                         )}
                         {!!u.IsManager && (
-                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
+                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
                             Manager
                           </span>
                         )}
                         {!u.IsAdmin && !u.IsDeveloper && !u.IsSupport && !u.IsManager && (
-                          <span className="text-gray-400 dark:text-gray-500">-</span>
+                          <span className="text-[var(--pm-muted)]">—</span>
                         )}
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                    {u.TeamLeaderName ? (
-                      <span className="inline-flex items-center gap-1">
-                        <span>👤</span>
-                        <span>{u.TeamLeaderName}</span>
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 dark:text-gray-500">—</span>
-                    )}
+                  <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-muted)]">
+                    {u.TeamLeaderName || '—'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                  <td className="whitespace-nowrap px-3 py-2 text-sm text-[var(--pm-muted)]">
                     {u.CountryCode ? (
                       <div>
-                        <span>{getCountryName(u.CountryCode)} ({u.CountryCode})</span>
+                        <span>
+                          {getCountryName(u.CountryCode)} ({u.CountryCode})
+                        </span>
                         {u.RegionCode && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{u.RegionCode}</div>
+                          <div className="mt-0.5 text-[11px] text-[var(--pm-muted)]">{u.RegionCode}</div>
                         )}
                       </div>
                     ) : (
-                      <span className="text-gray-400 dark:text-gray-500">—</span>
+                      '—'
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                      u.IsActive 
-                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
-                        : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                    }`}>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        u.IsActive
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                      }`}
+                    >
                       {u.IsActive ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                  <td className="whitespace-nowrap px-3 py-2 text-sm tabular-nums text-[var(--pm-muted)]">
                     {new Date(u.CreatedAt).toLocaleDateString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center justify-end gap-1 min-w-[220px]">
+                  <td className="whitespace-nowrap px-3 py-2 text-sm font-medium">
+                    <div className="flex min-w-[8rem] items-center justify-end gap-0.5">
                       <button
+                        type="button"
                         onClick={() => handleViewDetails(u.Id)}
                         title="View user details"
                         aria-label="View user details"
-                        className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                        className="rounded p-1.5 text-[var(--pm-muted)] transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7S3.732 16.057 2.458 12z" />
                         </svg>
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleEditUser(u)}
                         title="Edit user"
                         aria-label="Edit user"
-                        className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                        className="rounded p-1.5 text-[var(--pm-muted)] transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M16.5 3.5a2.121 2.121 0 113 3L12 14l-4 1 1-4 7.5-7.5z" />
                         </svg>
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleResetPassword(u)}
                         title="Reset password"
                         aria-label="Reset password"
-                        className="p-1.5 text-gray-400 rounded transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                        className="rounded p-1.5 text-[var(--pm-muted)] transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a4 4 0 11-7.75 1.5L3 12.75V15h2.25v2.25H7.5V15h2.25l1.5-1.5A4 4 0 0115 7z" />
                         </svg>
                       </button>
                       {u.Id !== user?.id && (
                         <button
+                          type="button"
                           onClick={() => handleDeleteUser(u.Id)}
                           title="Delete user"
                           aria-label="Delete user"
-                          className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
+                          className="rounded p-1.5 text-[var(--pm-muted)] transition-colors hover:text-red-600 dark:hover:text-red-400"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>
@@ -429,25 +426,28 @@ export default function UsersManagement() {
       )}
 
       {!isLoadingUsers && (
-        <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-sm text-gray-600 dark:text-gray-400">
+        <div className="flex flex-col gap-2 text-xs text-[var(--pm-muted)] sm:flex-row sm:items-center sm:justify-between">
           <div>
-            Showing {filteredUsers.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + pageSize, filteredUsers.length)} of {filteredUsers.length} users
+            Showing {filteredUsers.length === 0 ? 0 : startIndex + 1} to{' '}
+            {Math.min(startIndex + pageSize, filteredUsers.length)} of {filteredUsers.length} users
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
               disabled={safeCurrentPage <= 1}
-              className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              className="h-8 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-xs font-medium text-[var(--pm-text)] transition-colors hover:bg-[var(--pm-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Previous
             </button>
-            <span>Page {safeCurrentPage} of {totalPages}</span>
+            <span>
+              Page {safeCurrentPage} of {totalPages}
+            </span>
             <button
               type="button"
               onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
               disabled={safeCurrentPage >= totalPages}
-              className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-50"
+              className="h-8 rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 text-xs font-medium text-[var(--pm-text)] transition-colors hover:bg-[var(--pm-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Next
             </button>

@@ -273,9 +273,6 @@ export default function CustomFieldsManagement() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          Custom Fields Management
-        </h2>
         <p className="text-gray-600 dark:text-gray-400">
           Add custom fields to master data tables. Field names will be automatically prefixed with U_ in the database.
         </p>

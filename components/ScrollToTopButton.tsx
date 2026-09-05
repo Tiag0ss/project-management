@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useState, type CSSProperties, type RefObject } from 'react';
 
 interface ScrollToTopButtonProps {
   /** Scroll container; defaults to the window. */
@@ -26,12 +26,22 @@ function scrollElementToTop(container: HTMLElement | Window) {
   container.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+/** Keep clear of PageStickyActions (+ default 1.5rem inset). */
+function measureStickyActionsClearance(): number {
+  const actions = document.querySelector<HTMLElement>('[data-page-sticky-actions]');
+  if (!actions) return 24;
+  const rect = actions.getBoundingClientRect();
+  const fromViewportBottom = Math.max(0, window.innerHeight - rect.top);
+  return fromViewportBottom + 12;
+}
+
 export default function ScrollToTopButton({
   scrollContainerRef,
   threshold = 320,
   className = '',
 }: ScrollToTopButtonProps) {
   const [visible, setVisible] = useState(false);
+  const [bottomPx, setBottomPx] = useState(24);
 
   useEffect(() => {
     let attached: HTMLElement | Window | null = null;
@@ -72,15 +82,59 @@ export default function ScrollToTopButton({
     };
   }, [scrollContainerRef, threshold]);
 
+  useEffect(() => {
+    let debounceId: number | null = null;
+    let observed: HTMLElement | null = null;
+
+    const updateClearance = () => {
+      setBottomPx(measureStickyActionsClearance());
+    };
+
+    const observer = new ResizeObserver(updateClearance);
+
+    const watchActions = () => {
+      const actions = document.querySelector<HTMLElement>('[data-page-sticky-actions]');
+      if (actions === observed) return;
+      if (observed) observer.unobserve(observed);
+      observed = actions;
+      if (actions) observer.observe(actions);
+    };
+
+    const scheduleUpdate = () => {
+      if (debounceId != null) window.clearTimeout(debounceId);
+      debounceId = window.setTimeout(() => {
+        watchActions();
+        updateClearance();
+      }, 50);
+    };
+
+    watchActions();
+    updateClearance();
+    window.addEventListener('resize', scheduleUpdate);
+
+    const mutation = new MutationObserver(scheduleUpdate);
+    mutation.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      if (debounceId != null) window.clearTimeout(debounceId);
+      window.removeEventListener('resize', scheduleUpdate);
+      observer.disconnect();
+      mutation.disconnect();
+    };
+  }, []);
+
   if (!visible) {
     return null;
   }
+
+  const style: CSSProperties = { bottom: bottomPx };
 
   return (
     <button
       type="button"
       onClick={() => scrollElementToTop(scrollContainerRef?.current ?? window)}
-      className={`fixed bottom-6 right-6 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 transition-colors ${className}`}
+      style={style}
+      className={`fixed right-6 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 ${className}`}
       title="Back to top"
       aria-label="Back to top"
     >

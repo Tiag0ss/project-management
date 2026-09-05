@@ -14,9 +14,23 @@ interface TaskFormVisibilitySettingsPanelProps {
   token: string;
   organizationId?: number;
   canManage?: boolean;
+  /** Where to render Save / Sync / Reset. Use `none` when the parent owns PageStickyActions. */
+  actionsPlacement?: 'embedded' | 'none';
+  onActionsStateChange?: (state: TaskFormVisibilityActionsState | null) => void;
   onRequestSyncConfirm?: (onConfirm: () => void) => void;
   onRequestResetConfirm?: (onConfirm: () => void) => void;
 }
+
+export type TaskFormVisibilityActionsState = {
+  mode: 'global' | 'organization' | 'user';
+  canManage: boolean;
+  hasUserOverride: boolean;
+  saving: boolean;
+  syncing: boolean;
+  onSave: () => void;
+  onSync: () => void;
+  onReset: () => void;
+};
 
 const SOURCE_LABEL: Record<TaskFieldVisibilitySource, string> = {
   user: 'Your personal override',
@@ -29,6 +43,8 @@ export default function TaskFormVisibilitySettingsPanel({
   token,
   organizationId,
   canManage = true,
+  actionsPlacement = 'embedded',
+  onActionsStateChange,
   onRequestSyncConfirm,
   onRequestResetConfirm,
 }: TaskFormVisibilitySettingsPanelProps) {
@@ -155,16 +171,31 @@ export default function TaskFormVisibilitySettingsPanel({
     void runReset();
   };
 
+  useEffect(() => {
+    if (!onActionsStateChange) return;
+    if (loading) {
+      onActionsStateChange(null);
+      return;
+    }
+    onActionsStateChange({
+      mode,
+      canManage,
+      hasUserOverride,
+      saving,
+      syncing,
+      onSave: () => {
+        void handleSave();
+      },
+      onSync: handleSyncClick,
+      onReset: handleResetClick,
+    });
+    return () => onActionsStateChange(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, mode, canManage, hasUserOverride, saving, syncing, config, organizationId]);
+
   if (loading) {
     return <div className="text-sm text-gray-500 dark:text-gray-400">Loading task form visibility…</div>;
   }
-
-  const title =
-    mode === 'global'
-      ? 'Task Form (global template)'
-      : mode === 'organization'
-        ? 'Task Form'
-        : 'Task Form (personal)';
 
   const description =
     mode === 'global'
@@ -173,20 +204,25 @@ export default function TaskFormVisibilitySettingsPanel({
         ? 'Choose which parts of the task modal are visible for this organization. Sync from global overwrites this with the global template. Users may still set a personal override in My Profile.'
         : 'Personal layout for the task modal in this organization. If you have not saved an override, the organization default is used (or the global default when the organization has none).';
 
+  const showEmbeddedActions =
+    actionsPlacement === 'embedded' && (canManage || (mode === 'user' && hasUserOverride));
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{description}</p>
-          {mode === 'user' && source && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Currently applying: <span className="font-medium text-gray-700 dark:text-gray-200">{SOURCE_LABEL[source]}</span>
-              {!hasUserOverride && ' — save to create your personal override.'}
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-3">
+      <div>
+        <p className="text-xs text-[var(--pm-muted)]">{description}</p>
+        {mode === 'user' && source && (
+          <p className="mt-1 text-[11px] text-[var(--pm-muted)]">
+            Currently applying: <span className="font-medium text-[var(--pm-text)]">{SOURCE_LABEL[source]}</span>
+            {!hasUserOverride && ' — save to create your personal override.'}
+          </p>
+        )}
+      </div>
+
+      <TaskFormVisibilityEditor value={config} onChange={setConfig} disabled={!canManage || saving || syncing} />
+
+      {showEmbeddedActions && (
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-[var(--pm-border)] bg-[var(--pm-panel)] py-3">
           {mode === 'organization' && canManage && (
             <button
               type="button"
@@ -218,9 +254,7 @@ export default function TaskFormVisibilitySettingsPanel({
             </button>
           )}
         </div>
-      </div>
-
-      <TaskFormVisibilityEditor value={config} onChange={setConfig} disabled={!canManage || saving || syncing} />
+      )}
     </div>
   );
 }

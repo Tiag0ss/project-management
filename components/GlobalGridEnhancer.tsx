@@ -750,7 +750,7 @@ export default function GlobalGridEnhancer() {
           let toolbar = wrapper.querySelector('.global-grid-controls') as HTMLDivElement | null;
           if (!toolbar) {
             toolbar = document.createElement('div');
-            toolbar.className = 'global-grid-controls mb-2 flex justify-end relative';
+            toolbar.className = 'global-grid-controls mb-1 flex justify-end relative';
             wrapper.insertBefore(toolbar, table);
           }
 

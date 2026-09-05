@@ -157,17 +157,14 @@ export default function ApiTokensManagement({ mode = 'self' }: ApiTokensManageme
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">API Tokens</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            {isAdminView
-              ? 'All users’ API tokens. Create below issues a token for your own account; revoke or delete any token as needed.'
-              : 'Personal API tokens for IDE extensions, Outlook, and other integrations. Create tokens here — they authenticate as you.'}
-          </p>
-        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {isAdminView
+            ? 'All users’ API tokens. Create below issues a token for your own account; revoke or delete any token as needed.'
+            : 'Personal API tokens for IDE extensions, Outlook, and other integrations. Create tokens here — they authenticate as you.'}
+        </p>
         <button
           onClick={() => { setShowCreateForm(true); setCreatedToken(null); setError(''); }}
-          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+          className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white transition-colors shrink-0 ml-4"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

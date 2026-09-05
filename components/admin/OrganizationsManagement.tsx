@@ -617,7 +617,6 @@ export default function OrganizationsManagement() {
     <div className="w-full p-4 sm:p-6 space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-            <h2 className="text-lg font-semibold leading-tight text-gray-900 dark:text-white">Organizations</h2>
             {organizations.length > 0 && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
                 <span className="tabular-nums text-gray-600 dark:text-gray-300">
