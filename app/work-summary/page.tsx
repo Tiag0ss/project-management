@@ -1,5 +1,6 @@
-/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 
 import { useEffect, useMemo, useState } from 'react';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
@@ -516,7 +517,7 @@ export default function WorkSummaryPage() {
   }, [combinedEntries, projectFilter]);
 
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center"><div className="text-xl">Loading...</div></div>;
+    return <PageLoadingSkeleton />;
   }
 
   return (

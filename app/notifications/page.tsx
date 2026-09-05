@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { tasksApi, Task } from '@/lib/api/tasks';
@@ -234,11 +235,7 @@ export default function NotificationsPage() {
 
   // Show loading while auth is loading
   if (authLoading) {
-    return (
-      <div className="w-full flex items-center justify-center">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!user) return null;

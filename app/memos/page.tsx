@@ -9,6 +9,7 @@ import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 import { useRouter, useSearchParams } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 
 const MEMO_CALENDAR_LOCALE = 'en-US';
@@ -18,13 +19,7 @@ const normalizeMemoTag = (tag: string): string => tag.trim().replace(/\s+/g, ' '
 
 export default function MemosPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-[40vh] items-center justify-center text-gray-600 dark:text-gray-300">
-          Loading…
-        </div>
-      }
-    >
+    <Suspense fallback={<PageLoadingSkeleton />}>
       <MemosPageContent />
     </Suspense>
   );

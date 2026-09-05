@@ -9,6 +9,7 @@ import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { tasksApi, Task } from '@/lib/api/tasks';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { usersApi, User } from '@/lib/api/users';
@@ -7805,17 +7806,7 @@ export default function PlanningPage() {
       <main className="w-full pt-0 pb-0 flex-1 min-h-0 flex flex-col">
 
         {isGanttLoading ? (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
-            <div className="flex items-center justify-center mb-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            </div>
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              Loading planning data...
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Rendering timeline for {viewMode} view
-            </p>
-          </div>
+          <PageLoadingSkeleton className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800" />
         ) : tasks.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
             <div className="text-6xl mb-4">📊</div>

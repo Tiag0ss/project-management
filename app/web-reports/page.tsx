@@ -1,5 +1,6 @@
-/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
 'use client';
+/* Migrated into AppShell — Navbar removed; chrome from AuthenticatedAppGate */
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 
 import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, Suspense } from 'react';
@@ -108,7 +109,7 @@ interface ChartPoint {
 
 export default function WebReportsPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<PageLoadingSkeleton />}>
       <WebReportsPageFromQuery />
     </Suspense>
   );
@@ -1366,9 +1367,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 

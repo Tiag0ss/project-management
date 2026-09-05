@@ -7,6 +7,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { useRouter } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
@@ -542,11 +543,7 @@ export default function ExpensesPage() {
   };
 
   if (authLoading || expensesEnabled === null || permissionsLoading) {
-    return (
-      <div className="w-full">
-        <div className="w-full p-6 text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   return (

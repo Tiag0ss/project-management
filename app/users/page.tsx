@@ -3,6 +3,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 
 export default function UsersPage() {
   const router = useRouter();
@@ -11,9 +12,5 @@ export default function UsersPage() {
     router.replace('/administration');
   }, [router]);
 
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="text-xl">Redirecting...</div>
-    </div>
-  );
+  return <PageLoadingSkeleton />;
 }

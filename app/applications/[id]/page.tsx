@@ -1,5 +1,6 @@
 'use client';
 
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, use, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -102,9 +103,7 @@ export default function ApplicationDetailPage(props: { params: Promise<{ id: str
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
-        </div>
+        <PageLoadingSkeleton />
       }
     >
       <ApplicationDetailPageContent {...props} />
@@ -711,14 +710,7 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   );
 
   if (authLoading || isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-3 text-gray-600 dark:text-gray-400">Loading...</span>
-        </div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!user || !application) {

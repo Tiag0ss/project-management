@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
 import { extractCustomFieldValues } from '@/lib/customFields';
 
@@ -366,11 +367,7 @@ export default function CallRecordsPage() {
   };
 
   if (isLoading || !user) {
-    return (
-      <div className="w-full flex items-center justify-center">
-        <div className="text-gray-600 dark:text-gray-400">Loading...</div>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   return (

@@ -1,5 +1,6 @@
 'use client';
 
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, use, useRef, Suspense } from 'react';
@@ -161,9 +162,7 @@ export default function CustomerDetailPage(props: { params: Promise<{ id: string
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-gray-700 dark:text-gray-200">Loading…</div>
-        </div>
+        <PageLoadingSkeleton />
       }
     >
       <CustomerDetailPageContent {...props} />
@@ -863,9 +862,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
 
   if (authLoading || isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-xl">Loading...</div>
-      </div>
+      <PageLoadingSkeleton />
     );
   }
 

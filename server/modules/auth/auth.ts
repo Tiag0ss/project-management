@@ -105,6 +105,14 @@ const getAuthRequestBody = (body: any): any => {
   return decryptAuthPayload(encryptedPayload);
 };
 
+/** Login/register must use encrypted payloads so passwords never travel in clear JSON. */
+const requireEncryptedAuthBody = (body: any): any => {
+  if (!body?.encryptedPayload) {
+    throw new Error('Encrypted authentication payload is required');
+  }
+  return getAuthRequestBody(body);
+};
+
 router.get('/encryption-session', async (_req: Request, res: Response) => {
   try {
     cleanupExpiredEncryptionSessions();
@@ -195,7 +203,7 @@ router.post('/register', async (req: Request, res: Response) => {
   try {
     let payload: any;
     try {
-      payload = getAuthRequestBody(req.body);
+      payload = requireEncryptedAuthBody(req.body);
     } catch (decryptError: any) {
       return res.status(400).json({
         success: false,
@@ -346,7 +354,7 @@ router.post('/login', async (req: Request, res: Response) => {
   try {
     let payload: any;
     try {
-      payload = getAuthRequestBody(req.body);
+      payload = requireEncryptedAuthBody(req.body);
     } catch (decryptError: any) {
       return res.status(400).json({
         success: false,

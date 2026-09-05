@@ -2,6 +2,7 @@
 
 import AppShell from '@/components/AppShell';
 import GlobalGridEnhancer from '@/components/GlobalGridEnhancer';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { ActiveOrganizationProvider } from '@/contexts/ActiveOrganizationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePathname, useRouter } from 'next/navigation';
@@ -44,10 +45,11 @@ export default function AuthenticatedAppGate({ children }: { children: ReactNode
     return <div className="pm-app min-h-screen text-[var(--pm-text)]">{children}</div>;
   }
 
-  if (isLoading || !token) {
+  // Keep chrome visible while session is restoring/validating — never a centered blank "Loading…".
+  if (!token) {
     return (
-      <div className="pm-app flex min-h-screen items-center justify-center bg-[var(--pm-bg)] text-[var(--pm-muted)]">
-        Loading…
+      <div className="pm-app min-h-screen bg-[var(--pm-bg)] p-3 text-[var(--pm-text)] md:p-4">
+        <PageLoadingSkeleton />
       </div>
     );
   }

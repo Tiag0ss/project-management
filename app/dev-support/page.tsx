@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { getApiUrl } from '@/lib/api/config';
 
@@ -201,11 +202,7 @@ export default function DevSupportManagementPage() {
   };
 
   if (!user || (!canManage && isLoading)) {
-    return (
-      <div className="w-full p-4 sm:p-6">
-        <p className="text-sm text-[var(--pm-muted)]">Loading…</p>
-      </div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!canManage) {

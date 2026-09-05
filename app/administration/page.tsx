@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import PageTabs from '@/components/PageTabs';
 import PageStickyChrome from '@/components/PageStickyChrome';
 import PageStickyActions, { pageActionButtonClass } from '@/components/PageStickyActions';
@@ -70,11 +71,7 @@ const ADMIN_TAB_LABELS: { id: AdminTab; label: string }[] = [
 
 export default function AdministrationPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex w-full items-center justify-center py-12 text-[var(--pm-muted)]">Loading…</div>
-      }
-    >
+    <Suspense fallback={<PageLoadingSkeleton />}>
       <AdministrationPageContent />
     </Suspense>
   );
@@ -98,9 +95,7 @@ function AdministrationPageContent() {
   }, [user, isLoading, router]);
 
   if (isLoading) {
-    return (
-      <div className="flex w-full items-center justify-center py-12 text-[var(--pm-muted)]">Loading...</div>
-    );
+    return <PageLoadingSkeleton />;
   }
 
   if (!user || !user.isAdmin) {

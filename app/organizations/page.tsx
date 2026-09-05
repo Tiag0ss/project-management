@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 
 /** Organizations list lives under Administration; keep detail routes at /organizations/[id]. */
 export default function OrganizationsPage() {
@@ -11,9 +12,5 @@ export default function OrganizationsPage() {
     router.replace('/administration?tab=organizations');
   }, [router]);
 
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="text-xl text-[var(--pm-muted)]">Redirecting…</div>
-    </div>
-  );
+  return <PageLoadingSkeleton />;
 }

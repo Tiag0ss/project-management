@@ -160,13 +160,26 @@ app.prepare().then(async () => {
     credentials: true,
   }));
 
-  // Rate limiting for authentication endpoints
+  // Rate limiting for authentication endpoints (login/register/reset — not encryption session / refresh)
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 20, // 20 attempts
-    message: 'Too many authentication attempts, please try again later',
+    max: 100, // raised from 20 — failed attempts still counted
     standardHeaders: true,
     legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    skip: (req) => {
+      const path = `${req.originalUrl || ''}${req.path || ''}`;
+      if (req.method === 'GET' && path.includes('encryption-session')) return true;
+      if (req.method === 'GET' && path.includes('reset-password/validate')) return true;
+      if (req.method === 'POST' && path.includes('/auth/refresh')) return true;
+      return false;
+    },
+    handler: (_req, res) => {
+      res.status(429).json({
+        success: false,
+        message: 'Too many authentication attempts, please try again later',
+      });
+    },
   });
 
   // General API rate limiting
