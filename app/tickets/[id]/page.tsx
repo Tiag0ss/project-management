@@ -813,7 +813,7 @@ export default function TicketDetailPage() {
     );
   };
 
-  const quickStatusChange = async (newStatus: string) => {
+  const quickStatusChange = async (newStatusId: number) => {
     try {
       const res = await fetch(
         `${getApiUrl()}/api/tickets/${ticketId}`,
@@ -823,7 +823,7 @@ export default function TicketDetailPage() {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ status: newStatus }),
+          body: JSON.stringify({ status: newStatusId }),
         }
       );
 
@@ -1499,7 +1499,7 @@ export default function TicketDetailPage() {
                   {(ticketStatuses.length > 0 ? ticketStatuses : []).filter(s => s.StatusName !== ticket.Status).map(s => (
                     <button
                       key={s.Id}
-                      onClick={() => quickStatusChange(s.StatusName)}
+                      onClick={() => quickStatusChange(s.Id)}
                       style={getStatusStyle(s.StatusName)}
                       className="px-3 py-1.5 text-sm rounded-lg transition-colors hover:opacity-80"
                     >
