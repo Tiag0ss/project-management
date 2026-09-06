@@ -11,6 +11,7 @@ import {
   resolveVcsIntegration,
 } from '../../utils/vcsIntegrationResolve';
 import { parseOwnerRepoFromUrl } from '../../utils/vcsIntegrationHelpers';
+import { integrationWriteErrorMessage } from '../../utils/integrationErrors';
 
 const router = express.Router();
 
@@ -78,7 +79,17 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
       return res.status(400).json({ success: false, message: 'GitHub URL and token are required' });
     }
 
-    const displayName = String(name || '').trim() || new URL(gitHubUrl).hostname || 'GitHub';
+    let displayName = String(name || '').trim();
+    if (!displayName) {
+      try {
+        displayName = new URL(gitHubUrl).hostname || 'GitHub';
+      } catch {
+        return res.status(400).json({
+          success: false,
+          message: 'GitHub URL is invalid. Use a full URL including https:// (e.g. https://api.github.com).',
+        });
+      }
+    }
     const encryptedToken = encrypt(gitHubToken);
 
     if (isDefault) {
@@ -99,7 +110,10 @@ router.post('/organization/:organizationId', authenticateToken, async (req: Auth
     });
   } catch (error) {
     logger.error('Create GitHub integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create GitHub integration' });
+    res.status(500).json({
+      success: false,
+      message: integrationWriteErrorMessage(error, 'Failed to create GitHub integration'),
+    });
   }
 });
 
@@ -143,7 +157,10 @@ router.put('/:integrationId', authenticateToken, async (req: AuthRequest, res: R
     res.json({ success: true, message: 'GitHub integration updated successfully' });
   } catch (error) {
     logger.error('Update GitHub integration error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update GitHub integration' });
+    res.status(500).json({
+      success: false,
+      message: integrationWriteErrorMessage(error, 'Failed to update GitHub integration'),
+    });
   }
 });
 

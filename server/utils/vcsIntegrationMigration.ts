@@ -34,7 +34,7 @@ const VCS_TABLES: VcsTableConfig[] = [
       IsEnabled TINYINT(1) NOT NULL DEFAULT 1,
       IsDefault TINYINT(1) NOT NULL DEFAULT 0,
       GitHubUrl VARCHAR(255) NOT NULL,
-      GitHubToken VARCHAR(500) NOT NULL,
+      GitHubToken TEXT NOT NULL,
       CreatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UpdatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (Id)
@@ -46,7 +46,7 @@ const VCS_TABLES: VcsTableConfig[] = [
       IsEnabled BIT NOT NULL DEFAULT 1,
       IsDefault BIT NOT NULL DEFAULT 0,
       GitHubUrl NVARCHAR(255) NOT NULL,
-      GitHubToken NVARCHAR(500) NOT NULL,
+      GitHubToken NVARCHAR(MAX) NOT NULL,
       CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
       UpdatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
       CONSTRAINT PK_OrganizationGitHubIntegrations PRIMARY KEY (Id)
@@ -150,11 +150,47 @@ async function tableExists(tableName: string): Promise<boolean> {
   }
 }
 
-async function isLegacyVcsTable(tableName: string): Promise<boolean> {
+async function getPrimaryKeyColumns(tableName: string): Promise<string[]> {
+  try {
+    const query = isMssql
+      ? `SELECT c.name AS COLUMN_NAME
+         FROM sys.indexes i
+         INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+         INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+         INNER JOIN sys.tables t ON i.object_id = t.object_id
+         WHERE i.is_primary_key = 1 AND t.name = ?
+         ORDER BY ic.key_ordinal`
+      : `SELECT COLUMN_NAME
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+         ORDER BY ORDINAL_POSITION`;
+    const [rows] = await pool.execute<RowDataPacket[]>(query, [tableName]);
+    return rows.map((row) => String(row.COLUMN_NAME || ''));
+  } catch {
+    return [];
+  }
+}
+
+/** Pure helper for tests: true when table still uses OrganizationId as identity/PK. */
+export function needsVcsMultiInstanceRebuild(meta: {
+  tableExists: boolean;
+  hasIdColumn: boolean;
+  primaryKeyColumns: string[];
+}): boolean {
+  if (!meta.tableExists) return false;
+  if (!meta.hasIdColumn) return true;
+  const pk = meta.primaryKeyColumns.map((col) => col.toLowerCase());
+  if (pk.length === 0) return true;
+  if (!pk.includes('id')) return true;
+  if (pk.length === 1 && pk[0] === 'organizationid') return true;
+  return false;
+}
+
+async function shouldRebuildVcsTable(tableName: string): Promise<boolean> {
   if (!(await tableExists(tableName))) return false;
-  // New shape always has Name; legacy OrganizationId-PK tables do not.
-  const hasName = await columnExists(tableName, 'Name');
-  return !hasName;
+  const hasIdColumn = await columnExists(tableName, 'Id');
+  const primaryKeyColumns = await getPrimaryKeyColumns(tableName);
+  return needsVcsMultiInstanceRebuild({ tableExists: true, hasIdColumn, primaryKeyColumns });
 }
 
 async function rebuildVcsTable(cfg: VcsTableConfig): Promise<void> {
@@ -170,18 +206,25 @@ async function rebuildVcsTable(cfg: VcsTableConfig): Promise<void> {
     : `CREATE TABLE ${q(tempName)} (${cfg.createColumnsSqlMysql})`;
   await pool.execute(createSql);
 
+  const hasName = await columnExists(cfg.tableName, 'Name');
+  const hasIsDefault = await columnExists(cfg.tableName, 'IsDefault');
   const extra = cfg.extraSelectColumns.length
     ? `, ${cfg.extraSelectColumns.map((c) => q(c)).join(', ')}`
     : '';
+  const nameSelect = hasName ? `, ${q('Name')}` : '';
+  const defaultSelect = hasIsDefault ? `, ${q('IsDefault')}` : '';
 
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT ${q('OrganizationId')}, ${q(cfg.urlColumn)}, ${q(cfg.tokenColumn)},
-            ${q('IsEnabled')}, ${q('CreatedAt')}, ${q('UpdatedAt')}${extra}
+            ${q('IsEnabled')}, ${q('CreatedAt')}, ${q('UpdatedAt')}${nameSelect}${defaultSelect}${extra}
      FROM ${q(cfg.tableName)}`
   );
 
   for (const row of rows) {
-    const name = nameFromIntegrationUrl(row[cfg.urlColumn] as string);
+    const existingName = hasName ? String(row.Name || '').trim() : '';
+    const name = existingName || nameFromIntegrationUrl(row[cfg.urlColumn] as string);
+    const isDefault = hasIsDefault ? (row.IsDefault ? 1 : 0) : 1;
+
     if (cfg.provider === 'bitbucket') {
       await pool.execute(
         `INSERT INTO ${q(tempName)} (${cfg.insertColumnList})
@@ -190,7 +233,7 @@ async function rebuildVcsTable(cfg: VcsTableConfig): Promise<void> {
           row.OrganizationId,
           name,
           row.IsEnabled ? 1 : 0,
-          1,
+          isDefault,
           row.BitbucketUrl,
           row.BitbucketUsername ?? null,
           row.BitbucketToken,
@@ -206,13 +249,36 @@ async function rebuildVcsTable(cfg: VcsTableConfig): Promise<void> {
           row.OrganizationId,
           name,
           row.IsEnabled ? 1 : 0,
-          1,
+          isDefault,
           row[cfg.urlColumn],
           row[cfg.tokenColumn],
           row.CreatedAt,
           row.UpdatedAt,
         ]
       );
+    }
+  }
+
+  // Ensure at least one default per organization when all were 0
+  const [orgIds] = await pool.execute<RowDataPacket[]>(
+    `SELECT DISTINCT ${q('OrganizationId')} AS OrganizationId FROM ${q(tempName)}`
+  );
+  for (const org of orgIds) {
+    const [defaults] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id FROM ${q(tempName)}
+       WHERE ${q('OrganizationId')} = ? AND ${q('IsDefault')} = 1
+       ORDER BY Id ASC`,
+      [org.OrganizationId]
+    );
+    if (defaults.length > 0) continue;
+    const [first] = await pool.execute<RowDataPacket[]>(
+      `SELECT Id FROM ${q(tempName)} WHERE ${q('OrganizationId')} = ? ORDER BY Id ASC`,
+      [org.OrganizationId]
+    );
+    if (first[0]?.Id != null) {
+      await pool.execute(`UPDATE ${q(tempName)} SET ${q('IsDefault')} = 1 WHERE ${q('Id')} = ?`, [
+        first[0].Id,
+      ]);
     }
   }
 
@@ -294,13 +360,16 @@ async function backfillApplicationFks(): Promise<void> {
 /**
  * Migrate OrganizationGitHub/Gitea/BitbucketIntegrations from OrganizationId PK
  * to multi-instance Id PK. Idempotent. Does not touch Jira.
+ *
+ * Also rebuilds hybrid tables where schema sync added Name/IsDefault but left
+ * OrganizationId as the primary key (no usable Id identity column).
  */
 export async function migrateVcsIntegrationsToMultiInstance(): Promise<void> {
   logger.info('⚡ Running migration: VCS integrations to multi-instance...');
 
   for (const cfg of VCS_TABLES) {
     try {
-      if (!(await isLegacyVcsTable(cfg.tableName))) {
+      if (!(await shouldRebuildVcsTable(cfg.tableName))) {
         logger.info(`  ℹ ${cfg.tableName} already multi-instance (or missing)`);
         continue;
       }

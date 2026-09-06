@@ -43,7 +43,7 @@
     },
     {
       "FieldName": "GitHubToken",
-      "DataType": "varchar(500)",
+      "DataType": "text",
       "NotNullable": true,
       "Comment": "Encrypted GitHub API access token"
     },

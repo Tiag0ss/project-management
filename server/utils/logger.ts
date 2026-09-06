@@ -43,16 +43,11 @@ const logger = winston.createLogger({
       maxsize: 5242880, // 5MB
       maxFiles: 5,
     }),
+    // Always log to stdout/stderr so Docker / 1Panel container logs show errors
+    new winston.transports.Console({
+      format: process.env.NODE_ENV === 'production' ? logFormat : consoleFormat,
+    }),
   ],
 });
-
-// Add console transport in development
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(
-    new winston.transports.Console({
-      format: consoleFormat,
-    })
-  );
-}
 
 export default logger;

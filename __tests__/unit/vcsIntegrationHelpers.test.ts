@@ -5,6 +5,49 @@ import {
   parseOwnerRepoFromUrl,
   pickDefaultVcsIntegration,
 } from '../../server/utils/vcsIntegrationHelpers';
+import { needsVcsMultiInstanceRebuild } from '../../server/utils/vcsIntegrationMigration';
+
+describe('needsVcsMultiInstanceRebuild', () => {
+  it('rebuilds when Id column is missing (legacy or hybrid schema)', () => {
+    expect(
+      needsVcsMultiInstanceRebuild({
+        tableExists: true,
+        hasIdColumn: false,
+        primaryKeyColumns: ['OrganizationId'],
+      })
+    ).toBe(true);
+  });
+
+  it('rebuilds when OrganizationId is still the primary key', () => {
+    expect(
+      needsVcsMultiInstanceRebuild({
+        tableExists: true,
+        hasIdColumn: true,
+        primaryKeyColumns: ['OrganizationId'],
+      })
+    ).toBe(true);
+  });
+
+  it('skips when Id is already the primary key', () => {
+    expect(
+      needsVcsMultiInstanceRebuild({
+        tableExists: true,
+        hasIdColumn: true,
+        primaryKeyColumns: ['Id'],
+      })
+    ).toBe(false);
+  });
+
+  it('skips missing tables', () => {
+    expect(
+      needsVcsMultiInstanceRebuild({
+        tableExists: false,
+        hasIdColumn: false,
+        primaryKeyColumns: [],
+      })
+    ).toBe(false);
+  });
+});
 
 describe('nameFromIntegrationUrl', () => {
   it('uses hostname from https URL', () => {
