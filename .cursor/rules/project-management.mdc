@@ -107,7 +107,8 @@ docs/                   # FEATURES, ROLE_PERMISSIONS, etc.
 - TypeScript strict; avoid `any`.
 - Minimal diff; no drive-by refactors.
 - Do not edit plan files (`.cursor/plans/`) unless user asks.
-- Git: commit only when user explicitly requests.
+- Git: commit only when the user explicitly requests.
+- **Commit messages (mandatory):** never mention unit tests, test files, Jest, coverage, or “add/update tests”. Describe only the product/behavior change (tests may be in the commit; omit them from the message).
 
 ## Key docs
 

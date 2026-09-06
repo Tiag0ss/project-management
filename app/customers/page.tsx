@@ -15,7 +15,10 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import CustomerFormModal, { CustomerFormValues } from '@/components/CustomerFormModal';
 import EmptyState from '@/components/EmptyState';
 import { NavModuleIcon } from '@/lib/navIcons';
-import { Search } from 'lucide-react';
+import { compareWithPinnedFirst } from '@/lib/pinnedListItems';
+import { usePinnedListItems } from '@/hooks/usePinnedListItems';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
+import { Pin, PinOff, Search } from 'lucide-react';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
 import { extractCustomFieldValues } from '@/lib/customFields';
 import { 
@@ -33,6 +36,56 @@ type CustomerSortField = 'name' | 'email' | 'phone' | 'tickets';
 type SortDirection = 'asc' | 'desc';
 type CustomerStatusFilter = 'all' | 'active' | 'inactive';
 type CustomerTicketFilter = 'all' | 'with-open' | 'without-open';
+
+type CustomersListFilters = {
+  searchQuery: string;
+  statusFilter: CustomerStatusFilter;
+  organizationFilterId: string;
+  ticketFilter: CustomerTicketFilter;
+  sortBy: CustomerSortField;
+  sortOrder: SortDirection;
+};
+
+const DEFAULT_CUSTOMERS_LIST_FILTERS: CustomersListFilters = {
+  searchQuery: '',
+  statusFilter: 'all',
+  organizationFilterId: 'all',
+  ticketFilter: 'all',
+  sortBy: 'name',
+  sortOrder: 'asc',
+};
+
+const CUSTOMER_SORT_FIELDS: CustomerSortField[] = ['name', 'email', 'phone', 'tickets'];
+const CUSTOMER_STATUS_FILTERS: CustomerStatusFilter[] = ['all', 'active', 'inactive'];
+const CUSTOMER_TICKET_FILTERS: CustomerTicketFilter[] = ['all', 'with-open', 'without-open'];
+
+function mergeCustomersListFilters(
+  stored: Record<string, unknown>,
+  defaults: CustomersListFilters
+): CustomersListFilters {
+  const statusFilter = CUSTOMER_STATUS_FILTERS.includes(stored.statusFilter as CustomerStatusFilter)
+    ? (stored.statusFilter as CustomerStatusFilter)
+    : defaults.statusFilter;
+  const ticketFilter = CUSTOMER_TICKET_FILTERS.includes(stored.ticketFilter as CustomerTicketFilter)
+    ? (stored.ticketFilter as CustomerTicketFilter)
+    : defaults.ticketFilter;
+  const sortBy = CUSTOMER_SORT_FIELDS.includes(stored.sortBy as CustomerSortField)
+    ? (stored.sortBy as CustomerSortField)
+    : defaults.sortBy;
+  const sortOrder =
+    stored.sortOrder === 'desc' || stored.sortOrder === 'asc' ? stored.sortOrder : defaults.sortOrder;
+  return {
+    searchQuery: typeof stored.searchQuery === 'string' ? stored.searchQuery : defaults.searchQuery,
+    statusFilter,
+    organizationFilterId:
+      typeof stored.organizationFilterId === 'string'
+        ? stored.organizationFilterId
+        : defaults.organizationFilterId,
+    ticketFilter,
+    sortBy,
+    sortOrder,
+  };
+}
 
 interface Organization {
   Id: number;
@@ -61,6 +114,7 @@ const buildDefaultCustomerFormValues = (organizations: Organization[]): Customer
 
 export default function CustomersPage() {
   const { user, token, isLoading: authLoading } = useAuth();
+  const { pinnedIds, isPinned, togglePinned } = usePinnedListItems('customers', user?.id);
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -79,13 +133,26 @@ export default function CustomersPage() {
   const effectiveViewMode: 'grid' | 'list' = isMobile ? 'grid' : viewMode;
   const [customerProjectStats, setCustomerProjectStats] = useState<Record<number, CustomerProjectStats>>({});
   
-  // Search and sort
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<CustomerStatusFilter>('all');
-  const [organizationFilterId, setOrganizationFilterId] = useState<string>('all');
-  const [ticketFilter, setTicketFilter] = useState<CustomerTicketFilter>('all');
-  const [sortBy, setSortBy] = useState<CustomerSortField>('name');
-  const [sortOrder, setSortOrder] = useState<SortDirection>('asc');
+  // Search and sort (persisted per user)
+  const [listFilters, setListFilters, resetListFilters] = usePersistedFilters(
+    'customers',
+    DEFAULT_CUSTOMERS_LIST_FILTERS,
+    { userId: user?.id, merge: mergeCustomersListFilters }
+  );
+  const {
+    searchQuery,
+    statusFilter,
+    organizationFilterId,
+    ticketFilter,
+    sortBy,
+    sortOrder,
+  } = listFilters;
+  const setSearchQuery = (value: string) => setListFilters({ searchQuery: value });
+  const setStatusFilter = (value: CustomerStatusFilter) => setListFilters({ statusFilter: value });
+  const setOrganizationFilterId = (value: string) => setListFilters({ organizationFilterId: value });
+  const setTicketFilter = (value: CustomerTicketFilter) => setListFilters({ ticketFilter: value });
+  const setSortBy = (value: CustomerSortField) => setListFilters({ sortBy: value });
+  const setSortOrder = (value: SortDirection) => setListFilters({ sortOrder: value });
   
   // Modal states
   const [showModal, setShowModal] = useState(false);
@@ -348,25 +415,27 @@ export default function CustomersPage() {
       }
     }
     
-    // Apply sorting
-    filtered.sort((a, b) => {
-      let result = 0;
-      
-      if (sortBy === 'name') {
-        result = a.Name.localeCompare(b.Name);
-      } else if (sortBy === 'email') {
-        result = (a.Email || '').localeCompare(b.Email || '');
-      } else if (sortBy === 'phone') {
-        result = (a.Phone || '').localeCompare(b.Phone || '');
-      } else if (sortBy === 'tickets') {
-        result = internalTicketsEnabled ? (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0) : 0;
-      }
-      
-      return sortOrder === 'asc' ? result : -result;
-    });
+    // Apply sorting (pinned customers stay on top)
+    filtered.sort((a, b) =>
+      compareWithPinnedFirst(a, b, (customer) => customer.Id, pinnedIds, (left, right) => {
+        let result = 0;
+
+        if (sortBy === 'name') {
+          result = left.Name.localeCompare(right.Name);
+        } else if (sortBy === 'email') {
+          result = (left.Email || '').localeCompare(right.Email || '');
+        } else if (sortBy === 'phone') {
+          result = (left.Phone || '').localeCompare(right.Phone || '');
+        } else if (sortBy === 'tickets') {
+          result = internalTicketsEnabled ? (Number(left.OpenTickets) || 0) - (Number(right.OpenTickets) || 0) : 0;
+        }
+
+        return sortOrder === 'asc' ? result : -result;
+      })
+    );
     
     setFilteredCustomers(filtered);
-  }, [customers, searchQuery, statusFilter, organizationFilterId, ticketFilter, sortBy, sortOrder, internalTicketsEnabled]);
+  }, [customers, searchQuery, statusFilter, organizationFilterId, ticketFilter, sortBy, sortOrder, internalTicketsEnabled, pinnedIds]);
 
   const handleSort = (field: CustomerSortField) => {
     if (sortBy === field) {
@@ -891,12 +960,7 @@ export default function CustomersPage() {
             <div className="mt-3 flex items-center justify-between">
               <p className="text-sm text-gray-500 dark:text-gray-400">Showing {filteredCustomers.length} of {customers.length} customers</p>
               <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setStatusFilter('all');
-                  setOrganizationFilterId('all');
-                  setTicketFilter('all');
-                }}
+                onClick={() => resetListFilters()}
                 className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
               >
                 Clear filters
@@ -938,12 +1002,7 @@ export default function CustomersPage() {
             message="Try a different search term or clear current filters."
             primaryAction={{
               label: 'Clear filters',
-              onClick: () => {
-                setSearchQuery('');
-                setStatusFilter('all');
-                setOrganizationFilterId('all');
-                setTicketFilter('all');
-              }
+              onClick: () => resetListFilters(),
             }}
             secondaryAction={{ label: 'Reload', onClick: loadData }}
           />
@@ -963,14 +1022,46 @@ export default function CustomersPage() {
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{customer.Name}</h3>
+                      <h3 className="inline-flex items-center gap-1.5 text-lg font-semibold text-gray-900 dark:text-white">
+                        {isPinned(customer.Id) && (
+                          <Pin
+                            size={14}
+                            strokeWidth={2}
+                            className="shrink-0 fill-[var(--pm-accent)] text-[var(--pm-accent)]"
+                            aria-label="Pinned"
+                          />
+                        )}
+                        <span>{customer.Name}</span>
+                      </h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">{customer.ExternalName || '—'}</p>
                     </div>
-                    {internalTicketsEnabled && (
-                      <span className="px-2 py-1 rounded text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
-                        {customer.OpenTickets || 0} tickets
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePinned(customer.Id);
+                        }}
+                        title={isPinned(customer.Id) ? 'Unpin customer' : 'Pin customer to top'}
+                        aria-label={isPinned(customer.Id) ? 'Unpin customer' : 'Pin customer to top'}
+                        className={`rounded p-1.5 transition-colors ${
+                          isPinned(customer.Id)
+                            ? 'text-[var(--pm-accent)] hover:text-[var(--pm-accent-soft)]'
+                            : 'text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'
+                        }`}
+                      >
+                        {isPinned(customer.Id) ? (
+                          <PinOff size={16} strokeWidth={1.75} />
+                        ) : (
+                          <Pin size={16} strokeWidth={1.75} />
+                        )}
+                      </button>
+                      {internalTicketsEnabled && (
+                        <span className="px-2 py-1 rounded text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                          {customer.OpenTickets || 0} tickets
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
@@ -1122,7 +1213,17 @@ export default function CustomersPage() {
                     onClick={() => router.push(`/customers/${customer.Id}`)}
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-medium text-gray-900 dark:text-white">{customer.Name}</div>
+                      <div className="flex items-center gap-1.5 font-medium text-gray-900 dark:text-white">
+                        {isPinned(customer.Id) && (
+                          <Pin
+                            size={14}
+                            strokeWidth={2}
+                            className="shrink-0 fill-[var(--pm-accent)] text-[var(--pm-accent)]"
+                            aria-label="Pinned"
+                          />
+                        )}
+                        {customer.Name}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-gray-500 dark:text-gray-400">{customer.ExternalName || '-'}</div>
@@ -1171,6 +1272,26 @@ export default function CustomersPage() {
                     ))}
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePinned(customer.Id);
+                          }}
+                          title={isPinned(customer.Id) ? 'Unpin customer' : 'Pin customer to top'}
+                          aria-label={isPinned(customer.Id) ? 'Unpin customer' : 'Pin customer to top'}
+                          className={`rounded p-1.5 transition-colors ${
+                            isPinned(customer.Id)
+                              ? 'text-[var(--pm-accent)] hover:text-[var(--pm-accent-soft)]'
+                              : 'text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'
+                          }`}
+                        >
+                          {isPinned(customer.Id) ? (
+                            <PinOff size={16} strokeWidth={1.75} />
+                          ) : (
+                            <Pin size={16} strokeWidth={1.75} />
+                          )}
+                        </button>
                         {permissions?.canManageCustomers && (
                         <button
                           onClick={(e) => { e.stopPropagation(); router.push(`/customers/${customer.Id}`); }}

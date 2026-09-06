@@ -17,6 +17,7 @@ import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsForm
 import { CustomFieldValues } from '@/lib/customFields';
 import { useColorVision } from '@/hooks/useColorVision';
 import { NavModuleIcon } from '@/lib/navIcons';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 
 interface Ticket {
   Id: number;
@@ -96,6 +97,67 @@ interface Stats {
 
 const CATEGORIES = ['Support', 'Bug', 'Feature Request', 'Question', 'Other'];
 
+type TicketsListFilters = {
+  filterOrg: string;
+  filterStatus: string;
+  filterPriority: string;
+  filterCategory: string;
+  filterAssignee: string;
+  filterDeveloper: string;
+  filterCustomer: string;
+  filterCreatedFrom: string;
+  filterCreatedTo: string;
+  filterScheduledFrom: string;
+  filterScheduledTo: string;
+  searchQuery: string;
+  showMyTicketsOnly: boolean;
+  showClosed: boolean;
+};
+
+const DEFAULT_TICKETS_LIST_FILTERS: TicketsListFilters = {
+  filterOrg: '',
+  filterStatus: '',
+  filterPriority: '',
+  filterCategory: '',
+  filterAssignee: '',
+  filterDeveloper: '',
+  filterCustomer: '',
+  filterCreatedFrom: '',
+  filterCreatedTo: '',
+  filterScheduledFrom: '',
+  filterScheduledTo: '',
+  searchQuery: '',
+  showMyTicketsOnly: true,
+  showClosed: false,
+};
+
+function mergeTicketsListFilters(
+  stored: Record<string, unknown>,
+  defaults: TicketsListFilters
+): TicketsListFilters {
+  const asString = (key: keyof TicketsListFilters): string =>
+    typeof stored[key] === 'string' ? (stored[key] as string) : (defaults[key] as string);
+  return {
+    filterOrg: asString('filterOrg'),
+    filterStatus: asString('filterStatus'),
+    filterPriority: asString('filterPriority'),
+    filterCategory: asString('filterCategory'),
+    filterAssignee: asString('filterAssignee'),
+    filterDeveloper: asString('filterDeveloper'),
+    filterCustomer: asString('filterCustomer'),
+    filterCreatedFrom: asString('filterCreatedFrom'),
+    filterCreatedTo: asString('filterCreatedTo'),
+    filterScheduledFrom: asString('filterScheduledFrom'),
+    filterScheduledTo: asString('filterScheduledTo'),
+    searchQuery: asString('searchQuery'),
+    showMyTicketsOnly:
+      typeof stored.showMyTicketsOnly === 'boolean'
+        ? stored.showMyTicketsOnly
+        : defaults.showMyTicketsOnly,
+    showClosed: typeof stored.showClosed === 'boolean' ? stored.showClosed : defaults.showClosed,
+  };
+}
+
 export default function TicketsPage() {
   const { pillStyle } = useColorVision();
   const { user, token, isLoading, isCustomerUser } = useAuth();
@@ -115,21 +177,42 @@ export default function TicketsPage() {
   const [ticketStatuses, setTicketStatuses] = useState<{ Id: number; StatusName: string; Color: string; IsClosed: number }[]>([]);
   const [ticketPriorities, setTicketPriorities] = useState<{ Id: number; PriorityName: string; Color: string; IsDefault: number }[]>([]);
   
-  // Filters
-  const [filterOrg, setFilterOrg] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterPriority, setFilterPriority] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterAssignee, setFilterAssignee] = useState('');
-  const [filterDeveloper, setFilterDeveloper] = useState('');
-  const [filterCustomer, setFilterCustomer] = useState('');
-  const [filterCreatedFrom, setFilterCreatedFrom] = useState('');
-  const [filterCreatedTo, setFilterCreatedTo] = useState('');
-  const [filterScheduledFrom, setFilterScheduledFrom] = useState('');
-  const [filterScheduledTo, setFilterScheduledTo] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showMyTicketsOnly, setShowMyTicketsOnly] = useState(true);
-  const [showClosed, setShowClosed] = useState(false);
+  // Filters (persisted per user)
+  const [listFilters, setListFilters, resetListFilters] = usePersistedFilters(
+    'tickets',
+    DEFAULT_TICKETS_LIST_FILTERS,
+    { userId: user?.id, merge: mergeTicketsListFilters }
+  );
+  const {
+    filterOrg,
+    filterStatus,
+    filterPriority,
+    filterCategory,
+    filterAssignee,
+    filterDeveloper,
+    filterCustomer,
+    filterCreatedFrom,
+    filterCreatedTo,
+    filterScheduledFrom,
+    filterScheduledTo,
+    searchQuery,
+    showMyTicketsOnly,
+    showClosed,
+  } = listFilters;
+  const setFilterOrg = (value: string) => setListFilters({ filterOrg: value });
+  const setFilterStatus = (value: string) => setListFilters({ filterStatus: value });
+  const setFilterPriority = (value: string) => setListFilters({ filterPriority: value });
+  const setFilterCategory = (value: string) => setListFilters({ filterCategory: value });
+  const setFilterAssignee = (value: string) => setListFilters({ filterAssignee: value });
+  const setFilterDeveloper = (value: string) => setListFilters({ filterDeveloper: value });
+  const setFilterCustomer = (value: string) => setListFilters({ filterCustomer: value });
+  const setFilterCreatedFrom = (value: string) => setListFilters({ filterCreatedFrom: value });
+  const setFilterCreatedTo = (value: string) => setListFilters({ filterCreatedTo: value });
+  const setFilterScheduledFrom = (value: string) => setListFilters({ filterScheduledFrom: value });
+  const setFilterScheduledTo = (value: string) => setListFilters({ filterScheduledTo: value });
+  const setSearchQuery = (value: string) => setListFilters({ searchQuery: value });
+  const setShowMyTicketsOnly = (value: boolean) => setListFilters({ showMyTicketsOnly: value });
+  const setShowClosed = (value: boolean) => setListFilters({ showClosed: value });
   
   // Create Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -1021,22 +1104,7 @@ export default function TicketsPage() {
               {/* Clear Filters */}
               {(filterOrg || filterStatus || filterPriority || filterCategory || filterAssignee || filterDeveloper || filterCustomer || filterCreatedFrom || filterCreatedTo || filterScheduledFrom || filterScheduledTo || searchQuery || !showMyTicketsOnly || showClosed) && (
                 <button
-                  onClick={() => {
-                    setFilterOrg('');
-                    setFilterStatus('');
-                    setFilterPriority('');
-                    setFilterCategory('');
-                    setFilterAssignee('');
-                    setFilterDeveloper('');
-                    setFilterCustomer('');
-                    setFilterCreatedFrom('');
-                    setFilterCreatedTo('');
-                    setFilterScheduledFrom('');
-                    setFilterScheduledTo('');
-                    setSearchQuery('');
-                    setShowMyTicketsOnly(true);
-                    setShowClosed(false);
-                  }}
+                  onClick={() => resetListFilters()}
                   className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium shadow-sm hover:shadow-md flex items-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

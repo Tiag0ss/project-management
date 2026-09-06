@@ -1,3 +1,5 @@
+# Commit messages: NEVER mention unit tests, test files, Jest, coverage, or "add tests".
+# Describe only the product/behavior change. Tests may still be committed; just omit them from the message.
 # >>> PM-ACTIVE-TASK:START
 # Managed by Project Management Kanban extension — do not edit this block by hand.
 # No active PM tasks since the last commit.

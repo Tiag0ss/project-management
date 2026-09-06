@@ -2,20 +2,65 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import RichTextEditor from '@/components/RichTextEditor';
 import { getMemos, createMemo, updateMemo, deleteMemo, Memo } from '@/lib/api/memos';
 import { recordRecentNavAccess } from '@/lib/recentNavAccess';
+import { compareWithPinnedFirst } from '@/lib/pinnedListItems';
+import { usePinnedListItems } from '@/hooks/usePinnedListItems';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 import { useRouter, useSearchParams } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import { Pin, PinOff } from 'lucide-react';
 
 const MEMO_CALENDAR_LOCALE = 'en-US';
 const MEMO_CALENDAR_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const normalizeMemoTag = (tag: string): string => tag.trim().replace(/\s+/g, ' ');
+
+type MemosListFilters = {
+  filterTag: string | null;
+  filterVisibility: 'all' | 'private' | 'organizations' | 'public';
+  filterText: string;
+};
+
+const DEFAULT_MEMOS_LIST_FILTERS: MemosListFilters = {
+  filterTag: null,
+  filterVisibility: 'all',
+  filterText: '',
+};
+
+const MEMO_VISIBILITY_FILTERS: MemosListFilters['filterVisibility'][] = [
+  'all',
+  'private',
+  'organizations',
+  'public',
+];
+
+function mergeMemosListFilters(
+  stored: Record<string, unknown>,
+  defaults: MemosListFilters
+): MemosListFilters {
+  const filterVisibility = MEMO_VISIBILITY_FILTERS.includes(
+    stored.filterVisibility as MemosListFilters['filterVisibility']
+  )
+    ? (stored.filterVisibility as MemosListFilters['filterVisibility'])
+    : defaults.filterVisibility;
+  const filterTag =
+    stored.filterTag === null
+      ? null
+      : typeof stored.filterTag === 'string'
+        ? stored.filterTag
+        : defaults.filterTag;
+  return {
+    filterTag,
+    filterVisibility,
+    filterText: typeof stored.filterText === 'string' ? stored.filterText : defaults.filterText,
+  };
+}
 
 export default function MemosPage() {
   return (
@@ -27,6 +72,7 @@ export default function MemosPage() {
 
 function MemosPageContent() {
   const { user, token, isLoading } = useAuth();
+  const { pinnedIds, isPinned, togglePinned } = usePinnedListItems('memos', user?.id);
   const router = useRouter();
   const searchParams = useSearchParams();
   const memoIdFromUrl = Number(searchParams.get('memoId'));
@@ -38,9 +84,16 @@ function MemosPageContent() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [enableDateFilter, setEnableDateFilter] = useState(false);
-  const [filterTag, setFilterTag] = useState<string | null>(null);
-  const [filterVisibility, setFilterVisibility] = useState<'all' | 'private' | 'organizations' | 'public'>('all');
-  const [filterText, setFilterText] = useState('');
+  const [listFilters, setListFilters, resetListFilters] = usePersistedFilters(
+    'memos',
+    DEFAULT_MEMOS_LIST_FILTERS,
+    { userId: user?.id, merge: mergeMemosListFilters }
+  );
+  const { filterTag, filterVisibility, filterText } = listFilters;
+  const setFilterTag = (value: string | null) => setListFilters({ filterTag: value });
+  const setFilterVisibility = (value: MemosListFilters['filterVisibility']) =>
+    setListFilters({ filterVisibility: value });
+  const setFilterText = (value: string) => setListFilters({ filterText: value });
   const [focusedMemoId, setFocusedMemoId] = useState<number | null>(null);
   const deepLinkedMemoRef = useRef<number | null>(null);
 
@@ -251,48 +304,51 @@ function MemosPageContent() {
 
   const handleClearAllFilters = () => {
     setEnableDateFilter(false);
-    setFilterTag(null);
-    setFilterVisibility('all');
-    setFilterText('');
+    resetListFilters();
   };
 
-  // Filter memos
-  const filteredMemos = memos.filter(memo => {
-    const normalizedFilterText = filterText.trim().toLowerCase();
+  // Filter + pin-sort memos
+  const filteredMemos = useMemo(() => {
+    const filtered = memos.filter((memo) => {
+      const normalizedFilterText = filterText.trim().toLowerCase();
 
-    if (normalizedFilterText) {
-      const searchableText = [memo.Title, memo.Content || '', memo.Tags || '']
-        .join(' ')
-        .toLowerCase();
+      if (normalizedFilterText) {
+        const searchableText = [memo.Title, memo.Content || '', memo.Tags || '']
+          .join(' ')
+          .toLowerCase();
 
-      if (!searchableText.includes(normalizedFilterText)) {
+        if (!searchableText.includes(normalizedFilterText)) {
+          return false;
+        }
+      }
+
+      if (filterVisibility !== 'all' && memo.Visibility !== filterVisibility) {
         return false;
       }
-    }
 
-    // Filter by visibility
-    if (filterVisibility !== 'all' && memo.Visibility !== filterVisibility) {
-      return false;
-    }
+      if (filterTag) {
+        const tags = memo.Tags ? memo.Tags.split(',').map((t) => t.trim()) : [];
+        if (!tags.includes(filterTag)) return false;
+      }
 
-    // Filter by tag
-    if (filterTag) {
-      const tags = memo.Tags ? memo.Tags.split(',').map(t => t.trim()) : [];
-      if (!tags.includes(filterTag)) return false;
-    }
-    
-    // Filter by selected date (only if date filter is enabled)
-    if (enableDateFilter) {
-      const memoDate = new Date(memo.CreatedAt);
-      return (
-        memoDate.getDate() === selectedDate.getDate() &&
-        memoDate.getMonth() === selectedDate.getMonth() &&
-        memoDate.getFullYear() === selectedDate.getFullYear()
-      );
-    }
-    
-    return true;
-  });
+      if (enableDateFilter) {
+        const memoDate = new Date(memo.CreatedAt);
+        return (
+          memoDate.getDate() === selectedDate.getDate() &&
+          memoDate.getMonth() === selectedDate.getMonth() &&
+          memoDate.getFullYear() === selectedDate.getFullYear()
+        );
+      }
+
+      return true;
+    });
+
+    return [...filtered].sort((a, b) =>
+      compareWithPinnedFirst(a, b, (memo) => memo.Id, pinnedIds, (left, right) => {
+        return new Date(right.CreatedAt).getTime() - new Date(left.CreatedAt).getTime();
+      })
+    );
+  }, [memos, filterText, filterVisibility, filterTag, enableDateFilter, selectedDate, pinnedIds]);
 
   // Get all unique tags
   const allTags = Array.from(new Set(
@@ -589,9 +645,17 @@ function MemosPageContent() {
                   >
                     {/* Memo Header */}
                     <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                          {memo.Title}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="mb-1 inline-flex max-w-full items-center gap-1.5 text-lg font-semibold text-gray-900 dark:text-white">
+                          {isPinned(memo.Id) && (
+                            <Pin
+                              size={14}
+                              strokeWidth={2}
+                              className="shrink-0 fill-[var(--pm-accent)] text-[var(--pm-accent)]"
+                              aria-label="Pinned"
+                            />
+                          )}
+                          <span className="truncate">{memo.Title}</span>
                         </h3>
                         <div className="flex items-center space-x-3 text-sm text-gray-500 dark:text-gray-400">
                           <span className="flex items-center gap-1">
@@ -625,8 +689,26 @@ function MemosPageContent() {
                         </div>
                       </div>
                       
-                      {memo.UserId === user?.id && (
-                        <div className="flex items-center space-x-2">
+                      <div className="ml-2 flex shrink-0 items-center space-x-1">
+                        <button
+                          type="button"
+                          onClick={() => togglePinned(memo.Id)}
+                          title={isPinned(memo.Id) ? 'Unpin memo' : 'Pin memo to top'}
+                          aria-label={isPinned(memo.Id) ? 'Unpin memo' : 'Pin memo to top'}
+                          className={`rounded p-2 transition-colors ${
+                            isPinned(memo.Id)
+                              ? 'text-[var(--pm-accent)] hover:bg-[var(--pm-accent)]/10'
+                              : 'text-gray-400 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-gray-700 dark:hover:text-blue-400'
+                          }`}
+                        >
+                          {isPinned(memo.Id) ? (
+                            <PinOff size={18} strokeWidth={1.75} />
+                          ) : (
+                            <Pin size={18} strokeWidth={1.75} />
+                          )}
+                        </button>
+                        {memo.UserId === user?.id && (
+                          <>
                           <button
                             onClick={() => handleEditMemo(memo)}
                             className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
@@ -643,8 +725,9 @@ function MemosPageContent() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                           </button>
-                        </div>
-                      )}
+                          </>
+                        )}
+                      </div>
                     </div>
 
                     {/* Memo Content */}

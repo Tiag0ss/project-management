@@ -20,7 +20,10 @@ import ProjectFormModal from '@/components/ProjectFormModal';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { NavModuleIcon } from '@/lib/navIcons';
-import { Search } from 'lucide-react';
+import { compareWithPinnedFirst } from '@/lib/pinnedListItems';
+import { usePinnedListItems } from '@/hooks/usePinnedListItems';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
+import { Pin, PinOff, Search } from 'lucide-react';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -28,6 +31,67 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 type ProjectSortField = 'name' | 'status' | 'tasks' | 'hours' | 'tickets' | 'startDate' | 'endDate' | 'budget' | 'rag' | 'progress';
 type SortDirection = 'asc' | 'desc';
 type RAGStatus = 'red' | 'amber' | 'green';
+
+type ProjectsListFilters = {
+  filterText: string;
+  filterOrg: string;
+  filterStatus: string;
+  filterRAG: RAGStatus | '';
+  hideCompleted: boolean;
+  sortField: ProjectSortField;
+  sortDirection: SortDirection;
+};
+
+const DEFAULT_PROJECTS_LIST_FILTERS: ProjectsListFilters = {
+  filterText: '',
+  filterOrg: '',
+  filterStatus: '',
+  filterRAG: '',
+  hideCompleted: true,
+  sortField: 'name',
+  sortDirection: 'asc',
+};
+
+const PROJECT_SORT_FIELDS: ProjectSortField[] = [
+  'name',
+  'status',
+  'tasks',
+  'hours',
+  'tickets',
+  'startDate',
+  'endDate',
+  'budget',
+  'rag',
+  'progress',
+];
+
+function mergeProjectsListFilters(
+  stored: Record<string, unknown>,
+  defaults: ProjectsListFilters
+): ProjectsListFilters {
+  const sortField = PROJECT_SORT_FIELDS.includes(stored.sortField as ProjectSortField)
+    ? (stored.sortField as ProjectSortField)
+    : defaults.sortField;
+  const sortDirection =
+    stored.sortDirection === 'desc' || stored.sortDirection === 'asc'
+      ? stored.sortDirection
+      : defaults.sortDirection;
+  const filterRAG =
+    stored.filterRAG === 'red' || stored.filterRAG === 'amber' || stored.filterRAG === 'green'
+      ? stored.filterRAG
+      : stored.filterRAG === ''
+        ? ''
+        : defaults.filterRAG;
+  return {
+    filterText: typeof stored.filterText === 'string' ? stored.filterText : defaults.filterText,
+    filterOrg: typeof stored.filterOrg === 'string' ? stored.filterOrg : defaults.filterOrg,
+    filterStatus: typeof stored.filterStatus === 'string' ? stored.filterStatus : defaults.filterStatus,
+    filterRAG,
+    hideCompleted: typeof stored.hideCompleted === 'boolean' ? stored.hideCompleted : defaults.hideCompleted,
+    sortField,
+    sortDirection,
+  };
+}
 
 export default function ProjectsPage() {
   const decimalHoursToHMS = useFormatHours();
@@ -43,16 +107,35 @@ export default function ProjectsPage() {
     return stored === 'grid' || stored === 'list' ? stored : 'list';
   });
   const effectiveViewMode: 'grid' | 'list' = isMobile ? 'grid' : viewMode;
-  const [filterText, setFilterText] = useState('');
-  const [filterOrg, setFilterOrg] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterRAG, setFilterRAG] = useState<RAGStatus | ''>('');
-  const [hideCompleted, setHideCompleted] = useState(true);
-  const [sortField, setSortField] = useState<ProjectSortField>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const { user, token, isLoading } = useAuth();
+  const [listFilters, setListFilters, resetListFilters] = usePersistedFilters(
+    'projects',
+    DEFAULT_PROJECTS_LIST_FILTERS,
+    { userId: user?.id, merge: mergeProjectsListFilters }
+  );
+  const {
+    filterText,
+    filterOrg,
+    filterStatus,
+    filterRAG,
+    hideCompleted,
+    sortField,
+    sortDirection,
+  } = listFilters;
+  const setFilterText = (value: string) => setListFilters({ filterText: value });
+  const setFilterOrg = (value: string) => setListFilters({ filterOrg: value });
+  const setFilterStatus = (value: string) => setListFilters({ filterStatus: value });
+  const setFilterRAG = (value: RAGStatus | '') => setListFilters({ filterRAG: value });
+  const setHideCompleted = (value: boolean) => setListFilters({ hideCompleted: value });
+  const setSortField = (value: ProjectSortField) => setListFilters({ sortField: value });
+  const setSortDirection = (value: SortDirection | ((prev: SortDirection) => SortDirection)) =>
+    setListFilters((prev) => ({
+      ...prev,
+      sortDirection: typeof value === 'function' ? value(prev.sortDirection) : value,
+    }));
+  const { pinnedIds, isPinned, togglePinned } = usePinnedListItems('projects', user?.id);
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const canViewBudgetInfo = permissions?.canViewBudgetInfo || false;
   const router = useRouter();
@@ -423,60 +506,62 @@ export default function ProjectsPage() {
     if (filterRAG) result = result.filter(p => ragMap.get(p.Id)?.status === filterRAG);
     if (hideCompleted) result = result.filter(p => !p.StatusIsClosed && !p.StatusIsCancelled);
 
-    // Apply sort
-    result.sort((a, b) => {
-      let comparison = 0;
-      switch (sortField) {
-        case 'name':
-          comparison = a.ProjectName.localeCompare(b.ProjectName);
-          break;
-        case 'status':
-          comparison = (a.StatusName || '').localeCompare(b.StatusName || '');
-          break;
-        case 'tasks':
-          comparison = (Number(a.TotalTasks) || 0) - (Number(b.TotalTasks) || 0);
-          break;
-        case 'progress': {
-          const pA = a.TotalTasks ? (Number(a.CompletedTasks) || 0) / Number(a.TotalTasks) : 0;
-          const pB = b.TotalTasks ? (Number(b.CompletedTasks) || 0) / Number(b.TotalTasks) : 0;
-          comparison = pA - pB;
-          break;
-        }
-        case 'hours':
-          comparison = (Number(a.TotalWorkedHours) || 0) - (Number(b.TotalWorkedHours) || 0);
-          break;
-        case 'budget': {
-          if (!canViewBudgetInfo) {
-            comparison = 0;
+    // Apply sort (pinned projects stay on top, in pin order)
+    result.sort((a, b) =>
+      compareWithPinnedFirst(a, b, (p) => p.Id, pinnedIds, (left, right) => {
+        let comparison = 0;
+        switch (sortField) {
+          case 'name':
+            comparison = left.ProjectName.localeCompare(right.ProjectName);
+            break;
+          case 'status':
+            comparison = (left.StatusName || '').localeCompare(right.StatusName || '');
+            break;
+          case 'tasks':
+            comparison = (Number(left.TotalTasks) || 0) - (Number(right.TotalTasks) || 0);
+            break;
+          case 'progress': {
+            const pA = left.TotalTasks ? (Number(left.CompletedTasks) || 0) / Number(left.TotalTasks) : 0;
+            const pB = right.TotalTasks ? (Number(right.CompletedTasks) || 0) / Number(right.TotalTasks) : 0;
+            comparison = pA - pB;
             break;
           }
-          const bA = a.Budget ? (Number(a.BudgetSpent) || 0) / Number(a.Budget) : 0;
-          const bB = b.Budget ? (Number(b.BudgetSpent) || 0) / Number(b.Budget) : 0;
-          comparison = bA - bB;
-          break;
+          case 'hours':
+            comparison = (Number(left.TotalWorkedHours) || 0) - (Number(right.TotalWorkedHours) || 0);
+            break;
+          case 'budget': {
+            if (!canViewBudgetInfo) {
+              comparison = 0;
+              break;
+            }
+            const bA = left.Budget ? (Number(left.BudgetSpent) || 0) / Number(left.Budget) : 0;
+            const bB = right.Budget ? (Number(right.BudgetSpent) || 0) / Number(right.Budget) : 0;
+            comparison = bA - bB;
+            break;
+          }
+          case 'tickets':
+            comparison = internalTicketsEnabled
+              ? (Number(left.OpenTickets) || 0) - (Number(right.OpenTickets) || 0)
+              : 0;
+            break;
+          case 'startDate':
+            comparison = (left.StartDate ? new Date(left.StartDate).getTime() : 0) - (right.StartDate ? new Date(right.StartDate).getTime() : 0);
+            break;
+          case 'endDate':
+            comparison = (left.EndDate ? new Date(left.EndDate).getTime() : 0) - (right.EndDate ? new Date(right.EndDate).getTime() : 0);
+            break;
+          case 'rag': {
+            const order: Record<RAGStatus, number> = { red: 0, amber: 1, green: 2 };
+            comparison = order[ragMap.get(left.Id)?.status || 'green'] - order[ragMap.get(right.Id)?.status || 'green'];
+            break;
+          }
         }
-        case 'tickets':
-          comparison = internalTicketsEnabled
-            ? (Number(a.OpenTickets) || 0) - (Number(b.OpenTickets) || 0)
-            : 0;
-          break;
-        case 'startDate':
-          comparison = (a.StartDate ? new Date(a.StartDate).getTime() : 0) - (b.StartDate ? new Date(b.StartDate).getTime() : 0);
-          break;
-        case 'endDate':
-          comparison = (a.EndDate ? new Date(a.EndDate).getTime() : 0) - (b.EndDate ? new Date(b.EndDate).getTime() : 0);
-          break;
-        case 'rag': {
-          const order: Record<RAGStatus, number> = { red: 0, amber: 1, green: 2 };
-          comparison = order[ragMap.get(a.Id)?.status || 'green'] - order[ragMap.get(b.Id)?.status || 'green'];
-          break;
-        }
-      }
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
+        return sortDirection === 'asc' ? comparison : -comparison;
+      })
+    );
 
     return result;
-  }, [projects, filterText, filterOrg, filterStatus, filterRAG, hideCompleted, sortField, sortDirection, ragMap, canViewBudgetInfo]);
+  }, [projects, filterText, filterOrg, filterStatus, filterRAG, hideCompleted, sortField, sortDirection, ragMap, canViewBudgetInfo, pinnedIds, internalTicketsEnabled]);
 
   const additionalProjectColumnKeys = useMemo(() => {
     const excludedKeys = new Set<string>([
@@ -860,11 +945,7 @@ export default function ProjectsPage() {
                     primaryAction={{
                       label: 'Clear filters',
                       onClick: () => {
-                        setFilterText('');
-                        setFilterOrg('');
-                        setFilterStatus('');
-                        setFilterRAG('');
-                        setHideCompleted(false);
+                        resetListFilters();
                       }
                     }}
                     secondaryAction={{ label: 'Reload', onClick: loadProjects }}
@@ -878,6 +959,8 @@ export default function ProjectsPage() {
                       rag={ragMap.get(project.Id)!}
                       internalTicketsEnabled={internalTicketsEnabled}
                       canViewBudgetInfo={canViewBudgetInfo}
+                      pinned={isPinned(project.Id)}
+                      onTogglePin={togglePinned}
                       onEdit={handleEditProject}
                       onDelete={handleDeleteProject}
                       canEdit={permissions?.canManageProjects || false}
@@ -953,6 +1036,14 @@ export default function ProjectsPage() {
                           <tr key={project.Id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer" onClick={() => router.push(`/projects/${project.Id}`)}>
                             <td className="px-3 py-2 text-sm">
                               <div className="flex items-center gap-2">
+                                {isPinned(project.Id) && (
+                                  <Pin
+                                    size={14}
+                                    strokeWidth={2}
+                                    className="shrink-0 fill-[var(--pm-accent)] text-[var(--pm-accent)]"
+                                    aria-label="Pinned"
+                                  />
+                                )}
                                 <div className="text-sm font-medium text-gray-900 dark:text-white">{project.ProjectName}</div>
                                 {!!project.IsGlobal && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Global Project</span>}
                                 {!!project.IsHobby && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Hobby</span>}
@@ -1013,6 +1104,26 @@ export default function ProjectsPage() {
                             ))}
                             <td className="px-3 py-2 text-right">
                               <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePinned(project.Id);
+                                  }}
+                                  title={isPinned(project.Id) ? 'Unpin project' : 'Pin project to top'}
+                                  aria-label={isPinned(project.Id) ? 'Unpin project' : 'Pin project to top'}
+                                  className={`rounded p-1.5 transition-colors ${
+                                    isPinned(project.Id)
+                                      ? 'text-[var(--pm-accent)] hover:text-[var(--pm-accent-soft)]'
+                                      : 'text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'
+                                  }`}
+                                >
+                                  {isPinned(project.Id) ? (
+                                    <PinOff size={16} strokeWidth={1.75} />
+                                  ) : (
+                                    <Pin size={16} strokeWidth={1.75} />
+                                  )}
+                                </button>
                                 <button
                                   onClick={e => { e.stopPropagation(); router.push(`/projects/${project.Id}`); }}
                                   title="Open project"
@@ -1149,6 +1260,8 @@ function ProjectCard({
   rag,
   internalTicketsEnabled,
   canViewBudgetInfo,
+  pinned,
+  onTogglePin,
   onEdit, 
   onDelete,
   canEdit,
@@ -1158,6 +1271,8 @@ function ProjectCard({
   rag: { status: RAGStatus; reasons: string[] };
   internalTicketsEnabled: boolean;
   canViewBudgetInfo: boolean;
+  pinned: boolean;
+  onTogglePin: (projectId: number) => void;
   onEdit: (project: Project) => void; 
   onDelete: (id: number) => void;
   canEdit: boolean;
@@ -1191,8 +1306,16 @@ function ProjectCard({
         {/* Title row */}
         <div className="flex justify-between items-start gap-2 mb-1">
           <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-              {project.ProjectName}
+            <h3 className="font-bold text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors inline-flex items-center gap-1.5 min-w-0">
+              {pinned && (
+                <Pin
+                  size={14}
+                  strokeWidth={2}
+                  className="shrink-0 fill-[var(--pm-accent)] text-[var(--pm-accent)]"
+                  aria-label="Pinned"
+                />
+              )}
+              <span className="truncate">{project.ProjectName}</span>
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               {project.OrganizationName}
@@ -1285,6 +1408,19 @@ function ProjectCard({
 
         {/* Actions */}
         <div className="flex gap-2 pt-3 border-t border-gray-100 dark:border-gray-700 mt-3">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onTogglePin(project.Id); }}
+            className={`rounded-lg px-3 py-2 text-sm transition-colors ${
+              pinned
+                ? 'bg-[var(--pm-accent)]/15 text-[var(--pm-accent-soft)] hover:bg-[var(--pm-accent)]/25'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+            }`}
+            title={pinned ? 'Unpin project' : 'Pin project to top'}
+            aria-label={pinned ? 'Unpin project' : 'Pin project to top'}
+          >
+            {pinned ? <PinOff size={16} strokeWidth={1.75} /> : <Pin size={16} strokeWidth={1.75} />}
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); router.push(`/projects/${project.Id}`); }}
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"

@@ -13,7 +13,10 @@ import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import EmptyState from '@/components/EmptyState';
 import { NavModuleIcon } from '@/lib/navIcons';
-import { Search } from 'lucide-react';
+import { compareWithPinnedFirst } from '@/lib/pinnedListItems';
+import { usePinnedListItems } from '@/hooks/usePinnedListItems';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
+import { Pin, PinOff, Search } from 'lucide-react';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
@@ -70,8 +73,57 @@ interface Customer {
 type ApplicationSortField = 'name' | 'organization' | 'projects' | 'versions' | 'customers';
 type SortDirection = 'asc' | 'desc';
 
+type ApplicationsListFilters = {
+  searchQuery: string;
+  filterOrg: string;
+  filterVersions: 'all' | 'with' | 'without';
+  sortField: ApplicationSortField;
+  sortDirection: SortDirection;
+};
+
+const DEFAULT_APPLICATIONS_LIST_FILTERS: ApplicationsListFilters = {
+  searchQuery: '',
+  filterOrg: '',
+  filterVersions: 'all',
+  sortField: 'name',
+  sortDirection: 'asc',
+};
+
+const APPLICATION_SORT_FIELDS: ApplicationSortField[] = [
+  'name',
+  'organization',
+  'projects',
+  'versions',
+  'customers',
+];
+
+function mergeApplicationsListFilters(
+  stored: Record<string, unknown>,
+  defaults: ApplicationsListFilters
+): ApplicationsListFilters {
+  const filterVersions =
+    stored.filterVersions === 'with' || stored.filterVersions === 'without' || stored.filterVersions === 'all'
+      ? stored.filterVersions
+      : defaults.filterVersions;
+  const sortField = APPLICATION_SORT_FIELDS.includes(stored.sortField as ApplicationSortField)
+    ? (stored.sortField as ApplicationSortField)
+    : defaults.sortField;
+  const sortDirection =
+    stored.sortDirection === 'desc' || stored.sortDirection === 'asc'
+      ? stored.sortDirection
+      : defaults.sortDirection;
+  return {
+    searchQuery: typeof stored.searchQuery === 'string' ? stored.searchQuery : defaults.searchQuery,
+    filterOrg: typeof stored.filterOrg === 'string' ? stored.filterOrg : defaults.filterOrg,
+    filterVersions,
+    sortField,
+    sortDirection,
+  };
+}
+
 export default function ApplicationsPage() {
   const { user, token, isLoading: authLoading } = useAuth();
+  const { pinnedIds, isPinned, togglePinned } = usePinnedListItems('applications', user?.id);
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const router = useRouter();
 
@@ -89,12 +141,21 @@ export default function ApplicationsPage() {
     return stored === 'grid' || stored === 'list' ? stored : 'list';
   });
   const effectiveViewMode: 'list' | 'grid' = isMobile ? 'grid' : viewMode;
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterOrg, setFilterOrg] = useState('');
-  const [filterVersions, setFilterVersions] = useState<'all' | 'with' | 'without'>('all');
-  const [sortField, setSortField] = useState<ApplicationSortField>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-
+  const [listFilters, setListFilters, resetListFilters] = usePersistedFilters(
+    'applications',
+    DEFAULT_APPLICATIONS_LIST_FILTERS,
+    { userId: user?.id, merge: mergeApplicationsListFilters }
+  );
+  const { searchQuery, filterOrg, filterVersions, sortField, sortDirection } = listFilters;
+  const setSearchQuery = (value: string) => setListFilters({ searchQuery: value });
+  const setFilterOrg = (value: string) => setListFilters({ filterOrg: value });
+  const setFilterVersions = (value: 'all' | 'with' | 'without') => setListFilters({ filterVersions: value });
+  const setSortField = (value: ApplicationSortField) => setListFilters({ sortField: value });
+  const setSortDirection = (value: SortDirection | ((prev: SortDirection) => SortDirection)) =>
+    setListFilters((prev) => ({
+      ...prev,
+      sortDirection: typeof value === 'function' ? value(prev.sortDirection) : value,
+    }));
   // Modal
   const [showModal, setShowModal] = useState(false);
   const [editingApp, setEditingApp] = useState<Application | null>(null);
@@ -211,7 +272,7 @@ export default function ApplicationsPage() {
   const orgNames = Array.from(new Set(applications.map(a => a.OrganizationName).filter(Boolean))).sort();
 
   // Filtered and sorted applications
-  const filteredAndSortedApplications = (() => {
+  const filteredAndSortedApplications = useMemo(() => {
     let result = [...applications];
 
     const rowMatchesSearch = (app: Application, search: string): boolean => {
@@ -275,31 +336,33 @@ export default function ApplicationsPage() {
       result = result.filter(app => app.VersionCount === 0);
     }
 
-    // Sort
-    result.sort((a, b) => {
-      let comparison = 0;
-      switch (sortField) {
-        case 'name':
-          comparison = a.Name.localeCompare(b.Name);
-          break;
-        case 'organization':
-          comparison = (a.OrganizationName || '').localeCompare(b.OrganizationName || '');
-          break;
-        case 'projects':
-          comparison = a.ProjectCount - b.ProjectCount;
-          break;
-        case 'versions':
-          comparison = a.VersionCount - b.VersionCount;
-          break;
-        case 'customers':
-          comparison = a.CustomerCount - b.CustomerCount;
-          break;
-      }
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
+    // Sort (pinned applications stay on top)
+    result.sort((a, b) =>
+      compareWithPinnedFirst(a, b, (app) => app.Id, pinnedIds, (left, right) => {
+        let comparison = 0;
+        switch (sortField) {
+          case 'name':
+            comparison = left.Name.localeCompare(right.Name);
+            break;
+          case 'organization':
+            comparison = (left.OrganizationName || '').localeCompare(right.OrganizationName || '');
+            break;
+          case 'projects':
+            comparison = left.ProjectCount - right.ProjectCount;
+            break;
+          case 'versions':
+            comparison = left.VersionCount - right.VersionCount;
+            break;
+          case 'customers':
+            comparison = left.CustomerCount - right.CustomerCount;
+            break;
+        }
+        return sortDirection === 'asc' ? comparison : -comparison;
+      })
+    );
 
     return result;
-  })();
+  }, [applications, searchQuery, filterOrg, filterVersions, sortField, sortDirection, pinnedIds]);
 
   const additionalApplicationColumnKeys = useMemo(() => {
     const excludedKeys = new Set<string>([
@@ -973,11 +1036,7 @@ export default function ApplicationsPage() {
             message="Try adjusting search, organization, or versions filter."
             primaryAction={{
               label: 'Clear filters',
-              onClick: () => {
-                setSearchQuery('');
-                setFilterOrg('');
-                setFilterVersions('all');
-              },
+              onClick: () => resetListFilters(),
             }}
             secondaryAction={{ label: 'Reload', onClick: loadData }}
           />
@@ -1035,8 +1094,16 @@ export default function ApplicationsPage() {
                           </span>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                            {app.Name}
+                          <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {isPinned(app.Id) && (
+                              <Pin
+                                size={14}
+                                strokeWidth={2}
+                                className="shrink-0 fill-[var(--pm-accent)] text-[var(--pm-accent)]"
+                                aria-label="Pinned"
+                              />
+                            )}
+                            <span className="truncate">{app.Name}</span>
                           </div>
                           {app.Description && (
                             <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
@@ -1095,8 +1162,29 @@ export default function ApplicationsPage() {
                       </td>
                     ))}
                     <td className="px-6 py-4 text-right whitespace-nowrap">
-                      {(permissions?.canManageApplications || permissions?.canDeleteApplications) && (
-                        <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePinned(app.Id);
+                          }}
+                          title={isPinned(app.Id) ? 'Unpin application' : 'Pin application to top'}
+                          aria-label={isPinned(app.Id) ? 'Unpin application' : 'Pin application to top'}
+                          className={`rounded p-1.5 transition-colors ${
+                            isPinned(app.Id)
+                              ? 'text-[var(--pm-accent)] hover:text-[var(--pm-accent-soft)]'
+                              : 'text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'
+                          }`}
+                        >
+                          {isPinned(app.Id) ? (
+                            <PinOff size={16} strokeWidth={1.75} />
+                          ) : (
+                            <Pin size={16} strokeWidth={1.75} />
+                          )}
+                        </button>
+                        {(permissions?.canManageApplications || permissions?.canDeleteApplications) && (
+                          <>
                           {permissions?.canManageApplications && (
                             <button
                               onClick={(e) => { e.stopPropagation(); openEditModal(app); }}
@@ -1119,8 +1207,9 @@ export default function ApplicationsPage() {
                               </svg>
                             </button>
                           )}
-                        </div>
-                      )}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1147,12 +1236,41 @@ export default function ApplicationsPage() {
                           <NavModuleIcon href="/applications" size={28} />
                         </span>
                       )}
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
-                        {app.Name}
+                      <h3 className="inline-flex min-w-0 items-center gap-1.5 text-lg font-semibold text-gray-900 dark:text-white">
+                        {isPinned(app.Id) && (
+                          <Pin
+                            size={14}
+                            strokeWidth={2}
+                            className="shrink-0 fill-[var(--pm-accent)] text-[var(--pm-accent)]"
+                            aria-label="Pinned"
+                          />
+                        )}
+                        <span className="truncate">{app.Name}</span>
                       </h3>
                     </div>
-                    {(permissions?.canManageApplications || permissions?.canDeleteApplications) && (
-                      <div className="flex items-center gap-1 ml-2 shrink-0">
+                    <div className="ml-2 flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePinned(app.Id);
+                        }}
+                        title={isPinned(app.Id) ? 'Unpin application' : 'Pin application to top'}
+                        aria-label={isPinned(app.Id) ? 'Unpin application' : 'Pin application to top'}
+                        className={`rounded p-1.5 transition-colors ${
+                          isPinned(app.Id)
+                            ? 'text-[var(--pm-accent)] hover:text-[var(--pm-accent-soft)]'
+                            : 'text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'
+                        }`}
+                      >
+                        {isPinned(app.Id) ? (
+                          <PinOff size={16} strokeWidth={1.75} />
+                        ) : (
+                          <Pin size={16} strokeWidth={1.75} />
+                        )}
+                      </button>
+                      {(permissions?.canManageApplications || permissions?.canDeleteApplications) && (
+                      <>
                         {permissions?.canManageApplications && (
                           <button
                             onClick={(e) => { e.stopPropagation(); openEditModal(app); }}
@@ -1175,8 +1293,9 @@ export default function ApplicationsPage() {
                             </svg>
                           </button>
                         )}
-                      </div>
-                    )}
+                      </>
+                      )}
+                    </div>
                   </div>
 
                   {app.Description && (

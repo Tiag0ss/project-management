@@ -22,9 +22,9 @@ EOF
 
 **Message focus (mandatory):**
 - Lead with the actual feature, fix, or UX/behavior change in the diff.
-- Do **not** center the message on “add unit tests” / “add tests” when those tests only cover the real change.
-- Mention tests only when the commit is *primarily* test-only, or as a brief secondary clause if useful.
-- Example: prefer `Add sidebar menu visibility prefs per user` over `Add unit tests for nav menu visibility`.
+- **Never** mention unit tests, test files, Jest, coverage, `__tests__`, or phrases like “add/update tests” — even if the commit includes them, even if the commit is mostly tests.
+- If the commit is test-only, still phrase the message as the behavior/area covered (e.g. `Harden nav menu visibility prefs edge cases`), not as “add unit tests…”.
+- Example: prefer `Persist list filters per user in localStorage` over `Add unit tests for persisted filters`.
 
 5. Run `git status` after. Do not push unless asked. Do not amend unless the user requested it and safety rules allow.
 6. Never skip hooks (`--no-verify`) unless the user explicitly asks.

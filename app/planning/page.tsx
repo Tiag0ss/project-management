@@ -28,6 +28,7 @@ import { NavModuleIcon } from '@/lib/navIcons';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 import { loadOutlookCalendarEvents, type PlannerOutlookEvent } from './hooks/loadOutlookCalendarEvents';
 
 // Week days constant - reused throughout the component
@@ -131,6 +132,43 @@ const renderMilestoneTypeSvg = (iconSvg: string | null | undefined, className: s
   }
 };
 
+type PlanningAllocationFilters = {
+  startDate: string;
+  endDate: string;
+  userId: string;
+  projectId: string;
+  taskName: string;
+  hideClosedTasks: boolean;
+};
+
+const DEFAULT_PLANNING_ALLOCATION_FILTERS: PlanningAllocationFilters = {
+  startDate: '',
+  endDate: '',
+  userId: '',
+  projectId: '',
+  taskName: '',
+  hideClosedTasks: true,
+};
+
+function mergePlanningAllocationFilters(
+  stored: Record<string, unknown>,
+  defaults: PlanningAllocationFilters
+): PlanningAllocationFilters {
+  const asString = (key: keyof PlanningAllocationFilters): string =>
+    typeof stored[key] === 'string' ? (stored[key] as string) : (defaults[key] as string);
+  return {
+    startDate: asString('startDate'),
+    endDate: asString('endDate'),
+    userId: asString('userId'),
+    projectId: asString('projectId'),
+    taskName: asString('taskName'),
+    hideClosedTasks:
+      typeof stored.hideClosedTasks === 'boolean'
+        ? stored.hideClosedTasks
+        : defaults.hideClosedTasks,
+  };
+}
+
 export default function PlanningPage() {
   const { user, isLoading, token } = useAuth();
   const { mapColor } = useColorVision();
@@ -221,15 +259,11 @@ export default function PlanningPage() {
   const [activeTab, setActiveTab] = useState<'gantt' | 'allocations'>('gantt');
   const [ganttGroupBy, setGanttGroupBy] = useState<'resource' | 'customer' | 'project' | 'time-entries'>('resource');
   const [maxVisibleLevel, setMaxVisibleLevel] = useState<number>(0);
-  const [allocationFilters, setAllocationFilters] = useState({
-    startDate: '',
-    endDate: '',
-    userId: '',
-    projectId: '',
-    taskName: '',
-    /** Default: only open tasks — closed/cancelled lists grow unbounded over time */
-    hideClosedTasks: true,
-  });
+  const [allocationFilters, setAllocationFilters, resetAllocationFilters] = usePersistedFilters(
+    'planning-allocations',
+    DEFAULT_PLANNING_ALLOCATION_FILTERS,
+    { userId: user?.id, merge: mergePlanningAllocationFilters }
+  );
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const ganttContainerRef = useRef<HTMLDivElement>(null);
   const ganttViewOptionsRef = useRef<HTMLDivElement>(null);
@@ -7365,14 +7399,7 @@ export default function PlanningPage() {
   ].reduce((a, b) => a + b, 0);
 
   const clearAllocationFilters = () => {
-    setAllocationFilters({
-      startDate: '',
-      endDate: '',
-      userId: '',
-      projectId: '',
-      taskName: '',
-      hideClosedTasks: true,
-    });
+    resetAllocationFilters();
   };
 
   // ── Slice suggested hours ─────────────────────────────────────────────────

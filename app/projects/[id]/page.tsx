@@ -34,6 +34,8 @@ import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { isUnplannedLeafTask } from '@/lib/tasks/isUnplannedTask';
 import { stripHtml } from '@/lib/stripHtml';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
+import { optionalNumberArray, optionalPositiveNumber } from '@/lib/persistedFilters';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { getTaskAttachment } from '@/lib/api/taskAttachments';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
@@ -5992,6 +5994,51 @@ function OverviewTab({
 }
 
 // Tasks Tab Component
+type ProjectTaskListFilters = {
+  filterText: string;
+  filterStatus?: number;
+  filterPriority?: number;
+  filterAssignee?: number;
+  filterTaskType?: number;
+  hideClosed: boolean;
+  unplannedOnly: boolean;
+  sortField: string;
+  sortDirection: 'asc' | 'desc';
+  filterTagIds: number[];
+};
+
+const DEFAULT_PROJECT_TASK_FILTERS: ProjectTaskListFilters = {
+  filterText: '',
+  filterStatus: undefined,
+  filterPriority: undefined,
+  filterAssignee: undefined,
+  filterTaskType: undefined,
+  hideClosed: false,
+  unplannedOnly: false,
+  sortField: 'displayOrder',
+  sortDirection: 'asc',
+  filterTagIds: [],
+};
+
+function mergeProjectTaskFilters(
+  stored: Record<string, unknown>,
+  defaults: ProjectTaskListFilters
+): ProjectTaskListFilters {
+  const sortDirection = stored.sortDirection === 'desc' ? 'desc' : stored.sortDirection === 'asc' ? 'asc' : defaults.sortDirection;
+  return {
+    filterText: typeof stored.filterText === 'string' ? stored.filterText : defaults.filterText,
+    filterStatus: optionalPositiveNumber(stored.filterStatus),
+    filterPriority: optionalPositiveNumber(stored.filterPriority),
+    filterAssignee: optionalPositiveNumber(stored.filterAssignee),
+    filterTaskType: optionalPositiveNumber(stored.filterTaskType),
+    hideClosed: typeof stored.hideClosed === 'boolean' ? stored.hideClosed : defaults.hideClosed,
+    unplannedOnly: typeof stored.unplannedOnly === 'boolean' ? stored.unplannedOnly : defaults.unplannedOnly,
+    sortField: typeof stored.sortField === 'string' && stored.sortField ? stored.sortField : defaults.sortField,
+    sortDirection,
+    filterTagIds: optionalNumberArray(stored.filterTagIds),
+  };
+}
+
 function TasksTab({
   tasks,
   project,
@@ -6048,22 +6095,48 @@ function TasksTab({
   token: string;
 }) {
   const { pillStyle } = useColorVision();
+  const { user } = useAuth();
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
   const [showImportDropdown, setShowImportDropdown] = useState(false);
   const [showCheckStatusDropdown, setShowCheckStatusDropdown] = useState(false);
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [showTemplateSaveModal, setShowTemplateSaveModal] = useState(false);
   const [showTemplateApplyModal, setShowTemplateApplyModal] = useState(false);
-  const [filterText, setFilterText] = useState('');
-  const [filterStatus, setFilterStatus] = useState<number | undefined>(undefined);
-  const [filterPriority, setFilterPriority] = useState<number | undefined>(undefined);
-  const [filterAssignee, setFilterAssignee] = useState<number | undefined>(undefined);
-  const [filterTaskType, setFilterTaskType] = useState<number | undefined>(undefined);
-  const [hideClosed, setHideClosed] = useState(false);
-  const [unplannedOnly, setUnplannedOnly] = useState(false);
-  const [sortField, setSortField] = useState<string>('displayOrder');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [filterTagIds, setFilterTagIds] = useState<number[]>([]);
+  const [taskFilters, setTaskFilters, resetTaskFilters] = usePersistedFilters(
+    'project-tasks',
+    DEFAULT_PROJECT_TASK_FILTERS,
+    { userId: user?.id, scope: project.Id, merge: mergeProjectTaskFilters }
+  );
+  const {
+    filterText,
+    filterStatus,
+    filterPriority,
+    filterAssignee,
+    filterTaskType,
+    hideClosed,
+    unplannedOnly,
+    sortField,
+    sortDirection,
+    filterTagIds,
+  } = taskFilters;
+  const setFilterText = (value: string) => setTaskFilters({ filterText: value });
+  const setFilterStatus = (value: number | undefined) => setTaskFilters({ filterStatus: value });
+  const setFilterPriority = (value: number | undefined) => setTaskFilters({ filterPriority: value });
+  const setFilterAssignee = (value: number | undefined) => setTaskFilters({ filterAssignee: value });
+  const setFilterTaskType = (value: number | undefined) => setTaskFilters({ filterTaskType: value });
+  const setHideClosed = (value: boolean) => setTaskFilters({ hideClosed: value });
+  const setUnplannedOnly = (value: boolean) => setTaskFilters({ unplannedOnly: value });
+  const setSortField = (value: string) => setTaskFilters({ sortField: value });
+  const setSortDirection = (value: 'asc' | 'desc' | ((prev: 'asc' | 'desc') => 'asc' | 'desc')) =>
+    setTaskFilters((prev) => ({
+      ...prev,
+      sortDirection: typeof value === 'function' ? value(prev.sortDirection) : value,
+    }));
+  const setFilterTagIds = (value: number[] | ((prev: number[]) => number[])) =>
+    setTaskFilters((prev) => ({
+      ...prev,
+      filterTagIds: typeof value === 'function' ? value(prev.filterTagIds) : value,
+    }));
   const [taskTagMap, setTaskTagMap] = useState<Map<number, Array<{ id: number; name: string; color: string }>>>(new Map());
   const [tagFilterOptions, setTagFilterOptions] = useState<Array<{ value: number; label: string; subtitle?: string }>>([]);
   const [editingRowTaskId, setEditingRowTaskId] = useState<number | null>(null);
@@ -8540,14 +8613,7 @@ function TasksTab({
                 <button
                   type="button"
                   onClick={() => {
-                    setFilterText('');
-                    setFilterStatus(undefined);
-                    setFilterPriority(undefined);
-                    setFilterAssignee(undefined);
-                    setFilterTaskType(undefined);
-                    setFilterTagIds([]);
-                    setHideClosed(false);
-                    setUnplannedOnly(false);
+                    resetTaskFilters();
                   }}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                 >
