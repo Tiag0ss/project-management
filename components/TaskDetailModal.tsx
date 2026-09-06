@@ -2478,15 +2478,33 @@ export default function TaskDetailModal({
                   </button>
                 )}
 
-                {headerCustomerName && isFieldVisible('headerCustomer') && (
-                  <span
-                    className="inline-flex h-7 max-w-[12rem] items-center gap-1 truncate rounded-md bg-teal-100 px-2 text-xs font-medium text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
-                    title={`Customer: ${headerCustomerName}`}
-                  >
-                    <span aria-hidden>🏢</span>
-                    <span className="truncate">{headerCustomerName}</span>
-                  </span>
-                )}
+                {headerCustomerName && isFieldVisible('headerCustomer') && (() => {
+                  const headerCustomerId =
+                    Number(formData.customerId || task?.CustomerId || project?.CustomerId || 0) || null;
+                  if (headerCustomerId) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/customers/${headerCustomerId}`)}
+                        className="inline-flex h-7 max-w-[12rem] items-center gap-1 truncate rounded-md bg-teal-100 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:hover:bg-teal-900/50"
+                        title={`Open customer ${headerCustomerName}`}
+                      >
+                        <span aria-hidden>🏢</span>
+                        <span className="truncate">{headerCustomerName}</span>
+                        <span aria-hidden>↗</span>
+                      </button>
+                    );
+                  }
+                  return (
+                    <span
+                      className="inline-flex h-7 max-w-[12rem] items-center gap-1 truncate rounded-md bg-teal-100 px-2 text-xs font-medium text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
+                      title={`Customer: ${headerCustomerName}`}
+                    >
+                      <span aria-hidden>🏢</span>
+                      <span className="truncate">{headerCustomerName}</span>
+                    </span>
+                  );
+                })()}
 
                 {task.SynapseNoteUrl && isFieldVisible('headerSynapse') && (
                   <a
@@ -3018,9 +3036,22 @@ export default function TaskDetailModal({
               <div>
                 {isGlobalProject && isFieldVisible('customerId') && (
                   <div className="mb-3">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Customer *
-                    </label>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Customer *
+                      </label>
+                      {typeof formData.customerId === 'number' && formData.customerId > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/customers/${formData.customerId}`)}
+                          className="inline-flex h-7 items-center gap-1 rounded-md bg-teal-100 px-2 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:hover:bg-teal-900/50"
+                          title="Open customer page"
+                        >
+                          Open customer
+                          <span aria-hidden>↗</span>
+                        </button>
+                      )}
+                    </div>
                     <SearchableSelect
                       options={customers.map((customer) => ({
                         id: customer.Id,
@@ -3230,9 +3261,22 @@ export default function TaskDetailModal({
               )}
               {applications.length > 0 && isFieldVisible('application') && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Application (Optional)
-                  </label>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Application (Optional)
+                    </label>
+                    {typeof formData.applicationId === 'number' && formData.applicationId > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/applications/${formData.applicationId}`)}
+                        className="inline-flex h-7 items-center gap-1 rounded-md bg-indigo-100 px-2 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
+                        title="Open application page"
+                      >
+                        Open application
+                        <span aria-hidden>↗</span>
+                      </button>
+                    )}
+                  </div>
                   <SearchableSelectComponent
                     value={formData.applicationId?.toString() ?? ''}
                     onChange={(val) => {

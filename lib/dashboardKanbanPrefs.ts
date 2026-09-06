@@ -1,6 +1,7 @@
 export type KanbanOrgFilter = 'all' | number;
 
 const ORG_COOKIE = 'pm_dashboard_kanban_org';
+/** Shared by Dashboard Assigned Kanban and Project Kanban boards (per organization). */
 const HIDDEN_STATUSES_COOKIE = 'pm_dashboard_kanban_hidden_statuses';
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365; // 1 year
 

@@ -38,6 +38,14 @@ import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsForm
 import { getTaskAttachment } from '@/lib/api/taskAttachments';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
 import { getAllGridPreferences, saveGridPreference } from '@/lib/api/gridPreferences';
+import {
+  filterVisibleStatuses,
+  getHiddenStatusIdsForOrg,
+  getHiddenStatusesByOrgFromCookie,
+  setHiddenStatusesByOrgCookie,
+  withHiddenStatusToggled,
+  type HiddenStatusesByOrg,
+} from '@/lib/dashboardKanbanPrefs';
 import { projectMilestonesApi, ProjectMilestone, SaveProjectMilestoneData } from '@/lib/api/projectMilestones';
 import { CustomFieldValues, extractCustomFieldValues } from '@/lib/customFields';
 import SegmentedTagBadge from '@/components/tags/SegmentedTagBadge';
@@ -9915,11 +9923,30 @@ function KanbanTab({
   // Local copy of tasks for optimistic drag-and-drop ordering
   const [localTasks, setLocalTasks] = useState<Task[]>(tasks);
   const draggedTaskId = useRef<number | null>(null);
+  const [hiddenStatusesByOrg, setHiddenStatusesByOrg] = useState<HiddenStatusesByOrg>({});
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
+  const statusPickerRef = useRef<HTMLDivElement | null>(null);
 
   // Sync when parent refreshes tasks
   useEffect(() => {
     setLocalTasks(tasks);
   }, [tasks]);
+
+  useEffect(() => {
+    setHiddenStatusesByOrg(getHiddenStatusesByOrgFromCookie());
+  }, []);
+
+  useEffect(() => {
+    if (!statusPickerOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (statusPickerRef.current && target && !statusPickerRef.current.contains(target)) {
+        setStatusPickerOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, [statusPickerOpen]);
 
   useEffect(() => {
     loadTaskStatuses();
@@ -9934,6 +9961,14 @@ function KanbanTab({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const toggleStatusVisibility = (statusId: number, visible: boolean) => {
+    setHiddenStatusesByOrg((prev) => {
+      const next = withHiddenStatusToggled(prev, project.OrganizationId, statusId, !visible);
+      setHiddenStatusesByOrgCookie(next);
+      return next;
+    });
   };
 
   const getTasksByStatus = (statusId: number) => {
@@ -10047,16 +10082,67 @@ function KanbanTab({
     return <div className="text-center py-12">Loading Kanban board...</div>;
   }
 
-  const statuses = taskStatuses.length > 0 
-    ? taskStatuses.sort((a, b) => a.SortOrder - b.SortOrder)
-    : [{ Id: -1, StatusName: 'To Do', SortOrder: 0 }, { Id: -2, StatusName: 'In Progress', SortOrder: 1 }, { Id: -3, StatusName: 'Done', SortOrder: 2 }] as StatusValue[];
+  const allStatuses =
+    taskStatuses.length > 0
+      ? [...taskStatuses].sort((a, b) => a.SortOrder - b.SortOrder)
+      : ([{ Id: -1, StatusName: 'To Do', SortOrder: 0 }, { Id: -2, StatusName: 'In Progress', SortOrder: 1 }, { Id: -3, StatusName: 'Done', SortOrder: 2 }] as StatusValue[]);
 
+  const hiddenIds = getHiddenStatusIdsForOrg(hiddenStatusesByOrg, project.OrganizationId);
+  const statuses = filterVisibleStatuses(allStatuses, hiddenIds);
+  const hiddenCount = allStatuses.length - statuses.length;
   const columnsPerRow = Math.min(Math.max(statuses.length, 1), 6);
 
   return (
     <div className="h-[calc(100vh-220px)] min-h-[560px] flex flex-col">
-      {canCreate && (
-        <div className="mb-4 flex items-center justify-end">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div ref={statusPickerRef} className="relative min-w-[160px]">
+          <span className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+            Statuses
+          </span>
+          <button
+            type="button"
+            onClick={() => setStatusPickerOpen((open) => !open)}
+            className="w-full min-w-[10rem] h-9 px-3 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-left"
+            aria-expanded={statusPickerOpen}
+            aria-haspopup="dialog"
+          >
+            {hiddenCount === 0 ? 'All statuses' : `${statuses.length}/${allStatuses.length} visible`}
+          </button>
+          {statusPickerOpen && (
+            <div
+              role="dialog"
+              aria-label="Kanban status visibility"
+              className="absolute z-30 mt-1 w-72 max-h-72 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg p-2"
+            >
+              <p className="px-1 pb-2 text-[11px] text-gray-500 dark:text-gray-400">
+                Choose which status columns to show
+              </p>
+              {allStatuses.map((status) => {
+                const visible = !hiddenIds.includes(Number(status.Id));
+                return (
+                  <label
+                    key={`project-kanban-status-toggle-${status.Id}`}
+                    className="flex items-center gap-2 px-1 py-1.5 text-sm text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/60 rounded cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visible}
+                      onChange={(e) => toggleStatusVisibility(Number(status.Id), e.target.checked)}
+                    />
+                    <span
+                      className="truncate"
+                      style={status.ColorCode ? { color: status.ColorCode } : undefined}
+                    >
+                      {status.StatusName}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {canCreate && (
           <button
             onClick={onCreateTask}
             className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium inline-flex items-center gap-2"
@@ -10064,9 +10150,14 @@ function KanbanTab({
             <span className="text-base leading-none">+</span>
             New Task
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
+      {statuses.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-gray-300 dark:border-gray-600 p-8 text-sm text-gray-500 dark:text-gray-400">
+          No status columns visible. Use Statuses to show at least one column.
+        </div>
+      ) : (
       <div className="w-full overflow-x-auto flex-1 min-h-0">
         <div
           className="grid gap-4 h-full"
@@ -10204,6 +10295,7 @@ function KanbanTab({
         ))}
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -145,7 +145,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { hidden: navMenuHidden, isVisible: isNavMenuVisible, setHidden: setNavMenuHidden } =
     useNavMenuVisibility(user?.id);
   const brandLabel = (companyName || '').trim() || 'Project Management';
-  const brandInitial = brandLabel.charAt(0).toUpperCase() || 'P';
 
   useEffect(() => {
     setPinnedExpanded(readSidebarPinned());
@@ -533,30 +532,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <AppChromeTools
             toolsOnly
             leading={
-              <div className="flex min-w-0 max-w-[min(100%,20rem)] items-center gap-2 sm:max-w-[24rem]">
-                {companyLogoUrl ? (
-                  <img
-                    src={companyLogoUrl}
-                    alt={brandLabel}
-                    className="h-8 w-8 shrink-0 rounded-md bg-[var(--pm-surface)] object-contain ring-1 ring-[var(--pm-border)]"
-                  />
-                ) : (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-600 text-sm font-bold text-white">
-                    {brandInitial}
-                  </div>
-                )}
-                <span className="truncate text-sm font-semibold text-[var(--pm-text)]" title={brandLabel}>
-                  {brandLabel}
+              isDemoMode ? (
+                <span
+                  className="inline-flex shrink-0 items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                  title="Demo mode is enabled"
+                >
+                  Demo
                 </span>
-                {isDemoMode && (
-                  <span
-                    className="hidden shrink-0 items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 sm:inline-flex dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-                    title="Demo mode is enabled"
-                  >
-                    Demo
-                  </span>
-                )}
-              </div>
+              ) : null
             }
           />
         </header>
