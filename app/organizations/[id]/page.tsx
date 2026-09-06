@@ -16,6 +16,7 @@ import { projectsApi, Project } from '@/lib/api/projects';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageTabs from '@/components/PageTabs';
 import PageStickyChrome from '@/components/PageStickyChrome';
+import PageStickyActions, { pageActionButtonClass } from '@/components/PageStickyActions';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
@@ -24,7 +25,9 @@ import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
 import { TaskTypeIcon, TaskTypeIconPicker, resolveTaskTypeIcon } from '@/lib/taskTypeIcons';
-import TaskFormVisibilitySettingsPanel from '@/components/admin/TaskFormVisibilitySettingsPanel';
+import TaskFormVisibilitySettingsPanel, {
+  type TaskFormVisibilityActionsState,
+} from '@/components/admin/TaskFormVisibilitySettingsPanel';
 import ExpenseTaxonomyManager from '@/components/ExpenseTaxonomyManager';
 import OrganizationIntegrationsPanel from '@/components/OrganizationIntegrationsPanel';
 import { useUrlTab } from '@/hooks/useUrlTab';
@@ -75,7 +78,8 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
   const [isSaving, setIsSaving] = useState(false);
   const [internalTicketsEnabled, setInternalTicketsEnabled] = useState(true);
   const [featureFlagsLoaded, setFeatureFlagsLoaded] = useState(false);
-  
+  const [taskFormActions, setTaskFormActions] = useState<TaskFormVisibilityActionsState | null>(null);
+
   // Attachments state
   const [attachments, setAttachments] = useState<any[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -437,6 +441,8 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
                 organizationId={orgId}
                 token={token}
                 canManage={canManageSettings}
+                actionsPlacement="none"
+                onActionsStateChange={setTaskFormActions}
                 onRequestSyncConfirm={(onConfirm) => {
                   showConfirm(
                     'Sync from global',
@@ -464,6 +470,27 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
             )}
           </div>
         </main>
+
+      {activeTab === 'task-form' && taskFormActions?.canManage && (
+        <PageStickyActions>
+          <button
+            type="button"
+            onClick={taskFormActions.onSync}
+            disabled={taskFormActions.saving || taskFormActions.syncing}
+            className={pageActionButtonClass.secondary}
+          >
+            {taskFormActions.syncing ? 'Syncing…' : 'Sync from global'}
+          </button>
+          <button
+            type="button"
+            onClick={taskFormActions.onSave}
+            disabled={taskFormActions.saving || taskFormActions.syncing}
+            className={pageActionButtonClass.primary}
+          >
+            {taskFormActions.saving ? 'Saving…' : 'Save'}
+          </button>
+        </PageStickyActions>
+      )}
 
       {/* Edit Organization Modal */}
       {showEditModal && (

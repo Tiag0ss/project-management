@@ -11,6 +11,7 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageTabs from '@/components/PageTabs';
 import PageStickyChrome from '@/components/PageStickyChrome';
+import PageStickyActions, { pageActionButtonClass } from '@/components/PageStickyActions';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
 import TaskDetailModal from '@/components/TaskDetailModal';
@@ -1482,7 +1483,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Customer Settings</h3>
             
-            <form onSubmit={handleSaveSettings} className="space-y-6">
+            <form id="customer-settings-form" onSubmit={handleSaveSettings} className="space-y-6">
               {/* Basic Information */}
               <div>
                 <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-4">Basic Information</h4>
@@ -1666,17 +1667,6 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
                 />
               </div>
 
-              {permissions?.canManageCustomers && (
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2 rounded-lg transition-colors font-medium"
-                >
-                  {isSaving ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-              )}
             </form>
           </div>
         )}
@@ -1697,6 +1687,19 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
           </div>
         )}
       </main>
+
+      {activeTab === 'settings' && permissions?.canManageCustomers && (
+        <PageStickyActions>
+          <button
+            type="submit"
+            form="customer-settings-form"
+            disabled={isSaving}
+            className={pageActionButtonClass.primary}
+          >
+            {isSaving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </PageStickyActions>
+      )}
 
       {/* Add User Modal */}
       {showAddUserModal && (

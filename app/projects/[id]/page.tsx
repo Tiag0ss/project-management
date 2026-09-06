@@ -21,6 +21,7 @@ import { tagsApi } from '@/lib/api/tags';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageTabs from '@/components/PageTabs';
 import PageStickyChrome from '@/components/PageStickyChrome';
+import PageStickyActions, { pageActionButtonClass } from '@/components/PageStickyActions';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ChangeHistory from '@/components/ChangeHistory';
@@ -90,6 +91,8 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
   const [activeTab, setActiveTab] = useUrlTab<ProjectDetailTab>(PROJECT_DETAIL_TABS, 'overview', {
     clearParamsOnChange: ['taskId', 'task'],
   });
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [mappingsSaving, setMappingsSaving] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -2852,7 +2855,14 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
           )}
 
           {activeTab === 'settings' && (
-            <SettingsTab project={project} token={token!} onSaved={handleProjectSaved} canViewBudgetInfo={permissions?.canViewBudgetInfo || false} />
+            <SettingsTab
+              project={project}
+              token={token!}
+              onSaved={handleProjectSaved}
+              canViewBudgetInfo={permissions?.canViewBudgetInfo || false}
+              hideInlineSave
+              onSavingChange={setSettingsSaving}
+            />
           )}
 
           {activeTab === 'mappings' && jiraIntegration?.IsEnabled && jiraIntegration?.JiraProjectsUrl && (
@@ -2860,6 +2870,8 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
               project={project}
               token={token!}
               onSaved={handleProjectSaved}
+              hideInlineSave
+              onSavingChange={setMappingsSaving}
             />
           )}
 
@@ -2895,6 +2907,31 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
             />
           )}
         </div>
+
+      {(activeTab === 'settings' || activeTab === 'mappings') && (
+        <PageStickyActions>
+          {activeTab === 'settings' && (
+            <button
+              type="submit"
+              form="project-settings-form"
+              disabled={settingsSaving}
+              className={pageActionButtonClass.primary}
+            >
+              {settingsSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+          )}
+          {activeTab === 'mappings' && (
+            <button
+              type="submit"
+              form="project-mappings-form"
+              disabled={mappingsSaving}
+              className={pageActionButtonClass.primary}
+            >
+              {mappingsSaving ? 'Saving…' : 'Save mappings'}
+            </button>
+          )}
+        </PageStickyActions>
+      )}
 
       {/* Edit Project Modal */}
       {showEditModal && project && (
@@ -12645,7 +12682,19 @@ function ReportingTab({ projectId, organizationId, token, onOpenTask }: { projec
 }
 
 // Settings Tab Component
-function ProjectMappingsTab({ project, token, onSaved }: { project: Project; token: string; onSaved: () => void }) {
+function ProjectMappingsTab({
+  project,
+  token,
+  onSaved,
+  hideInlineSave = false,
+  onSavingChange,
+}: {
+  project: Project;
+  token: string;
+  onSaved: () => void;
+  hideInlineSave?: boolean;
+  onSavingChange?: (saving: boolean) => void;
+}) {
   const { showToast } = useToast();
   const [taskStatuses, setTaskStatuses] = useState<StatusValue[]>([]);
   const [taskPriorities, setTaskPriorities] = useState<StatusValue[]>([]);
@@ -12657,6 +12706,11 @@ function ProjectMappingsTab({ project, token, onSaved }: { project: Project; tok
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState('');
   const [_success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    onSavingChange?.(isLoading);
+    return () => onSavingChange?.(false);
+  }, [isLoading, onSavingChange]);
 
   const parseProjectMapping = (value: unknown): Record<string, string> => {
     if (!value || typeof value !== 'string') {
@@ -12851,29 +12905,47 @@ function ProjectMappingsTab({ project, token, onSaved }: { project: Project; tok
           </div>
         )}
 
-        {isInitializing ? (
-          <div className="text-gray-600 dark:text-gray-400">Loading mapping options...</div>
-        ) : (
-          <form onSubmit={saveMappings} className="space-y-4">
-            {renderMappingSection('Status Mapping', statusMappings, setStatusMappings, statusOptions, 'External status (e.g. In Progress)')}
-            {renderMappingSection('Priority Mapping', priorityMappings, setPriorityMappings, priorityOptions, 'External priority (e.g. Highest)')}
-            {renderMappingSection('Task Type Mapping', typeMappings, setTypeMappings, typeOptions, 'External issue type (e.g. Story)')}
+        <form id="project-mappings-form" onSubmit={saveMappings} className="space-y-4">
+          {isInitializing ? (
+            <div className="text-gray-600 dark:text-gray-400">Loading mapping options...</div>
+          ) : (
+            <>
+              {renderMappingSection('Status Mapping', statusMappings, setStatusMappings, statusOptions, 'External status (e.g. In Progress)')}
+              {renderMappingSection('Priority Mapping', priorityMappings, setPriorityMappings, priorityOptions, 'External priority (e.g. Highest)')}
+              {renderMappingSection('Task Type Mapping', typeMappings, setTypeMappings, typeOptions, 'External issue type (e.g. Story)')}
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-            >
-              {isLoading ? 'Saving...' : 'Save mappings'}
-            </button>
-          </form>
-        )}
+              {!hideInlineSave && (
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+                >
+                  {isLoading ? 'Saving...' : 'Save mappings'}
+                </button>
+              )}
+            </>
+          )}
+        </form>
       </div>
     </div>
   );
 }
 
-function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: Project; token: string; onSaved: () => void; canViewBudgetInfo: boolean }) {
+function SettingsTab({
+  project,
+  token,
+  onSaved,
+  canViewBudgetInfo,
+  hideInlineSave = false,
+  onSavingChange,
+}: {
+  project: Project;
+  token: string;
+  onSaved: () => void;
+  canViewBudgetInfo: boolean;
+  hideInlineSave?: boolean;
+  onSavingChange?: (saving: boolean) => void;
+}) {
   const { showToast } = useToast();
   const [formData, setFormData] = useState({
     organizationId: project.OrganizationId,
@@ -12905,6 +12977,11 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
   const [isLoading, setIsLoading] = useState(false);
   const [_success, setSuccess] = useState(false);
   const [customFields, setCustomFields] = useState<CustomFieldValues>(() => extractCustomFieldValues(project));
+
+  useEffect(() => {
+    onSavingChange?.(isLoading);
+    return () => onSavingChange?.(false);
+  }, [isLoading, onSavingChange]);
 
   useEffect(() => {
     loadOrganizations();
@@ -13089,7 +13166,7 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="project-settings-form" onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Organization *
@@ -13377,13 +13454,15 @@ function SettingsTab({ project, token, onSaved, canViewBudgetInfo }: { project: 
             onChange={setCustomFields}
           />
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium mt-4"
-          >
-            {isLoading ? 'Saving...' : 'Save Changes'}
-          </button>
+          {!hideInlineSave && (
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg transition-colors font-medium mt-4"
+            >
+              {isLoading ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
         </form>
       </div>
     </div>
