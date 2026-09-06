@@ -11,6 +11,7 @@ import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import CallRecordFormModal, { CallRecordFormValues } from '@/components/CallRecordFormModal';
 import { extractCustomFieldValues } from '@/lib/customFields';
+import { NavModuleIcon } from '@/lib/navIcons';
 
 interface CallRecord {
   Id: number;
@@ -663,7 +664,9 @@ export default function CallRecordsPage() {
             </div>
           ) : callRecords.length === 0 ? (
             <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-              <div className="text-5xl mb-3">📞</div>
+              <div className="mb-3 flex justify-center text-[var(--pm-muted)] opacity-70">
+                <NavModuleIcon href="/call-records" size={40} />
+              </div>
               <p className="text-lg">No call records yet.</p>
               <p className="text-sm">Add calls manually or import from CSV.</p>
             </div>

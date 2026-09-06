@@ -12,6 +12,8 @@ import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import EmptyState from '@/components/EmptyState';
+import { NavModuleIcon } from '@/lib/navIcons';
+import { Search } from 'lucide-react';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
@@ -952,7 +954,7 @@ export default function ApplicationsPage() {
         {/* Applications View */}
         {filteredAndSortedApplications.length === 0 && applications.length === 0 ? (
           <EmptyState
-            icon="📦"
+            icon={<NavModuleIcon href="/applications" size={40} className="text-[var(--pm-muted)] opacity-70" />}
             title="No applications yet"
             message="Get started by creating your first application"
             primaryAction={
@@ -966,7 +968,7 @@ export default function ApplicationsPage() {
           />
         ) : filteredAndSortedApplications.length === 0 ? (
           <EmptyState
-            icon="🔎"
+            icon={<Search size={40} strokeWidth={1.5} className="text-[var(--pm-muted)] opacity-70" aria-hidden />}
             title="No applications match the selected filters"
             message="Try adjusting search, organization, or versions filter."
             primaryAction={{
@@ -1028,7 +1030,9 @@ export default function ApplicationsPage() {
                            
                           <img src={app.ImagePath} alt="" className="h-9 w-9 rounded object-cover border border-gray-200 dark:border-gray-600 shrink-0" />
                         ) : (
-                          <span className="text-2xl shrink-0">📦</span>
+                          <span className="shrink-0 text-[var(--pm-muted)] opacity-80">
+                            <NavModuleIcon href="/applications" size={28} />
+                          </span>
                         )}
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -1139,7 +1143,9 @@ export default function ApplicationsPage() {
                          
                         <img src={app.ImagePath} alt="" className="h-8 w-8 rounded object-cover border border-gray-200 dark:border-gray-600 shrink-0" />
                       ) : (
-                        <span className="text-2xl shrink-0">📦</span>
+                        <span className="shrink-0 text-[var(--pm-muted)] opacity-80">
+                          <NavModuleIcon href="/applications" size={28} />
+                        </span>
                       )}
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
                         {app.Name}
@@ -1452,8 +1458,8 @@ export default function ApplicationsPage() {
                         className="h-14 w-14 rounded-lg object-cover border border-gray-200 dark:border-gray-600 bg-white"
                       />
                     ) : (
-                      <div className="h-14 w-14 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center text-2xl bg-gray-50 dark:bg-gray-700/40">
-                        📦
+                      <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-[var(--pm-muted)] dark:border-gray-600 dark:bg-gray-700/40">
+                        <NavModuleIcon href="/applications" size={28} className="opacity-70" />
                       </div>
                     )}
                     <input

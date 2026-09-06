@@ -19,6 +19,8 @@ import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import ProjectFormModal from '@/components/ProjectFormModal';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
+import { NavModuleIcon } from '@/lib/navIcons';
+import { Search } from 'lucide-react';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -642,60 +644,10 @@ export default function ProjectsPage() {
     <div className="w-full">
       <main className="w-full">
         <div className="space-y-2">
-          {/* Header + health chips + actions — one compact band */}
+          {/* Header + actions — health chips live in the filter bar */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h2 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">My Projects</h2>
-                {projects.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setFilterRAG('')}
-                      className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                        filterRAG === ''
-                          ? 'border-[var(--pm-accent)] bg-[var(--pm-accent)]/15 text-[var(--pm-accent-soft)]'
-                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
-                      }`}
-                    >
-                      {ragSummary.total} total
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterRAG(filterRAG === 'red' ? '' : 'red')}
-                      className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                        filterRAG === 'red'
-                          ? 'border-red-500 bg-red-500/15 text-red-600 dark:text-red-300'
-                          : 'border-gray-300 bg-white text-red-700 hover:bg-red-50 dark:border-gray-600 dark:bg-gray-800 dark:text-red-300'
-                      }`}
-                    >
-                      ● {ragSummary.red} red
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterRAG(filterRAG === 'amber' ? '' : 'amber')}
-                      className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                        filterRAG === 'amber'
-                          ? 'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300'
-                          : 'border-gray-300 bg-white text-amber-700 hover:bg-amber-50 dark:border-gray-600 dark:bg-gray-800 dark:text-amber-300'
-                      }`}
-                    >
-                      ● {ragSummary.amber} amber
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterRAG(filterRAG === 'green' ? '' : 'green')}
-                      className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                        filterRAG === 'green'
-                          ? 'border-green-500 bg-green-500/15 text-green-700 dark:text-green-300'
-                          : 'border-gray-300 bg-white text-green-700 hover:bg-green-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-300'
-                      }`}
-                    >
-                      ● {ragSummary.green} green
-                    </button>
-                  </div>
-                )}
-              </div>
+              <h2 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">My Projects</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {projects.length} project{projects.length !== 1 ? 's' : ''} across your organisations
               </p>
@@ -775,7 +727,7 @@ export default function ProjectsPage() {
             </div>
           ) : projects.length === 0 ? (
             <EmptyState
-              icon="📋"
+              icon={<NavModuleIcon href="/projects" size={40} className="text-[var(--pm-muted)] opacity-70" />}
               title="No projects yet"
               message="Get started by creating your first project or reload if you expected data."
               primaryAction={permissions?.canCreateProjects ? { label: 'Create Project', onClick: handleCreateProject } : undefined}
@@ -791,8 +743,57 @@ export default function ProjectsPage() {
                   filterText.trim() ? 1 : 0,
                   filterOrg ? 1 : 0,
                   filterStatus ? 1 : 0,
+                  filterRAG ? 1 : 0,
                   hideCompleted ? 1 : 0,
                 ].reduce((a, b) => a + b, 0)}
+                headerMiddle={
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilterRAG('')}
+                      className={`rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums transition-colors ${
+                        filterRAG === ''
+                          ? 'border-[var(--pm-accent)] bg-[var(--pm-accent)]/15 text-[var(--pm-accent-soft)]'
+                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                      }`}
+                    >
+                      {ragSummary.total} total
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterRAG(filterRAG === 'red' ? '' : 'red')}
+                      className={`rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums transition-colors ${
+                        filterRAG === 'red'
+                          ? 'border-red-500 bg-red-500/15 text-red-600 dark:text-red-300'
+                          : 'border-gray-300 bg-white text-red-700 hover:bg-red-50 dark:border-gray-600 dark:bg-gray-800 dark:text-red-300'
+                      }`}
+                    >
+                      ● {ragSummary.red} red
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterRAG(filterRAG === 'amber' ? '' : 'amber')}
+                      className={`rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums transition-colors ${
+                        filterRAG === 'amber'
+                          ? 'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                          : 'border-gray-300 bg-white text-amber-700 hover:bg-amber-50 dark:border-gray-600 dark:bg-gray-800 dark:text-amber-300'
+                      }`}
+                    >
+                      ● {ragSummary.amber} amber
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterRAG(filterRAG === 'green' ? '' : 'green')}
+                      className={`rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums transition-colors ${
+                        filterRAG === 'green'
+                          ? 'border-green-500 bg-green-500/15 text-green-700 dark:text-green-300'
+                          : 'border-gray-300 bg-white text-green-700 hover:bg-green-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-300'
+                      }`}
+                    >
+                      ● {ragSummary.green} green
+                    </button>
+                  </div>
+                }
                 headerExtra={
                   <span className="text-xs text-gray-400">
                     {filteredAndSortedProjects.length !== projects.length
@@ -853,7 +854,7 @@ export default function ProjectsPage() {
 
               {filteredAndSortedProjects.length === 0 ? (
                   <EmptyState
-                    icon="🔎"
+                    icon={<Search size={40} strokeWidth={1.5} className="text-[var(--pm-muted)] opacity-70" aria-hidden />}
                     title="No projects match the selected filters"
                     message="Try adjusting search, organization, status, or hidden-completed settings."
                     primaryAction={{

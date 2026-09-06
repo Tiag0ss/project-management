@@ -22,7 +22,9 @@ import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
+import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import PageTabs from '@/components/PageTabs';
+import { NavModuleIcon } from '@/lib/navIcons';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -224,7 +226,9 @@ export default function PlanningPage() {
     endDate: '',
     userId: '',
     projectId: '',
-    taskName: ''
+    taskName: '',
+    /** Default: only open tasks — closed/cancelled lists grow unbounded over time */
+    hideClosedTasks: true,
   });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const ganttContainerRef = useRef<HTMLDivElement>(null);
@@ -7256,46 +7260,54 @@ export default function PlanningPage() {
     );
   };
 
-  const getFilteredAllocations = () => {
+  const filteredAllocationGroups = useMemo(() => {
     let filtered = allAllocations;
 
+    if (allocationFilters.hideClosedTasks) {
+      filtered = filtered.filter((a) => {
+        const task = tasks.find((t) => t.Id === a.TaskId);
+        if (!task) return false;
+        return !isTaskClosedOrCancelled(task);
+      });
+    }
+
     if (allocationFilters.startDate) {
-      filtered = filtered.filter(a => {
+      filtered = filtered.filter((a) => {
         const dateStr = normalizeDateString(a.AllocationDate);
         return dateStr >= allocationFilters.startDate;
       });
     }
 
     if (allocationFilters.endDate) {
-      filtered = filtered.filter(a => {
+      filtered = filtered.filter((a) => {
         const dateStr = normalizeDateString(a.AllocationDate);
         return dateStr <= allocationFilters.endDate;
       });
     }
 
     if (allocationFilters.userId) {
-      filtered = filtered.filter(a => a.UserId === parseInt(allocationFilters.userId));
+      filtered = filtered.filter((a) => a.UserId === parseInt(allocationFilters.userId, 10));
     }
 
     if (allocationFilters.projectId) {
-      filtered = filtered.filter(a => {
-        const task = tasks.find(t => t.Id === a.TaskId);
-        return task && task.ProjectId === parseInt(allocationFilters.projectId);
+      filtered = filtered.filter((a) => {
+        const task = tasks.find((t) => t.Id === a.TaskId);
+        return task && task.ProjectId === parseInt(allocationFilters.projectId, 10);
       });
     }
 
-    if (allocationFilters.taskName) {
-      filtered = filtered.filter(a => {
-        const task = tasks.find(t => t.Id === a.TaskId);
-        return task && task.TaskName.toLowerCase().includes(allocationFilters.taskName.toLowerCase());
+    if (allocationFilters.taskName.trim()) {
+      const needle = allocationFilters.taskName.trim().toLowerCase();
+      filtered = filtered.filter((a) => {
+        const task = tasks.find((t) => t.Id === a.TaskId);
+        return task && task.TaskName.toLowerCase().includes(needle);
       });
     }
 
-    // Group by task
     const groupedByTask = filtered.reduce((acc, a) => {
       if (!acc[a.TaskId]) {
-        const task = tasks.find(t => t.Id === a.TaskId);
-        const project = projects.find(p => p.Id === task?.ProjectId);
+        const task = tasks.find((t) => t.Id === a.TaskId);
+        const project = projects.find((p) => p.Id === task?.ProjectId);
         acc[a.TaskId] = {
           TaskId: a.TaskId,
           TaskName: task?.TaskName || 'Unknown Task',
@@ -7304,16 +7316,16 @@ export default function PlanningPage() {
           totalHours: 0,
           users: new Set<number>(),
           userNames: [] as string[],
-          allocations: [],
+          allocations: [] as typeof allAllocations,
           startDate: null as string | null,
           endDate: null as string | null,
         };
       }
-      
+
       acc[a.TaskId].totalHours += Number(a.AllocatedHours);
       acc[a.TaskId].users.add(a.UserId);
       acc[a.TaskId].allocations.push(a);
-      
+
       const dateStr = normalizeDateString(a.AllocationDate);
       if (!acc[a.TaskId].startDate || dateStr < acc[a.TaskId].startDate) {
         acc[a.TaskId].startDate = dateStr;
@@ -7321,18 +7333,46 @@ export default function PlanningPage() {
       if (!acc[a.TaskId].endDate || dateStr > acc[a.TaskId].endDate) {
         acc[a.TaskId].endDate = dateStr;
       }
-      
+
       return acc;
     }, {} as Record<number, any>);
 
-    // Convert to array and add user names
-    return Object.values(groupedByTask).map((group: any) => {
-      group.userNames = Array.from(group.users).map(userId => {
-        const user = users.find(u => u.Id === userId);
-        return user?.Username || 'Unknown';
-      });
-      return group;
-    }).sort((a: any, b: any) => (b.startDate || '').localeCompare(a.startDate || ''));
+    return Object.values(groupedByTask)
+      .map((group: any) => {
+        group.userNames = Array.from(group.users).map((userId: number) => {
+          const matched = users.find((u) => u.Id === userId);
+          return matched?.Username || 'Unknown';
+        });
+        return group;
+      })
+      .sort((a: any, b: any) => (b.startDate || '').localeCompare(a.startDate || ''));
+  }, [
+    allAllocations,
+    allocationFilters,
+    tasks,
+    projects,
+    users,
+    taskStatusValues,
+  ]);
+
+  const allocationFilterActiveCount = [
+    allocationFilters.startDate ? 1 : 0,
+    allocationFilters.endDate ? 1 : 0,
+    allocationFilters.userId ? 1 : 0,
+    allocationFilters.projectId ? 1 : 0,
+    allocationFilters.taskName.trim() ? 1 : 0,
+    allocationFilters.hideClosedTasks ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
+
+  const clearAllocationFilters = () => {
+    setAllocationFilters({
+      startDate: '',
+      endDate: '',
+      userId: '',
+      projectId: '',
+      taskName: '',
+      hideClosedTasks: true,
+    });
   };
 
   // ── Slice suggested hours ─────────────────────────────────────────────────
@@ -7773,7 +7813,9 @@ export default function PlanningPage() {
           <PageLoadingSkeleton className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800" />
         ) : tasks.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
-            <div className="text-6xl mb-4">📊</div>
+            <div className="mb-4 flex justify-center text-[var(--pm-muted)] opacity-70">
+              <NavModuleIcon href="/planning" size={48} />
+            </div>
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
               No tasks to plan
             </h3>
@@ -7790,7 +7832,7 @@ export default function PlanningPage() {
                   <PageTabs
                     tabs={[
                       { id: 'gantt', label: 'Gantt Chart' },
-                      { id: 'allocations', label: `All Allocations (${allAllocations.length})` },
+                      { id: 'allocations', label: `All Allocations (${filteredAllocationGroups.length})` },
                     ]}
                     activeId={activeTab}
                     onChange={(id) => setActiveTab(id as 'gantt' | 'allocations')}
@@ -11173,107 +11215,128 @@ export default function PlanningPage() {
 
         {/* Allocations Tab */}
         {activeTab === 'allocations' && (
-          <div className="w-full bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700" data-grid-enhancer-ignore="true">
-            {/* Filters */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="w-full space-y-2" data-grid-enhancer-ignore="true">
+            <CollapsibleFilterPanel
+              title="Allocation filters"
+              activeCount={allocationFilterActiveCount}
+              headerExtra={
+                <span className="text-xs text-gray-400">
+                  {filteredAllocationGroups.length} task
+                  {filteredAllocationGroups.length !== 1 ? 's' : ''}
+                </span>
+              }
+            >
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Start Date
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    From
                   </label>
                   <input
                     type="date"
                     value={allocationFilters.startDate}
-                    onChange={(e) => setAllocationFilters(prev => ({ ...prev, startDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => setAllocationFilters((prev) => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    End Date
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    To
                   </label>
                   <input
                     type="date"
                     value={allocationFilters.endDate}
-                    onChange={(e) => setAllocationFilters(prev => ({ ...prev, endDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => setAllocationFilters((prev) => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                     User
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={users.map((u) => ({ value: String(u.Id), label: u.Username }))}
                     value={allocationFilters.userId}
-                    onChange={(e) => setAllocationFilters(prev => ({ ...prev, userId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">All Users</option>
-                    {users.map(u => (
-                      <option key={u.Id} value={u.Id}>{u.Username}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Project
-                  </label>
-                  <select
-                    value={allocationFilters.projectId}
-                    onChange={(e) => setAllocationFilters(prev => ({ ...prev, projectId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">All Projects</option>
-                    {projects.map(p => (
-                      <option key={p.Id} value={p.Id}>{p.ProjectName}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Task Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Search task..."
-                    value={allocationFilters.taskName}
-                    onChange={(e) => setAllocationFilters(prev => ({ ...prev, taskName: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    onChange={(value) => setAllocationFilters((prev) => ({ ...prev, userId: value }))}
+                    placeholder="Users"
+                    emptyText="All Users"
+                    className="w-full"
                   />
                 </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Project
+                  </label>
+                  <SearchableSelect
+                    options={projects.map((p) => ({ value: String(p.Id), label: p.ProjectName }))}
+                    value={allocationFilters.projectId}
+                    onChange={(value) => setAllocationFilters((prev) => ({ ...prev, projectId: value }))}
+                    placeholder="Projects"
+                    emptyText="All Projects"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Task
+                  </label>
+                  <div className="relative">
+                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search tasks..."
+                      value={allocationFilters.taskName}
+                      onChange={(e) => setAllocationFilters((prev) => ({ ...prev, taskName: e.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-9 pr-4 text-sm text-gray-900 focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-end items-center">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={allocationFilters.hideClosedTasks}
+                    onChange={(e) =>
+                      setAllocationFilters((prev) => ({ ...prev, hideClosedTasks: e.target.checked }))
+                    }
+                    className="h-4 w-4 rounded text-blue-600"
+                  />
+                  Hide closed / cancelled
+                </label>
                 <button
-                  onClick={() => setAllocationFilters({ startDate: '', endDate: '', userId: '', projectId: '', taskName: '' })}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  type="button"
+                  onClick={clearAllocationFilters}
+                  className="rounded-lg bg-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 >
-                  Clear Filters
+                  Clear filters
                 </button>
               </div>
-            </div>
+            </CollapsibleFilterPanel>
 
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 dark:bg-gray-800">
             {/* Allocations Table */}
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-900">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                       Task
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                       Project
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                       Assigned Users
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                       Date Range
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                       Total Hours
                     </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-300">
                       Allocations
                     </th>
                     <th scope="col" className="relative px-6 py-3">
@@ -11281,16 +11344,16 @@ export default function PlanningPage() {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {getFilteredAllocations().length === 0 ? (
+                <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+                  {filteredAllocationGroups.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                        No allocations found
+                        No allocations match the selected filters
                       </td>
                     </tr>
                   ) : (
-                    getFilteredAllocations().map((group: any, idx: number) => (
-                      <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    filteredAllocationGroups.map((group: any, idx: number) => (
+                      <tr key={group.TaskId ?? idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
                           {group.TaskName}
                         </td>
@@ -11300,13 +11363,13 @@ export default function PlanningPage() {
                         <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                           <div className="flex flex-wrap gap-1">
                             {group.userNames.map((userName: string, i: number) => (
-                              <span key={i} className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                              <span key={i} className="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
                                 👤 {userName}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700 dark:text-gray-300">
                           {group.startDate && group.endDate && (
                             <>
                               {new Date(group.startDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -11315,21 +11378,21 @@ export default function PlanningPage() {
                             </>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-600 dark:text-blue-400">
+                        <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-bold text-blue-600 dark:text-blue-400">
                           {group.totalHours.toFixed(2)}h
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700 dark:text-gray-300">
+                        <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-700 dark:text-gray-300">
                           {group.allocations.length}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
                           {canPlanOnThisDevice && (
                             <button
                               onClick={() => handleDeleteTaskAllocations(group.TaskId)}
                               title="Delete all allocations"
                               aria-label="Delete all allocations"
-                              className="p-1.5 text-gray-400 rounded transition-colors hover:text-red-600 dark:hover:text-red-400"
+                              className="rounded p-1.5 text-gray-400 transition-colors hover:text-red-600 dark:hover:text-red-400"
                             >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                               </svg>
                             </button>
@@ -11343,15 +11406,17 @@ export default function PlanningPage() {
             </div>
 
             {/* Summary */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 border-t border-gray-200 dark:border-gray-600">
-              <div className="flex justify-between items-center">
+            <div className="border-t border-gray-200 bg-gray-50 p-4 dark:border-gray-600 dark:bg-gray-700">
+              <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Total Tasks: {getFilteredAllocations().length}
+                  Total Tasks: {filteredAllocationGroups.length}
                 </span>
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Total Hours: {getFilteredAllocations().reduce((sum, g: any) => sum + g.totalHours, 0).toFixed(2)}h
+                  Total Hours:{' '}
+                  {filteredAllocationGroups.reduce((sum, g: any) => sum + g.totalHours, 0).toFixed(2)}h
                 </span>
               </div>
+            </div>
             </div>
           </div>
         )}

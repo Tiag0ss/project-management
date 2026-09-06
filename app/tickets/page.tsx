@@ -16,6 +16,7 @@ import SearchableSelect from '@/components/SearchableSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
 import { CustomFieldValues } from '@/lib/customFields';
 import { useColorVision } from '@/hooks/useColorVision';
+import { NavModuleIcon } from '@/lib/navIcons';
 
 interface Ticket {
   Id: number;
@@ -729,7 +730,9 @@ export default function TicketsPage() {
       <div className="w-full">
         <main className="w-full mx-auto py-12 px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-200 dark:border-gray-700">
-            <div className="text-4xl mb-3">🎫</div>
+            <div className="mb-3 flex justify-center text-[var(--pm-muted)] opacity-70">
+              <NavModuleIcon href="/tickets" size={40} />
+            </div>
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Internal Ticket System Disabled</h1>
             <p className="text-gray-600 dark:text-gray-400">This module is currently disabled by system settings.</p>
           </div>
@@ -744,41 +747,9 @@ export default function TicketsPage() {
       <main className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">
-                {isCustomerUser ? 'Customer Tickets' : 'Support Tickets'}
-              </h1>
-              {stats && (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
-                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                    <span className="font-semibold text-gray-900 dark:text-white">{stats.total}</span> total
-                  </span>
-                  <span className="text-gray-300 dark:text-gray-600">·</span>
-                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">{stats.open}</span> open
-                  </span>
-                  <span className="text-gray-300 dark:text-gray-600">·</span>
-                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                    <span className="font-semibold text-purple-600 dark:text-purple-400">{stats.inProgress}</span> in progress
-                  </span>
-                  <span className="text-gray-300 dark:text-gray-600">·</span>
-                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                    <span className="font-semibold text-yellow-600 dark:text-yellow-400">{stats.waiting}</span> waiting
-                  </span>
-                  <span className="text-gray-300 dark:text-gray-600">·</span>
-                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                    <span className="font-semibold text-green-600 dark:text-green-400">{stats.resolved}</span> resolved
-                  </span>
-                  <span className="text-gray-300 dark:text-gray-600">·</span>
-                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                    <span className="font-semibold text-red-600 dark:text-red-400">
-                      {Number(stats.urgent || 0) + Number(stats.high || 0)}
-                    </span>{' '}
-                    high priority
-                  </span>
-                </div>
-              )}
-            </div>
+            <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">
+              {isCustomerUser ? 'Customer Tickets' : 'Support Tickets'}
+            </h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {isCustomerUser
                 ? 'Tickets for your customer account — yours and your team’s'
@@ -817,6 +788,38 @@ export default function TicketsPage() {
             !showMyTicketsOnly ? 1 : 0,
             showClosed ? 1 : 0,
           ].reduce((a, b) => a + b, 0)}
+          headerMiddle={
+            stats ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-gray-900 dark:text-white">{stats.total}</span> total
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-blue-600 dark:text-blue-400">{stats.open}</span> open
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-purple-600 dark:text-purple-400">{stats.inProgress}</span> in progress
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-yellow-600 dark:text-yellow-400">{stats.waiting}</span> waiting
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-green-600 dark:text-green-400">{stats.resolved}</span> resolved
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-red-600 dark:text-red-400">
+                    {Number(stats.urgent || 0) + Number(stats.high || 0)}
+                  </span>{' '}
+                  high priority
+                </span>
+              </div>
+            ) : null
+          }
         >
           <div className="space-y-3">
             {/* Search Row */}
@@ -1090,7 +1093,9 @@ export default function TicketsPage() {
             
             return filteredTickets.length === 0 ? (
             <div className="p-8 text-center">
-              <div className="text-4xl mb-4">🎫</div>
+              <div className="mb-4 flex justify-center text-[var(--pm-muted)] opacity-70">
+                <NavModuleIcon href="/tickets" size={40} />
+              </div>
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No tickets found</h3>
               <p className="text-gray-500 dark:text-gray-400 mb-4">
                 {searchQuery || filterStatus || filterPriority || filterCategory

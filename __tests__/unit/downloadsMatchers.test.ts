@@ -1,7 +1,16 @@
 import {
+  getReleaseDirs,
   isDesktopInstallerFile,
   isIdeExtensionFile,
 } from '../../server/utils/downloads';
+
+describe('getReleaseDirs', () => {
+  it('includes extras/release and legacy release paths', () => {
+    const dirs = getReleaseDirs();
+    expect(dirs.some((dir) => dir.replace(/\\/g, '/').endsWith('extras/release'))).toBe(true);
+    expect(dirs.some((dir) => dir.replace(/\\/g, '/').endsWith('/release') || dir.replace(/\\/g, '/').endsWith('\\release'))).toBe(true);
+  });
+});
 
 describe('isDesktopInstallerFile', () => {
   it('matches Windows and Linux desktop timer packages', () => {

@@ -10,6 +10,11 @@ type CollapsibleFilterPanelProps = {
   children: ReactNode;
   className?: string;
   bodyClassName?: string;
+  /**
+   * Content between the toggle and the trailing count (e.g. RAG / status chips).
+   * Fills the spare horizontal space in the filter header.
+   */
+  headerMiddle?: ReactNode;
   /** Optional content on the right of the toggle (e.g. result count) */
   headerExtra?: ReactNode;
 };
@@ -25,6 +30,7 @@ export default function CollapsibleFilterPanel({
   children,
   className = '',
   bodyClassName = 'p-3 border-t border-[var(--pm-border)]',
+  headerMiddle,
   headerExtra,
 }: CollapsibleFilterPanelProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -39,7 +45,7 @@ export default function CollapsibleFilterPanel({
           type="button"
           onClick={() => setOpen((prev) => !prev)}
           aria-expanded={open}
-          className="inline-flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-gray-800 dark:text-gray-100 hover:text-gray-950 dark:hover:text-white"
+          className="inline-flex shrink-0 items-center gap-2 text-left text-sm font-medium text-gray-800 dark:text-gray-100 hover:text-gray-950 dark:hover:text-white"
         >
           <svg
             className={`h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform dark:text-gray-400 ${open ? 'rotate-180' : ''}`}
@@ -60,6 +66,13 @@ export default function CollapsibleFilterPanel({
             {open ? 'Hide' : 'Show'}
           </span>
         </button>
+
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          {headerMiddle ? (
+            <div className="flex items-center justify-start gap-1 sm:justify-center">{headerMiddle}</div>
+          ) : null}
+        </div>
+
         {headerExtra ? <div className="shrink-0">{headerExtra}</div> : null}
       </div>
 

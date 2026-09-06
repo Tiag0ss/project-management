@@ -5,26 +5,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
 import {
-  BarChart3,
-  BookOpen,
-  Boxes,
-  Building2,
-  CheckSquare,
   ChevronDown,
   ChevronRight,
-  Code2,
-  FolderKanban,
-  GanttChart,
-  Globe,
-  LayoutDashboard,
   ListFilter,
-  Phone,
   Pin,
   PinOff,
-  StickyNote,
-  Ticket,
-  Timer,
-  Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -43,6 +28,7 @@ import {
   filterSidebarNavBySystem,
   filterSidebarNavByUserPreference,
 } from '@/lib/sidebarNavAccess';
+import { NAV_ICONS } from '@/lib/navIcons';
 
 const SIDEBAR_PINNED_KEY = 'pm:appshell:sidebar-pinned';
 
@@ -80,26 +66,26 @@ type FeatureFlags = {
 /** Full catalog — system flags/role/permissions filter what may appear; user prefs only hide. */
 function buildNav(flags: FeatureFlags): NavItem[] {
   return [
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/projects', label: 'Projects', icon: FolderKanban, section: 'Delivery', recentKind: 'projects' },
-    { href: '/planning', label: 'Planning', icon: GanttChart, section: 'Delivery' },
-    { href: '/timesheet', label: 'Timesheet', icon: Timer, section: 'Work' },
-    { href: '/expenses', label: 'Expenses', icon: Wallet, section: 'Work' },
-    { href: '/call-records', label: 'Call Records', icon: Phone, section: 'Work' },
-    { href: '/work-summary', label: 'Work Summary', icon: BookOpen, section: 'Work' },
-    { href: '/tickets', label: 'Tickets', icon: Ticket, section: 'Service' },
-    { href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service', recentKind: 'memos' },
-    { href: '/customers', label: 'Customers', icon: Building2, section: 'Management', recentKind: 'customers' },
-    { href: '/applications', label: 'Applications', icon: Boxes, section: 'Management', recentKind: 'applications' },
+    { href: '/dashboard', label: 'Dashboard', icon: NAV_ICONS['/dashboard'] },
+    { href: '/projects', label: 'Projects', icon: NAV_ICONS['/projects'], section: 'Delivery', recentKind: 'projects' },
+    { href: '/planning', label: 'Planning', icon: NAV_ICONS['/planning'], section: 'Delivery' },
+    { href: '/timesheet', label: 'Timesheet', icon: NAV_ICONS['/timesheet'], section: 'Work' },
+    { href: '/expenses', label: 'Expenses', icon: NAV_ICONS['/expenses'], section: 'Work' },
+    { href: '/call-records', label: 'Call Records', icon: NAV_ICONS['/call-records'], section: 'Work' },
+    { href: '/work-summary', label: 'Work Summary', icon: NAV_ICONS['/work-summary'], section: 'Work' },
+    { href: '/tickets', label: 'Tickets', icon: NAV_ICONS['/tickets'], section: 'Service' },
+    { href: '/memos', label: 'Memos', icon: NAV_ICONS['/memos'], section: 'Service', recentKind: 'memos' },
+    { href: '/customers', label: 'Customers', icon: NAV_ICONS['/customers'], section: 'Management', recentKind: 'customers' },
+    { href: '/applications', label: 'Applications', icon: NAV_ICONS['/applications'], section: 'Management', recentKind: 'applications' },
     {
       href: '/approvals',
       label: flags.expensesEnabled ? 'Approvals & Expenses' : 'Approvals',
-      icon: CheckSquare,
+      icon: NAV_ICONS['/approvals'],
       section: 'Management',
     },
-    { href: '/dev-support', label: 'Dev Support', icon: Code2, section: 'Management' },
-    { href: '/reporting', label: 'Reporting', icon: BarChart3, section: 'Reporting' },
-    { href: '/portal', label: 'Portal', icon: Globe, section: 'Portal' },
+    { href: '/dev-support', label: 'Dev Support', icon: NAV_ICONS['/dev-support'], section: 'Management' },
+    { href: '/reporting', label: 'Reporting', icon: NAV_ICONS['/reporting'], section: 'Reporting' },
+    { href: '/portal', label: 'Portal', icon: NAV_ICONS['/portal'], section: 'Portal' },
   ];
 }
 

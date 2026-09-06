@@ -19,6 +19,7 @@ import { Project, projectsApi } from '@/lib/api/projects';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useUrlTab } from '@/hooks/useUrlTab';
 import { recordRecentNavAccess } from '@/lib/recentNavAccess';
+import { NavModuleIcon } from '@/lib/navIcons';
 
 type Tab = 'overview' | 'versions' | 'commits';
 const APPLICATION_DETAIL_TABS = ['overview', 'versions', 'commits'] as const;
@@ -743,7 +744,9 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
                   className="h-14 w-14 rounded-xl object-cover border border-gray-200 dark:border-gray-600 shrink-0 bg-white"
                 />
               ) : (
-                <span className="text-4xl shrink-0">📦</span>
+                <span className="shrink-0 text-[var(--pm-muted)] opacity-80">
+                  <NavModuleIcon href="/applications" size={40} />
+                </span>
               )}
               <div className="min-w-0">
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">{application.Name}</h1>

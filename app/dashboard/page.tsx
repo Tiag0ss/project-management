@@ -51,7 +51,33 @@ import dynamic from 'next/dynamic';
 import CalendarTabComponent from './CalendarTab';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { TaskTypeIconMark } from '@/lib/taskTypeIcons';
-import { Check, Pencil, RefreshCw, X } from 'lucide-react';
+import { NAV_ICONS } from '@/lib/navIcons';
+import {
+  AlertTriangle,
+  Ban,
+  Calculator,
+  Check,
+  CheckCircle2,
+  CircleDot,
+  Clock,
+  Flag,
+  FolderKanban,
+  ListTodo,
+  ListTree,
+  MapPin,
+  Pencil,
+  Pin,
+  RefreshCw,
+  Repeat2,
+  Rocket,
+  Search,
+  Tag,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  X,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 interface TaskWithProject extends Task {
   ProjectName?: string;
@@ -627,7 +653,7 @@ function AssignedKanbanTab({
         <EmptyState
           title="No assigned tasks"
           message="You have no tasks assigned right now."
-          icon="📋"
+          icon={<ListTodo size={40} strokeWidth={1.5} className="text-[var(--pm-muted)] opacity-70" aria-hidden />}
         />
       </div>
     );
@@ -1034,7 +1060,7 @@ type KpiTemplate = {
   type: DashboardKpiType;
   label: string;
   defaultTitle: string;
-  icon: string;
+  icon: LucideIcon;
   borderClass: string;
   requiresOrganization?: boolean;
   requiresStatus?: boolean;
@@ -1092,32 +1118,32 @@ const REPORT_DATASOURCE_COLUMNS: Record<string, { key: string; label: string }[]
 };
 
 const KPI_TEMPLATES: KpiTemplate[] = [
-  { type: 'totalProjects', label: 'Projects', defaultTitle: 'Projects', icon: '📁', borderClass: 'border-blue-500' },
-  { type: 'myTasks', label: 'My Tasks', defaultTitle: 'My Tasks', icon: '✓', borderClass: 'border-green-500' },
-  { type: 'myPendingTasks', label: 'My Pending Tasks', defaultTitle: 'My Pending Tasks', icon: '🕒', borderClass: 'border-amber-500' },
-  { type: 'myCompletedTasks', label: 'My Completed Tasks', defaultTitle: 'My Completed Tasks', icon: '✅', borderClass: 'border-emerald-500' },
-  { type: 'myTickets', label: 'My Tickets', defaultTitle: 'My Tickets', icon: '🎫', borderClass: 'border-indigo-500' },
-  { type: 'hoursThisWeek', label: 'Hours This Week', defaultTitle: 'Hours This Week', icon: '⏱️', borderClass: 'border-purple-500' },
-  { type: 'hoursThisMonth', label: 'Hours This Month', defaultTitle: 'Hours This Month', icon: '📊', borderClass: 'border-orange-500' },
-  { type: 'customersTotal', label: 'Customers', defaultTitle: 'Customers', icon: '🏢', borderClass: 'border-teal-500' },
-  { type: 'organizationProjects', label: 'Organization Projects', defaultTitle: 'Organization Projects', icon: '📂', borderClass: 'border-sky-500', requiresOrganization: true },
-  { type: 'organizationTasks', label: 'Organization Tasks', defaultTitle: 'Organization Tasks', icon: '🗂️', borderClass: 'border-cyan-500', requiresOrganization: true },
-  { type: 'organizationPendingTasks', label: 'Organization Pending Tasks', defaultTitle: 'Organization Pending Tasks', icon: '📌', borderClass: 'border-yellow-500', requiresOrganization: true },
-  { type: 'organizationCompletedTasks', label: 'Organization Completed Tasks', defaultTitle: 'Organization Completed Tasks', icon: '🎯', borderClass: 'border-lime-500', requiresOrganization: true },
-  { type: 'tasksByStatus', label: 'Tasks by Status', defaultTitle: 'Tasks by Status', icon: '📍', borderClass: 'border-pink-500', requiresOrganization: true, requiresStatus: true },
-  { type: 'tasksByPriority', label: 'Tasks by Priority', defaultTitle: 'Tasks by Priority', icon: '🚩', borderClass: 'border-rose-500', requiresOrganization: true, requiresPriority: true },
-  { type: 'tasksByTag', label: 'Tasks by Tag', defaultTitle: 'Tasks by Tag', icon: '🏷️', borderClass: 'border-fuchsia-500', requiresOrganization: true, requiresTag: true },
-  { type: 'tasksFiltered', label: 'Filtered Tasks', defaultTitle: 'Filtered Tasks', icon: '🔎', borderClass: 'border-violet-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'overdueTasksFiltered', label: 'Overdue Tasks', defaultTitle: 'Overdue Tasks', icon: '⏰', borderClass: 'border-red-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'blockedTasksFiltered', label: 'Blocked Tasks', defaultTitle: 'Blocked Tasks', icon: '⛔', borderClass: 'border-amber-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'unestimatedTasksFiltered', label: 'Unestimated Tasks', defaultTitle: 'Unestimated Tasks', icon: '🧮', borderClass: 'border-slate-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'reopenedTasksFiltered', label: 'Reopened Tasks', defaultTitle: 'Reopened Tasks', icon: '🔁', borderClass: 'border-orange-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'throughputThisWeek', label: 'Throughput This Week', defaultTitle: 'Throughput This Week', icon: '📈', borderClass: 'border-emerald-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'throughputThisMonth', label: 'Throughput This Month', defaultTitle: 'Throughput This Month', icon: '📉', borderClass: 'border-cyan-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'cycleTimeMedianDays', label: 'Cycle Time Median', defaultTitle: 'Cycle Time Median', icon: '🧭', borderClass: 'border-blue-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'leadTimeMedianDays', label: 'Lead Time Median', defaultTitle: 'Lead Time Median', icon: '🚀', borderClass: 'border-indigo-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
-  { type: 'ticketsSlaRisk', label: 'Tickets SLA Risk', defaultTitle: 'Tickets SLA Risk', icon: '⚠️', borderClass: 'border-rose-600', requiresOrganization: true },
-  { type: 'reportKpi', label: 'Advanced Report KPI', defaultTitle: 'Report KPI', icon: '📋', borderClass: 'border-purple-600', requiresReport: true },
+  { type: 'totalProjects', label: 'Projects', defaultTitle: 'Projects', icon: NAV_ICONS['/projects'], borderClass: 'border-blue-500' },
+  { type: 'myTasks', label: 'My Tasks', defaultTitle: 'My Tasks', icon: ListTodo, borderClass: 'border-green-500' },
+  { type: 'myPendingTasks', label: 'My Pending Tasks', defaultTitle: 'My Pending Tasks', icon: Clock, borderClass: 'border-amber-500' },
+  { type: 'myCompletedTasks', label: 'My Completed Tasks', defaultTitle: 'My Completed Tasks', icon: CheckCircle2, borderClass: 'border-emerald-500' },
+  { type: 'myTickets', label: 'My Tickets', defaultTitle: 'My Tickets', icon: NAV_ICONS['/tickets'], borderClass: 'border-indigo-500' },
+  { type: 'hoursThisWeek', label: 'Hours This Week', defaultTitle: 'Hours This Week', icon: NAV_ICONS['/timesheet'], borderClass: 'border-purple-500' },
+  { type: 'hoursThisMonth', label: 'Hours This Month', defaultTitle: 'Hours This Month', icon: NAV_ICONS['/reporting'], borderClass: 'border-orange-500' },
+  { type: 'customersTotal', label: 'Customers', defaultTitle: 'Customers', icon: NAV_ICONS['/customers'], borderClass: 'border-teal-500' },
+  { type: 'organizationProjects', label: 'Organization Projects', defaultTitle: 'Organization Projects', icon: FolderKanban, borderClass: 'border-sky-500', requiresOrganization: true },
+  { type: 'organizationTasks', label: 'Organization Tasks', defaultTitle: 'Organization Tasks', icon: ListTree, borderClass: 'border-cyan-500', requiresOrganization: true },
+  { type: 'organizationPendingTasks', label: 'Organization Pending Tasks', defaultTitle: 'Organization Pending Tasks', icon: Pin, borderClass: 'border-yellow-500', requiresOrganization: true },
+  { type: 'organizationCompletedTasks', label: 'Organization Completed Tasks', defaultTitle: 'Organization Completed Tasks', icon: Target, borderClass: 'border-lime-500', requiresOrganization: true },
+  { type: 'tasksByStatus', label: 'Tasks by Status', defaultTitle: 'Tasks by Status', icon: CircleDot, borderClass: 'border-pink-500', requiresOrganization: true, requiresStatus: true },
+  { type: 'tasksByPriority', label: 'Tasks by Priority', defaultTitle: 'Tasks by Priority', icon: Flag, borderClass: 'border-rose-500', requiresOrganization: true, requiresPriority: true },
+  { type: 'tasksByTag', label: 'Tasks by Tag', defaultTitle: 'Tasks by Tag', icon: Tag, borderClass: 'border-fuchsia-500', requiresOrganization: true, requiresTag: true },
+  { type: 'tasksFiltered', label: 'Filtered Tasks', defaultTitle: 'Filtered Tasks', icon: Search, borderClass: 'border-violet-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'overdueTasksFiltered', label: 'Overdue Tasks', defaultTitle: 'Overdue Tasks', icon: Clock, borderClass: 'border-red-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'blockedTasksFiltered', label: 'Blocked Tasks', defaultTitle: 'Blocked Tasks', icon: Ban, borderClass: 'border-amber-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'unestimatedTasksFiltered', label: 'Unestimated Tasks', defaultTitle: 'Unestimated Tasks', icon: Calculator, borderClass: 'border-slate-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'reopenedTasksFiltered', label: 'Reopened Tasks', defaultTitle: 'Reopened Tasks', icon: Repeat2, borderClass: 'border-orange-500', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'throughputThisWeek', label: 'Throughput This Week', defaultTitle: 'Throughput This Week', icon: TrendingUp, borderClass: 'border-emerald-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'throughputThisMonth', label: 'Throughput This Month', defaultTitle: 'Throughput This Month', icon: TrendingDown, borderClass: 'border-cyan-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'cycleTimeMedianDays', label: 'Cycle Time Median', defaultTitle: 'Cycle Time Median', icon: MapPin, borderClass: 'border-blue-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'leadTimeMedianDays', label: 'Lead Time Median', defaultTitle: 'Lead Time Median', icon: Rocket, borderClass: 'border-indigo-600', requiresOrganization: true, supportsOptionalTaskFilters: true },
+  { type: 'ticketsSlaRisk', label: 'Tickets SLA Risk', defaultTitle: 'Tickets SLA Risk', icon: AlertTriangle, borderClass: 'border-rose-600', requiresOrganization: true },
+  { type: 'reportKpi', label: 'Advanced Report KPI', defaultTitle: 'Report KPI', icon: NAV_ICONS['/reporting'], borderClass: 'border-purple-600', requiresReport: true },
 ];
 
 const getDefaultKpiWidgets = (internalTicketsEnabled: boolean): DashboardKpiWidget[] => {
@@ -2769,7 +2795,7 @@ function DashboardContent() {
               </div>
             ) : portalError ? (
               <EmptyState
-                icon="⚠️"
+                icon={<AlertTriangle size={40} strokeWidth={1.5} className="text-[var(--pm-muted)] opacity-70" aria-hidden />}
                 title="Unable to load portal data"
                 message={portalError}
                 primaryAction={{ label: 'Retry', onClick: loadPortalData }}
@@ -3147,6 +3173,7 @@ function DashboardContent() {
                       <>
                         {kpiWidgets.map((widget) => {
                       const template = getKpiTemplate(widget.type);
+                      const KpiIcon = template?.icon;
                       const valueData = kpiValues[widget.id] || { value: 0 };
                       const numericValue = Number(valueData.value || 0);
                       const formattedValue = valueData.suffix === 'h' ? decimalHoursToHMS(numericValue) : numericValue.toLocaleString();
@@ -3174,7 +3201,13 @@ function DashboardContent() {
                                 <p className="mt-0.5 truncate text-[10px] text-gray-500 dark:text-gray-400">{valueData.subtitle}</p>
                               )}
                             </div>
-                            <div className="shrink-0 text-base opacity-70">{template?.icon || '📌'}</div>
+                            <div className="shrink-0 text-[var(--pm-muted)] opacity-70">
+                              {KpiIcon ? (
+                                <KpiIcon size={18} strokeWidth={1.75} aria-hidden />
+                              ) : (
+                                <Pin size={18} strokeWidth={1.75} aria-hidden />
+                              )}
+                            </div>
                           </div>
 
                           {kpiEditMode && (

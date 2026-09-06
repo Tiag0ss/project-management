@@ -14,6 +14,8 @@ import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import CustomerFormModal, { CustomerFormValues } from '@/components/CustomerFormModal';
 import EmptyState from '@/components/EmptyState';
+import { NavModuleIcon } from '@/lib/navIcons';
+import { Search } from 'lucide-react';
 import { downloadCsv, parseBooleanLike, parseCsv, toCsv } from '@/lib/csv';
 import { extractCustomFieldValues } from '@/lib/customFields';
 import { 
@@ -732,32 +734,8 @@ export default function CustomersPage() {
     <div className="w-full">
       <div className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+          <div className="min-w-0">
             <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Customers</h1>
-            {customers.length > 0 && (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-blue-600 dark:text-blue-400">{customerIndicators.total}</span> total
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">{customerIndicators.inView}</span> in view
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-green-600 dark:text-green-400">{customerIndicators.activeInView}</span> active
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-amber-600 dark:text-amber-400">{customerIndicators.withProjects}</span> with projects
-                  {internalTicketsEnabled && (
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {' '}({customerIndicators.openTickets} open tickets)
-                    </span>
-                  )}
-                </span>
-              </div>
-            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="hidden sm:flex items-center rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-700">
@@ -820,6 +798,39 @@ export default function CustomersPage() {
             internalTicketsEnabled && ticketFilter !== 'all' ? 1 : 0,
           ].reduce((a, b) => a + b, 0)}
           bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
+          headerMiddle={
+            customers.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-blue-600 dark:text-blue-400">{customerIndicators.total}</span> total
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">{customerIndicators.inView}</span> in view
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-green-600 dark:text-green-400">{customerIndicators.activeInView}</span> active
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold text-amber-600 dark:text-amber-400">{customerIndicators.withProjects}</span> with projects
+                  {internalTicketsEnabled && (
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {' '}({customerIndicators.openTickets} open tickets)
+                    </span>
+                  )}
+                </span>
+              </div>
+            ) : null
+          }
+          headerExtra={
+            <span className="text-xs text-gray-400">
+              {filteredCustomers.length !== customers.length
+                ? `${filteredCustomers.length} of ${customers.length}`
+                : `${customers.length} customer${customers.length !== 1 ? 's' : ''}`}
+            </span>
+          }
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             <div>
@@ -908,7 +919,7 @@ export default function CustomersPage() {
 
         {customers.length === 0 ? (
           <EmptyState
-            icon="👥"
+            icon={<NavModuleIcon href="/customers" size={40} className="text-[var(--pm-muted)] opacity-70" />}
             title="No customers yet"
             message="Get started by adding your first customer."
             primaryAction={
@@ -922,7 +933,7 @@ export default function CustomersPage() {
           />
         ) : filteredCustomers.length === 0 ? (
           <EmptyState
-            icon="🔎"
+            icon={<Search size={40} strokeWidth={1.5} className="text-[var(--pm-muted)] opacity-70" aria-hidden />}
             title="No customers match your search"
             message="Try a different search term or clear current filters."
             primaryAction={{

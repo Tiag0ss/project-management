@@ -44,8 +44,12 @@ COPY . .
 # Build Next.js and TypeScript server separately to ensure both succeed
 RUN npx next build && npx tsc --project server/tsconfig.json
 
-# Include desktop Linux installer produced in desktop-builder stage
-COPY --from=desktop-builder /app/extras/release ./release
+# Merge Linux AppImage from desktop-builder into extras/release (canonical downloads path).
+# Host-provided Windows .exe / IDE packages already under extras/release (via COPY . .) are kept.
+COPY --from=desktop-builder /app/extras/release ./extras/release-built
+RUN mkdir -p extras/release \
+  && cp -a extras/release-built/. extras/release/ \
+  && rm -rf extras/release-built
 
 # Production image, copy all the files and run
 FROM base AS runner
@@ -61,7 +65,8 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/release ./release
+COPY --from=builder /app/extras/release ./extras/release
+COPY --from=builder /app/extras/scripts/tampermonkey ./extras/scripts/tampermonkey
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/server/database ./dist/server/database
 

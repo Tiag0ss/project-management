@@ -18,6 +18,7 @@ import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import EmptyState from '@/components/EmptyState';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+import { Building2, Search } from 'lucide-react';
 
 type OrgSortField = 'name' | 'role' | 'members' | 'projects' | 'tickets' | 'tasks';
 type SortDirection = 'asc' | 'desc';
@@ -520,6 +521,37 @@ export default function OrganizationsManagement() {
       title="Organization filters"
       activeCount={orgFilterActiveCount}
       bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
+      headerMiddle={
+        organizations.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <span className="tabular-nums text-gray-600 dark:text-gray-300">
+              <span className="font-semibold text-blue-600 dark:text-blue-400">{organizationIndicators.total}</span> total
+            </span>
+            <span className="text-gray-300 dark:text-gray-600">·</span>
+            <span className="tabular-nums text-gray-600 dark:text-gray-300">
+              <span className="font-semibold text-indigo-600 dark:text-indigo-400">{organizationIndicators.inView}</span> in view
+            </span>
+            <span className="text-gray-300 dark:text-gray-600">·</span>
+            <span className="tabular-nums text-gray-600 dark:text-gray-300">
+              <span className="font-semibold text-green-600 dark:text-green-400">{organizationIndicators.withProjects}</span> with projects
+            </span>
+            <span className="text-gray-300 dark:text-gray-600">·</span>
+            <span className="tabular-nums text-gray-600 dark:text-gray-300">
+              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                {internalTicketsEnabled ? organizationIndicators.openTickets : organizationIndicators.totalMembers}
+              </span>{' '}
+              {internalTicketsEnabled ? 'open tickets' : 'members'}
+            </span>
+          </div>
+        ) : null
+      }
+      headerExtra={
+        <span className="text-xs text-gray-400">
+          {filteredAndSortedOrgs.length !== organizations.length
+            ? `${filteredAndSortedOrgs.length} of ${organizations.length}`
+            : `${organizations.length} organization${organizations.length !== 1 ? 's' : ''}`}
+        </span>
+      }
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
         <div>
@@ -615,31 +647,7 @@ export default function OrganizationsManagement() {
 
   return (
     <div className="w-full p-4 sm:p-6 space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-            {organizations.length > 0 && (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-blue-600 dark:text-blue-400">{organizationIndicators.total}</span> total
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">{organizationIndicators.inView}</span> in view
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-green-600 dark:text-green-400">{organizationIndicators.withProjects}</span> with projects
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-amber-600 dark:text-amber-400">
-                    {internalTicketsEnabled ? organizationIndicators.openTickets : organizationIndicators.totalMembers}
-                  </span>{' '}
-                  {internalTicketsEnabled ? 'open tickets' : 'members'}
-                </span>
-              </div>
-            )}
-          </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
           <div className="flex flex-wrap items-center gap-2">
             <div className="hidden sm:flex items-center rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-700">
               <button
@@ -702,7 +710,7 @@ export default function OrganizationsManagement() {
 
         {organizations.length === 0 ? (
           <EmptyState
-            icon="🏢"
+            icon={<Building2 size={40} strokeWidth={1.5} className="text-[var(--pm-muted)] opacity-70" aria-hidden />}
             title="No organizations yet"
             message="Create your first organization to get started"
             primaryAction={
@@ -716,7 +724,7 @@ export default function OrganizationsManagement() {
           />
         ) : filteredAndSortedOrgs.length === 0 ? (
           <EmptyState
-            icon="🔎"
+            icon={<Search size={40} strokeWidth={1.5} className="text-[var(--pm-muted)] opacity-70" aria-hidden />}
             title="No organizations match the current filter"
             message="Try a different search term or clear the filter input."
             primaryAction={{

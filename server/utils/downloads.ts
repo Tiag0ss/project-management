@@ -11,8 +11,18 @@ type ReleaseCandidate = {
   mtimeMs: number;
 };
 
+/** Canonical download dir (dev + docs). Docker may also ship files under `/release`. */
 export function getReleaseDir(): string {
   return path.join(process.cwd(), 'extras', 'release');
+}
+
+/** All directories scanned for desktop/IDE artifacts (first wins on equal mtime via sort). */
+export function getReleaseDirs(): string[] {
+  const dirs = [
+    path.join(process.cwd(), 'extras', 'release'),
+    path.join(process.cwd(), 'release'),
+  ];
+  return Array.from(new Set(dirs));
 }
 
 export const TAMPERMONKEY_SCRIPT_FILE_NAME = 'pm-task-commit-links.user.js';
@@ -64,19 +74,26 @@ export function isIdeExtensionFile(fileName: string, kind: IdeExtensionKind): bo
 async function listReleaseCandidates(
   predicate: (fileName: string) => boolean
 ): Promise<ReleaseCandidate[]> {
-  const releaseDir = getReleaseDir();
-  if (!fs.existsSync(releaseDir)) return [];
+  const withStats: Array<ReleaseCandidate | null> = [];
 
-  const entries = await fsPromises.readdir(releaseDir);
-  const matched = entries.filter(predicate);
-  const withStats = await Promise.all(
-    matched.map(async (fileName) => {
-      const absolutePath = path.join(releaseDir, fileName);
-      const stats = await fsPromises.stat(absolutePath);
-      if (!stats.isFile()) return null;
-      return { fileName, absolutePath, mtimeMs: stats.mtimeMs };
-    })
-  );
+  for (const releaseDir of getReleaseDirs()) {
+    if (!fs.existsSync(releaseDir)) continue;
+    const entries = await fsPromises.readdir(releaseDir);
+    const matched = entries.filter(predicate);
+    const dirStats = await Promise.all(
+      matched.map(async (fileName) => {
+        const absolutePath = path.join(releaseDir, fileName);
+        try {
+          const stats = await fsPromises.stat(absolutePath);
+          if (!stats.isFile()) return null;
+          return { fileName, absolutePath, mtimeMs: stats.mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+    );
+    withStats.push(...dirStats);
+  }
 
   return withStats
     .filter((entry): entry is ReleaseCandidate => entry !== null)

@@ -67,7 +67,9 @@ backups/
 *.sql.gz
 *.backup
 
-# Electron/desktop build output — optional host .exe; Linux AppImage is built in Docker
+# Electron/desktop + IDE download artifacts live under extras/release in the image.
+# Do not ignore extras/release in the build context so host-built .exe/.vsix can be baked in.
+# Root /release is legacy; keep ignoring host clutter there except optional .exe.
 release/**
 !release/*.exe
 

@@ -13,6 +13,7 @@ import { useFormatHours } from '@/lib/useFormatHours';
 import ApprovalStatusBadge from '@/components/ApprovalStatusBadge';
 import ExpenseApprovalsPanel from '@/components/ExpenseApprovalsPanel';
 import PageTabs from '@/components/PageTabs';
+import { NavModuleIcon } from '@/lib/navIcons';
 import PageStickyChrome from '@/components/PageStickyChrome';
 
 interface PendingEntry {
@@ -894,7 +895,9 @@ export default function ApprovalsPage() {
           </div>
         ) : entries.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 py-16 text-center">
-            <div className="text-5xl mb-4">✅</div>
+            <div className="mb-4 flex justify-center text-[var(--pm-muted)] opacity-70">
+              <NavModuleIcon href="/approvals" size={40} />
+            </div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
               {filterStatus === 'pending' ? 'All caught up!' : 'No entries found'}
             </h3>
