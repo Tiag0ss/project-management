@@ -1747,7 +1747,7 @@ export default function AppChromeTools({
   const canShowCallRecordsLink = !isCustomerUser;
   const canShowWorkSummaryLink = !isCustomerUser;
   const canShowReportsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin);
-  const canShowDocsLink = true;
+  const canShowDocsLink = !isCustomerUser;
 
   const showOverviewSection = canShowDashboardLink;
   const showDeliverySection = canShowProjectsLink || canShowPlanningLink;
@@ -2648,8 +2648,7 @@ export default function AppChromeTools({
                 <NavTimerIndicator />
               )}
 
-              {/* Notifications Dropdown - Hidden for customer users */}
-              {!isCustomerUser && (
+              {/* Notifications Dropdown */}
               <div className="relative shrink-0" ref={notificationsRef}>
                 <button
                   onClick={handleNotificationsClick}
@@ -2698,12 +2697,18 @@ export default function AppChromeTools({
                               if (!notification.IsRead) {
                                 markAsRead(notification.Id);
                               }
-                              if (notification.RelatedTaskId && notification.RelatedProjectId) {
+                              // Customers cannot open internal task detail from the header
+                              if (
+                                !isCustomerUser &&
+                                notification.RelatedTaskId &&
+                                notification.RelatedProjectId
+                              ) {
                                 setNotificationsOpen(false);
                                 openNavTaskDetail(Number(notification.RelatedProjectId), Number(notification.RelatedTaskId));
                                 return;
                               }
                               if (notification.Link) {
+                                setNotificationsOpen(false);
                                 window.location.href = notification.Link;
                               }
                             }}
@@ -2758,7 +2763,6 @@ export default function AppChromeTools({
                   </div>
                 )}
               </div>
-              )}
 
               {/* User Menu */}
               <div className="relative shrink-0" ref={dropdownRef}>
@@ -2802,22 +2806,26 @@ export default function AppChromeTools({
                       <User size={16} className="shrink-0 text-[var(--pm-muted)]" />
                       My Profile
                     </a>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
-                      onClick={openDownloadsModal}
-                    >
-                      <Download size={16} className="shrink-0 text-[var(--pm-muted)]" />
-                      Downloads
-                    </button>
-                    <a
-                      href="/docs"
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
-                      onClick={() => setDropdownOpen(false)}
-                    >
-                      <BookOpen size={16} className="shrink-0 text-[var(--pm-muted)]" />
-                      User Manual
-                    </a>
+                    {!isCustomerUser && (
+                      <>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
+                          onClick={openDownloadsModal}
+                        >
+                          <Download size={16} className="shrink-0 text-[var(--pm-muted)]" />
+                          Downloads
+                        </button>
+                        <a
+                          href="/docs"
+                          className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
+                          onClick={() => setDropdownOpen(false)}
+                        >
+                          <BookOpen size={16} className="shrink-0 text-[var(--pm-muted)]" />
+                          User Manual
+                        </a>
+                      </>
+                    )}
                     {(!!user.isAdmin || permissions?.canManageUsers) && (
                       <>
                         <hr className="my-1 border-[var(--pm-border)]" />
@@ -2886,7 +2894,7 @@ export default function AppChromeTools({
                     >
                       👤 My Profile
                     </a>
-                    {!shouldUseLeftSidebar && (
+                    {!isCustomerUser && !shouldUseLeftSidebar && (
                       <>
                         <button
                           type="button"

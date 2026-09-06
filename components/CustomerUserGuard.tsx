@@ -19,8 +19,7 @@ export default function CustomerUserGuard({ children }: CustomerUserGuardProps) 
 
   useEffect(() => {
     if (!isLoading && user && isCustomerUser) {
-      // Redirect customer users to the customer portal
-      router.push('/portal');
+      router.push('/dashboard');
     }
   }, [isLoading, user, isCustomerUser, router]);
 

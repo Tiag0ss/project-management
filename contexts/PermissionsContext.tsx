@@ -68,6 +68,50 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Customer portal users: ticket create only (no internal role permissions)
+    if (user.customerId) {
+      setPermissions({
+        canViewDashboard: true,
+        canViewPlanning: false,
+        canViewProjects: false,
+        canViewBudgetInfo: false,
+        canManageProjects: false,
+        canCreateProjects: false,
+        canDeleteProjects: false,
+        canViewTasks: false,
+        canManageTasks: false,
+        canCreateTasks: false,
+        canDeleteTasks: false,
+        canAssignTasks: false,
+        canManageTimeEntries: false,
+        canViewReports: false,
+        canManageOrganizations: false,
+        canViewCustomers: false,
+        canManageCustomers: false,
+        canCreateCustomers: false,
+        canDeleteCustomers: false,
+        canManageUsers: false,
+        canManageTickets: false,
+        canCreateTickets: true,
+        canDeleteTickets: false,
+        canAssignTickets: false,
+        canCreateTaskFromTicket: false,
+        canPlanTasks: false,
+        canViewOthersPlanning: false,
+        canViewApplications: false,
+        canManageApplications: false,
+        canCreateApplications: false,
+        canDeleteApplications: false,
+        canManageReleases: false,
+        canViewExpenses: false,
+        canCreateExpenses: false,
+        canManageExpenses: false,
+        canApproveExpenses: false,
+      });
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       const userPermissions = await getUserPermissions(token, user.id);

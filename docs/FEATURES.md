@@ -151,13 +151,18 @@ Customer users (`CustomerUsers` table) may log in to the **Customer Portal** (`/
 - Scoped to their customer's data only
 - Can view their own open tickets and project status summaries
 - Can create new tickets (minimal form — no project selection)
-- Cannot access any internal pages (enforced by `CustomerUserGuard`)
+- Cannot access internal pages (enforced by `CustomerUserGuard` and customer-only AppShell nav)
 
 ### Customer Portal
-`/portal` — visible to customer users only:
-- Stats cards: open tickets, in-progress, resolved
-- Projects grid with status and progress
-- Tickets table with filters and "New Ticket" button
+Customer login lands on **Dashboard** (`/dashboard`), which shows:
+- **Needs your attention**: tickets with `StatusType = waiting` (awaiting customer response), with direct links to ticket detail
+- Compact stats: total, open, in progress, needs you, resolved, urgent (when internal tickets are enabled) — cards link to `/tickets`
+- Short **recent updates** strip (excludes waiting tickets so the list is not duplicated with Tickets)
+- Projects grid with status and progress (customer-visible projects)
+
+The full ticket list and filters live on **Tickets** (`/tickets`), not as a second full table on the dashboard.
+
+Sidebar for customer users is limited to **Dashboard** and **Tickets** (when the tickets module is enabled). The header still shows **Notifications** (and Profile). Internal pages are blocked by `CustomerUserGuard`. `/portal` redirects to `/dashboard` for compatibility.
 
 ### Change History
 Every meaningful field change to a customer record is logged and visible in the **History** tab of the customer detail page. The history UI renders only in that tab (not in other tabs like Attachments).

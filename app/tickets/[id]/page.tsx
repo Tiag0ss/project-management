@@ -2,6 +2,11 @@
 
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
+import {
+  hasMeaningfulCustomFieldValue,
+  hasMeaningfulExternalTicketId,
+  hasMeaningfulTicketDate,
+} from '@/lib/ticketDisplay';
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation'
@@ -316,7 +321,7 @@ export default function TicketDetailPage() {
       setComments(data.comments || []);
       
       // Load Jira integration if ticket has external ID
-      if (data.ticket.ExternalTicketId && data.ticket.OrganizationId) {
+      if (hasMeaningfulExternalTicketId(data.ticket.ExternalTicketId) && data.ticket.OrganizationId) {
         try {
           const jiraRes = await fetch(
             `${getApiUrl()}/api/jira-integrations/organization/${data.ticket.OrganizationId}`,
@@ -999,7 +1004,7 @@ export default function TicketDetailPage() {
                 <span className="px-3 py-1 text-sm font-medium rounded-full" style={getPriorityStyle(ticket.Priority)}>
                   {ticket.Priority}
                 </span>
-                {ticket.ExternalTicketId && jiraIntegration && (
+                {hasMeaningfulExternalTicketId(ticket.ExternalTicketId) && jiraIntegration && (
                   <a
                     href={`${jiraIntegration.JiraUrl}/browse/${ticket.ExternalTicketId}`}
                     target="_blank"
@@ -1146,7 +1151,7 @@ export default function TicketDetailPage() {
             >
               Attachments ({attachments.length})
             </button>
-            {!isCustomerUser && (user?.isManager || !!user?.isAdmin) && (
+            {!isCustomerUser && (!!user?.isManager || !!user?.isAdmin) && (
               <button
                 onClick={() => {
                   setActiveTab('tasks');
@@ -1561,14 +1566,15 @@ export default function TicketDetailPage() {
                       {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   ) : (
-                    <dd className="mt-1 text-sm text-gray-900 dark:text-white">
-                      {getCategoryIcon(ticket.Category)} {ticket.Category}
+                    <dd className="mt-1 inline-flex items-center gap-1.5 text-sm text-gray-900 dark:text-white">
+                      <span aria-hidden>{getCategoryIcon(ticket.Category)}</span>
+                      <span>{ticket.Category}</span>
                     </dd>
                   )}
                 </div>
 
                 {/* Organization (Manager/Admin only) */}
-                {(user?.isManager || user?.isAdmin) && (
+                {(!!user?.isManager || !!user?.isAdmin) && (
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Organization</dt>
                     {isEditing ? (
@@ -1589,7 +1595,7 @@ export default function TicketDetailPage() {
                 )}
 
                 {/* Customer (Manager/Admin only) */}
-                {(user?.isManager || user?.isAdmin) && (
+                {(!!user?.isManager || !!user?.isAdmin) && (
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Customer</dt>
                     {isEditing ? (
@@ -1610,7 +1616,7 @@ export default function TicketDetailPage() {
                 )}
 
                 {/* Project (Manager/Admin only) */}
-                {(user?.isManager || user?.isAdmin) && (
+                {(!!user?.isManager || !!user?.isAdmin) && (
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Project</dt>
                     {isEditing ? (
@@ -1697,7 +1703,7 @@ export default function TicketDetailPage() {
                 )}
 
                 {/* Scheduled Date */}
-                {!isCustomerUser && (
+                {!isCustomerUser && (isEditing || hasMeaningfulTicketDate(ticket.ScheduledDate)) && (
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Scheduled Date</dt>
                     {isEditing ? (
@@ -1709,26 +1715,22 @@ export default function TicketDetailPage() {
                       />
                     ) : (
                       <dd className="mt-1 text-sm text-gray-900 dark:text-white">
-                        {ticket.ScheduledDate ? (
-                          <span className="inline-flex items-center gap-1">
-                            <span>📅</span>
-                            {new Date(ticket.ScheduledDate).toLocaleDateString('en-US', { 
-                              weekday: 'short', 
-                              month: 'short', 
-                              day: 'numeric',
-                              year: 'numeric'
-                            })}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500">Not scheduled</span>
-                        )}
+                        <span className="inline-flex items-center gap-1">
+                          <span>📅</span>
+                          {new Date(ticket.ScheduledDate!).toLocaleDateString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </span>
                       </dd>
                     )}
                   </div>
                 )}
 
                 {/* Applications */}
-                {(user?.isManager || user?.isAdmin) && (
+                {(!!user?.isManager || !!user?.isAdmin) && (
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Applications</dt>
                     {isEditing ? (
@@ -1777,7 +1779,7 @@ export default function TicketDetailPage() {
                   </div>
                 )}
 
-                {!isEditing && ticketCustomFields.length > 0 && (
+                {!isEditing && ticketCustomFields.some((field) => hasMeaningfulCustomFieldValue(ticketCustomFieldValues[field.FieldName])) && (
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400 mb-2">Custom Fields</dt>
                     <dd>
@@ -1785,6 +1787,7 @@ export default function TicketDetailPage() {
                         {ticketCustomFields
                           .slice()
                           .sort((a, b) => a.DisplayName.localeCompare(b.DisplayName))
+                          .filter((field) => hasMeaningfulCustomFieldValue(ticketCustomFieldValues[field.FieldName]))
                           .map((field) => (
                             <div key={field.Id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 p-3">
                               <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -1827,21 +1830,21 @@ export default function TicketDetailPage() {
                 </div>
 
                 {/* Resolved At */}
-                {ticket.ResolvedAt && (
+                {hasMeaningfulTicketDate(ticket.ResolvedAt) && (
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Resolved</dt>
                     <dd className="mt-1 text-sm text-green-600 dark:text-green-400">
-                      ✓ {formatDate(ticket.ResolvedAt)}
+                      ✓ {formatDate(ticket.ResolvedAt!)}
                     </dd>
                   </div>
                 )}
 
                 {/* Closed At */}
-                {ticket.ClosedAt && (
+                {hasMeaningfulTicketDate(ticket.ClosedAt) && (
                   <div>
                     <dt className="text-sm text-gray-500 dark:text-gray-400">Closed</dt>
                     <dd className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                      {formatDate(ticket.ClosedAt)}
+                      {formatDate(ticket.ClosedAt!)}
                     </dd>
                   </div>
                 )}

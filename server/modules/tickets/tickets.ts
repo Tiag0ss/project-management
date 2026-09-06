@@ -495,6 +495,16 @@ router.post('/', authenticateToken, validateRequest(createTicketSchema), async (
       return res.status(400).json({ success: false, message: 'Customer users cannot select a project when creating tickets' });
     }
 
+    if (isCustomerUser) {
+      const [customerOrg] = await pool.execute<RowDataPacket[]>(
+        'SELECT 1 as ok FROM CustomerOrganizations WHERE CustomerId = ? AND OrganizationId = ? LIMIT 1',
+        [customerId, organizationId]
+      );
+      if (customerOrg.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access denied for this organization' });
+      }
+    }
+
     // Get organization abbreviation
     const [orgResult] = await pool.execute<RowDataPacket[]>(
       'SELECT Abbreviation FROM Organizations WHERE Id = ?',

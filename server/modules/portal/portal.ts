@@ -10,10 +10,28 @@ import { createPortalTicketSchema, validateRequest } from '../../utils/validatio
 
 const router = Router();
 
+const portalTicketSelect = `
+  SELECT t.Id, t.TicketNumber, t.Title, t.Category, t.CreatedAt, t.UpdatedAt,
+         tsv.StatusName, tsv.StatusType, tsv.Color as StatusColor, COALESCE(tsv.IsClosed, 0) as IsClosed,
+         tpv.PriorityName, tpv.Color as PriorityColor,
+         p.ProjectName,
+         u.Username as AssigneeName, u.FirstName as AssigneeFirst, u.LastName as AssigneeLast,
+         creator.Username as CreatorUsername,
+         creator.FirstName as CreatorFirst,
+         creator.LastName as CreatorLast,
+         TRIM(CONCAT(COALESCE(creator.FirstName, ''), ' ', COALESCE(creator.LastName, ''))) as CreatorName
+  FROM Tickets t
+  LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
+  LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
+  LEFT JOIN Projects p ON t.ProjectId = p.Id
+  LEFT JOIN Users u ON t.AssignedToUserId = u.Id
+  LEFT JOIN Users creator ON t.CreatedByUserId = creator.Id
+`;
+
 /**
  * GET /api/portal/overview
- * Customer portal overview — returns customer info, ticket stats,
- * recent tickets, and linked projects. Only for customer users.
+ * Customer portal overview — customer info, ticket stats,
+ * tickets needing customer attention (StatusType=waiting), short recent activity, projects.
  */
 router.get('/overview', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -42,6 +60,7 @@ router.get('/overview', authenticateToken, async (req: AuthRequest, res: Respons
              SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 0 THEN 1 ELSE 0 END) as open,
              SUM(CASE WHEN COALESCE(tsv.IsClosed, 0) = 1 THEN 1 ELSE 0 END) as closed,
              SUM(CASE WHEN COALESCE(tsv.StatusType, '') = 'in_progress' THEN 1 ELSE 0 END) as inProgress,
+             SUM(CASE WHEN COALESCE(tsv.StatusType, '') = 'waiting' THEN 1 ELSE 0 END) as waiting,
              SUM(CASE WHEN tpv.PriorityName IN ('Urgent', 'Critical') OR tpv.SortOrder = (SELECT MIN(SortOrder) FROM TicketPriorityValues WHERE OrganizationId = t.OrganizationId) THEN 1 ELSE 0 END) as urgent
            FROM Tickets t
            LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
@@ -49,22 +68,29 @@ router.get('/overview', authenticateToken, async (req: AuthRequest, res: Respons
            WHERE t.CustomerId = ?`,
           [customerId]
         );
-        const stats = statsRows[0] || { total: 0, open: 0, closed: 0, inProgress: 0, urgent: 0 };
+        const stats = statsRows[0] || {
+          total: 0,
+          open: 0,
+          closed: 0,
+          inProgress: 0,
+          waiting: 0,
+          urgent: 0,
+        };
 
-        const [tickets] = await pool.execute<RowDataPacket[]>(
-          `SELECT t.Id, t.Title, t.Category, t.CreatedAt, t.UpdatedAt,
-                  tsv.StatusName, tsv.Color as StatusColor, COALESCE(tsv.IsClosed, 0) as IsClosed,
-                  tpv.PriorityName, tpv.Color as PriorityColor,
-                  p.ProjectName,
-                  u.Username as AssigneeName, u.FirstName as AssigneeFirst, u.LastName as AssigneeLast
-           FROM Tickets t
-           LEFT JOIN TicketStatusValues tsv ON t.StatusId = tsv.Id
-           LEFT JOIN TicketPriorityValues tpv ON t.PriorityId = tpv.Id
-           LEFT JOIN Projects p ON t.ProjectId = p.Id
-           LEFT JOIN Users u ON t.AssignedToUserId = u.Id
-           WHERE t.CustomerId = ?
+        // Waiting = awaiting customer response (org StatusType)
+        const [attentionTickets] = await pool.execute<RowDataPacket[]>(
+          `${portalTicketSelect}
+           WHERE t.CustomerId = ? AND COALESCE(tsv.StatusType, '') = 'waiting'
            ORDER BY t.UpdatedAt DESC
            LIMIT 20`,
+          [customerId]
+        );
+
+        const [recentActivity] = await pool.execute<RowDataPacket[]>(
+          `${portalTicketSelect}
+           WHERE t.CustomerId = ? AND COALESCE(tsv.StatusType, '') <> 'waiting'
+           ORDER BY t.UpdatedAt DESC
+           LIMIT 5`,
           [customerId]
         );
 
@@ -89,7 +115,8 @@ router.get('/overview', authenticateToken, async (req: AuthRequest, res: Respons
           success: true,
           customer,
           stats,
-          tickets,
+          attentionTickets,
+          recentActivity,
           projects,
         };
       }
@@ -161,7 +188,7 @@ router.post('/tickets', authenticateToken, validateRequest(createPortalTicketSch
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO Tickets (OrganizationId, ProjectId, Title, Description, Category, StatusId, PriorityId, CustomerId, CreatedBy)
+      `INSERT INTO Tickets (OrganizationId, ProjectId, Title, Description, Category, StatusId, PriorityId, CustomerId, CreatedByUserId)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [organizationId, projectId || null, title.trim(), description || null, category || 'Support', statusId, resolvedPriorityId, customerId, userId]
     );

@@ -32,6 +32,10 @@ import {
   recentNavParentHref,
   type RecentNavKind,
 } from '@/lib/recentNavAccess';
+import {
+  isNavHrefAllowedForCustomer,
+  isNavHrefAllowedForInternalUser,
+} from '@/lib/customerNav';
 
 const SIDEBAR_PINNED_KEY = 'pm:appshell:sidebar-pinned';
 
@@ -240,14 +244,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const NAV = useMemo(() => buildNav(featureFlags), [featureFlags]);
 
   const visibleNav = NAV.filter((item) => {
-    if (item.href === '/portal') return isCustomerUser || Boolean(user?.customerId);
-    if (
-      isCustomerUser &&
-      ['/planning', '/timesheet', '/dev-support', '/reporting', '/expenses'].includes(item.href)
-    ) {
-      return false;
+    if (isCustomerUser) {
+      return isNavHrefAllowedForCustomer(item.href, {
+        internalTicketsEnabled: featureFlags.internalTicketsEnabled,
+      });
     }
-    return true;
+    return isNavHrefAllowedForInternalUser(item.href);
   });
 
   // Group by section so spacing matches legacy (mt/pt on section wrappers).
@@ -333,7 +335,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const recentItems = item.recentKind ? recentNav[item.recentKind] : [];
+                const recentItems =
+                  !isCustomerUser && item.recentKind ? recentNav[item.recentKind] : [];
                 return (
                   <div key={item.href} className="space-y-0.5">
                     <a

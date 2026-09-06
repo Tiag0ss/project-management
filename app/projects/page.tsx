@@ -643,64 +643,64 @@ export default function ProjectsPage() {
       <main className="w-full">
         <div className="space-y-2">
           {/* Header + health chips + actions — one compact band */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-              <div className="min-w-0">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h2 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">My Projects</h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {projects.length} project{projects.length !== 1 ? 's' : ''} across your organisations
-                </p>
+                {projects.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilterRAG('')}
+                      className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
+                        filterRAG === ''
+                          ? 'border-[var(--pm-accent)] bg-[var(--pm-accent)]/15 text-[var(--pm-accent-soft)]'
+                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                      }`}
+                    >
+                      {ragSummary.total} total
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterRAG(filterRAG === 'red' ? '' : 'red')}
+                      className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
+                        filterRAG === 'red'
+                          ? 'border-red-500 bg-red-500/15 text-red-600 dark:text-red-300'
+                          : 'border-gray-300 bg-white text-red-700 hover:bg-red-50 dark:border-gray-600 dark:bg-gray-800 dark:text-red-300'
+                      }`}
+                    >
+                      ● {ragSummary.red} red
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterRAG(filterRAG === 'amber' ? '' : 'amber')}
+                      className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
+                        filterRAG === 'amber'
+                          ? 'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                          : 'border-gray-300 bg-white text-amber-700 hover:bg-amber-50 dark:border-gray-600 dark:bg-gray-800 dark:text-amber-300'
+                      }`}
+                    >
+                      ● {ragSummary.amber} amber
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterRAG(filterRAG === 'green' ? '' : 'green')}
+                      className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
+                        filterRAG === 'green'
+                          ? 'border-green-500 bg-green-500/15 text-green-700 dark:text-green-300'
+                          : 'border-gray-300 bg-white text-green-700 hover:bg-green-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-300'
+                      }`}
+                    >
+                      ● {ragSummary.green} green
+                    </button>
+                  </div>
+                )}
               </div>
-              {projects.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setFilterRAG('')}
-                    className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                      filterRAG === ''
-                        ? 'border-[var(--pm-accent)] bg-[var(--pm-accent)]/15 text-[var(--pm-accent-soft)]'
-                        : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
-                    }`}
-                  >
-                    {ragSummary.total} total
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFilterRAG(filterRAG === 'red' ? '' : 'red')}
-                    className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                      filterRAG === 'red'
-                        ? 'border-red-500 bg-red-500/15 text-red-600 dark:text-red-300'
-                        : 'border-gray-300 bg-white text-red-700 hover:bg-red-50 dark:border-gray-600 dark:bg-gray-800 dark:text-red-300'
-                    }`}
-                  >
-                    ● {ragSummary.red} red
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFilterRAG(filterRAG === 'amber' ? '' : 'amber')}
-                    className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                      filterRAG === 'amber'
-                        ? 'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300'
-                        : 'border-gray-300 bg-white text-amber-700 hover:bg-amber-50 dark:border-gray-600 dark:bg-gray-800 dark:text-amber-300'
-                    }`}
-                  >
-                    ● {ragSummary.amber} amber
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFilterRAG(filterRAG === 'green' ? '' : 'green')}
-                    className={`rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                      filterRAG === 'green'
-                        ? 'border-green-500 bg-green-500/15 text-green-700 dark:text-green-300'
-                        : 'border-gray-300 bg-white text-green-700 hover:bg-green-50 dark:border-gray-600 dark:bg-gray-800 dark:text-green-300'
-                    }`}
-                  >
-                    ● {ragSummary.green} green
-                  </button>
-                </div>
-              )}
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {projects.length} project{projects.length !== 1 ? 's' : ''} across your organisations
+              </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <div className="hidden sm:flex items-center rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-700">
                 <button
                   type="button"

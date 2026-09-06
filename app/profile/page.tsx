@@ -295,6 +295,21 @@ function ProfilePageContent() {
     loadProfileRegions(profileForm.countryCode);
   }, [profileForm.countryCode, token]);
 
+  useEffect(() => {
+    if (!isCustomerUser) return;
+    const customerHidden: ProfileTab[] = [
+      'vacations',
+      'outOfOffice',
+      'workHours',
+      'recurringTasks',
+      'taskForm',
+      'apiTokens',
+    ];
+    if (customerHidden.includes(activeTab)) {
+      setActiveTab('info');
+    }
+  }, [isCustomerUser, activeTab, setActiveTab]);
+
   const loadUserProfile = async () => {
     if (!token) return;
     
@@ -1179,17 +1194,17 @@ function ProfilePageContent() {
 
   const profileTabs = [
     { id: 'info', label: 'Profile Info' },
-    { id: 'vacations', label: 'Vacations' },
-    { id: 'outOfOffice', label: 'Out Of Office' },
     ...(!isCustomerUser
       ? [
+          { id: 'vacations', label: 'Vacations' },
+          { id: 'outOfOffice', label: 'Out Of Office' },
           { id: 'workHours', label: 'Work Hours' },
           { id: 'recurringTasks', label: 'Recurring Tasks' },
         ]
       : []),
     { id: 'attachments', label: `My Attachments (${attachments.length})` },
     { id: 'security', label: 'Security' },
-    { id: 'apiTokens', label: 'API Tokens' },
+    ...(!isCustomerUser ? [{ id: 'apiTokens', label: 'API Tokens' }] : []),
     { id: 'emailAlerts', label: 'Email Alerts' },
     ...(!isCustomerUser ? [{ id: 'taskForm', label: 'Task Form' }] : []),
   ];
@@ -1469,7 +1484,7 @@ function ProfilePageContent() {
                 </div>
               )}
 
-              {activeTab === 'apiTokens' && <ApiTokensManagement mode="self" />}
+              {activeTab === 'apiTokens' && !isCustomerUser && <ApiTokensManagement mode="self" />}
 
               {activeTab === 'workHours' && (
                 <div className="space-y-3">

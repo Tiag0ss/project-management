@@ -7,6 +7,7 @@ import { cacheKeys } from '../../services/cacheKeys';
 import { invalidateByEntity } from '../../services/cacheInvalidation';
 import logger from '../../utils/logger';
 import { ensureExpenseCategoryDefaults } from '../../utils/expenseCategoryDefaults';
+import { canReadOrgTicketCatalog } from '../../utils/orgAccess';
 
 const router = Router();
 
@@ -1632,12 +1633,10 @@ async function ensureTicketPriorities(orgId: number): Promise<RowDataPacket[]> {
 router.get('/ticket/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
     const orgId = parseInt(req.params.orgId as string);
-    const [access] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [orgId, userId]
-    );
-    if (access.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
+    const allowed = await canReadOrgTicketCatalog(orgId, userId, customerId);
+    if (!allowed) return res.status(403).json({ success: false, message: 'Access denied' });
     const statuses = await cachedJson(
       cacheKeys.orgStatusValues(String(orgId), 'ticket'),
       ENTITY_TTL_SECONDS,
@@ -1842,12 +1841,10 @@ router.delete('/ticket/:id', authenticateToken, async (req: AuthRequest, res: Re
 router.get('/ticket-priority/:orgId', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
+    const customerId = req.user?.customerId;
     const orgId = parseInt(req.params.orgId as string);
-    const [access] = await pool.execute<RowDataPacket[]>(
-      'SELECT Id FROM OrganizationMembers WHERE OrganizationId = ? AND UserId = ?',
-      [orgId, userId]
-    );
-    if (access.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
+    const allowed = await canReadOrgTicketCatalog(orgId, userId, customerId);
+    if (!allowed) return res.status(403).json({ success: false, message: 'Access denied' });
     const priorities = await cachedJson(
       cacheKeys.orgStatusValues(String(orgId), 'ticket-priority'),
       ENTITY_TTL_SECONDS,

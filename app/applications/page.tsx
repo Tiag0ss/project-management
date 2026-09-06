@@ -805,14 +805,14 @@ export default function ApplicationsPage() {
   return (
     <div className="w-full">
       <div className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Applications</h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {applications.length} application{applications.length !== 1 ? 's' : ''} across your organisations
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <div className="hidden sm:flex items-center rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-700">
               <button
                 onClick={() => setViewMode('grid')}

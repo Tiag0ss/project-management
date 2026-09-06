@@ -549,7 +549,7 @@ export default function ExpensesPage() {
   return (
     <div className="w-full">
       <div className="w-full p-4 sm:p-6 space-y-2">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Expenses</h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -560,7 +560,7 @@ export default function ExpensesPage() {
             <button
               type="button"
               onClick={openCreate}
-              className="h-10 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 text-white hover:bg-blue-700"
+              className="h-10 shrink-0 px-4 rounded-lg text-sm font-medium inline-flex items-center bg-blue-600 text-white hover:bg-blue-700"
             >
               New Expense
             </button>

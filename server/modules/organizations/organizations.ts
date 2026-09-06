@@ -97,6 +97,27 @@ const getOrganizationPermissionSnapshot = async (orgId: string | string[], userI
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId!;
+    const customerId = req.user?.customerId;
+
+    // Customer portal users: orgs linked to their customer (for ticket create / catalogs)
+    if (customerId) {
+      const organizations = await cachedJson(
+        cacheKeys.customerOrganizations(customerId),
+        ENTITY_TTL_SECONDS,
+        async () => {
+          const [rows] = await pool.execute<RowDataPacket[]>(
+            `SELECT o.Id, o.Name, o.Abbreviation, o.CreatedAt
+             FROM Organizations o
+             INNER JOIN CustomerOrganizations co ON co.OrganizationId = o.Id
+             WHERE co.CustomerId = ?
+             ORDER BY o.Name ASC`,
+            [customerId]
+          );
+          return rows;
+        }
+      );
+      return res.json({ success: true, organizations });
+    }
 
     const organizations = await cachedJson(
       cacheKeys.userOrganizations(userId),

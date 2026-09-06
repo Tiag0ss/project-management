@@ -12,6 +12,7 @@ export const cacheKeys = {
   settingsUserFlags: () => 'settings:user-flags',
 
   userOrganizations: (userId: number) => `user:${userId}:organizations`,
+  customerOrganizations: (customerId: number | string) => `customer:${keyPart(customerId)}:organizations`,
   org: (orgId: number | string | string[]) => `org:${keyPart(orgId)}`,
   orgMembers: (orgId: number | string | string[]) => `org:${keyPart(orgId)}:members`,
   orgUsers: (orgId: number | string | string[]) => `org:${keyPart(orgId)}:users`,

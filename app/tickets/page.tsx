@@ -5,7 +5,7 @@ import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
@@ -100,6 +100,8 @@ export default function TicketsPage() {
   const { user, token, isLoading, isCustomerUser } = useAuth();
   const { permissions } = usePermissions();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const canCreateTicket = isCustomerUser || Boolean(permissions?.canCreateTickets);
   
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -301,11 +303,14 @@ export default function TicketsPage() {
       
       if (orgsRes.ok) {
         const data = await orgsRes.json();
-        setOrganizations(data.organizations || []);
-        
-        // Auto-select first org if only one available
-        if ((data.organizations || []).length === 1 && !createForm.organizationId) {
-          setCreateForm(prev => ({ ...prev, organizationId: data.organizations[0].Id.toString() }));
+        const orgs = data.organizations || [];
+        setOrganizations(orgs);
+
+        // Auto-select first org if only one, or always for customer portal users
+        if (orgs.length > 0 && !createForm.organizationId && (orgs.length === 1 || isCustomerUser)) {
+          const orgId = orgs[0].Id.toString();
+          setCreateForm((prev) => ({ ...prev, organizationId: orgId }));
+          void loadTicketStatusColors(orgId);
         }
       }
 
@@ -468,6 +473,14 @@ export default function TicketsPage() {
     loadTicketStatusColors(targetOrgId);
     loadJiraIntegration(targetOrgId);
   };
+
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    if (!canCreateTicket || loading || isLoading) return;
+    handleOpenCreateModal();
+    router.replace('/tickets', { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when ?new=1 is present
+  }, [searchParams, canCreateTicket, loading, isLoading]);
 
   const searchJiraIssues = async (query: string) => {
     if (!createForm.organizationId || !jiraIntegration) return;
@@ -729,53 +742,53 @@ export default function TicketsPage() {
     <div className="w-full">
 
       <main className="w-full mx-auto px-4 py-4 sm:py-6 space-y-2 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-            <div className="min-w-0">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">
-                {isCustomerUser ? 'My Tickets' : 'Support Tickets'}
+                {isCustomerUser ? 'Customer Tickets' : 'Support Tickets'}
               </h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {isCustomerUser
-                  ? 'View and manage your support requests'
-                  : 'Manage support tickets across organizations'}
-              </p>
+              {stats && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
+                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-gray-900 dark:text-white">{stats.total}</span> total
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">{stats.open}</span> open
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-purple-600 dark:text-purple-400">{stats.inProgress}</span> in progress
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-yellow-600 dark:text-yellow-400">{stats.waiting}</span> waiting
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-green-600 dark:text-green-400">{stats.resolved}</span> resolved
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span className="tabular-nums text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-red-600 dark:text-red-400">
+                      {Number(stats.urgent || 0) + Number(stats.high || 0)}
+                    </span>{' '}
+                    high priority
+                  </span>
+                </div>
+              )}
             </div>
-            {stats && (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm">
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-gray-900 dark:text-white">{stats.total}</span> total
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-blue-600 dark:text-blue-400">{stats.open}</span> open
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-purple-600 dark:text-purple-400">{stats.inProgress}</span> in progress
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-yellow-600 dark:text-yellow-400">{stats.waiting}</span> waiting
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-green-600 dark:text-green-400">{stats.resolved}</span> resolved
-                </span>
-                <span className="text-gray-300 dark:text-gray-600">·</span>
-                <span className="tabular-nums text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold text-red-600 dark:text-red-400">
-                    {Number(stats.urgent || 0) + Number(stats.high || 0)}
-                  </span>{' '}
-                  high priority
-                </span>
-              </div>
-            )}
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {isCustomerUser
+                ? 'Tickets for your customer account — yours and your team’s'
+                : 'Manage support tickets across organizations'}
+            </p>
           </div>
-          {permissions?.canCreateTickets && (
+          {canCreateTicket && (
             <button
               onClick={handleOpenCreateModal}
-              className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
+              className="h-10 shrink-0 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -979,7 +992,7 @@ export default function TicketsPage() {
             {/* Checkboxes and Actions Row */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
               <div className="flex flex-wrap items-center gap-3">
-                {/* My Tickets Only Filter */}
+                {/* My Tickets: internal = involvement; customer = tickets I created */}
                 <label className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-400 dark:hover:border-blue-500 transition-all">
                   <input
                     type="checkbox"
@@ -1049,24 +1062,31 @@ export default function TicketsPage() {
             </div>
           ) : (() => {
             // Filter tickets for "My Tickets" logic
-            const filteredTickets = showMyTicketsOnly && user ? tickets.filter(ticket => {
-              const st = ticket.StatusType;
+            const filteredTickets =
+              showMyTicketsOnly && user
+                ? isCustomerUser
+                  ? tickets.filter((ticket) => ticket.CreatedByUserId === user.id)
+                  : tickets.filter((ticket) => {
+                      const st = ticket.StatusType;
 
-              // open / in_progress — ticket is assigned to or being handled by the user
-              if (st === 'open' || st === 'in_progress') {
-                return ticket.AssignedToUserId === user.id || ticket.DeveloperUserId === user.id;
-              }
+                      // open / in_progress — ticket is assigned to or being handled by the user
+                      if (st === 'open' || st === 'in_progress') {
+                        return ticket.AssignedToUserId === user.id || ticket.DeveloperUserId === user.id;
+                      }
 
-              // waiting — awaiting response from creator/reporter
-              if (st === 'waiting') {
-                return ticket.CreatedByUserId === user.id;
-              }
+                      // waiting — awaiting response from creator/reporter
+                      if (st === 'waiting') {
+                        return ticket.CreatedByUserId === user.id;
+                      }
 
-              // resolved / closed / other — show if the user is involved in any role
-              return ticket.CreatedByUserId === user.id ||
-                     ticket.AssignedToUserId === user.id ||
-                     ticket.DeveloperUserId === user.id;
-            }) : tickets;
+                      // resolved / closed / other — show if the user is involved in any role
+                      return (
+                        ticket.CreatedByUserId === user.id ||
+                        ticket.AssignedToUserId === user.id ||
+                        ticket.DeveloperUserId === user.id
+                      );
+                    })
+                : tickets;
             
             return filteredTickets.length === 0 ? (
             <div className="p-8 text-center">
@@ -1077,7 +1097,7 @@ export default function TicketsPage() {
                   ? 'Try adjusting your filters'
                   : 'Create your first support ticket'}
               </p>
-              {permissions?.canCreateTickets && (
+              {canCreateTicket && (
                 <button
                   onClick={handleOpenCreateModal}
                   className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
