@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
@@ -10,11 +10,14 @@ import {
   Boxes,
   Building2,
   CheckSquare,
+  ChevronDown,
+  ChevronRight,
   Code2,
   FolderKanban,
   GanttChart,
   Globe,
   LayoutDashboard,
+  ListFilter,
   Phone,
   Pin,
   PinOff,
@@ -24,18 +27,22 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import AppChromeTools from '@/components/AppChromeTools';
 import { getApiUrl } from '@/lib/api/config';
 import { useRecentNavAccess } from '@/hooks/useRecentNavAccess';
+import { useRecentNavExpanded } from '@/hooks/useRecentNavExpanded';
+import { useNavMenuVisibility } from '@/hooks/useNavMenuVisibility';
 import {
   recordRecentNavAccess,
   recentNavParentHref,
   type RecentNavKind,
 } from '@/lib/recentNavAccess';
+import { isNavMenuAlwaysVisible } from '@/lib/navMenuVisibility';
 import {
-  isNavHrefAllowedForCustomer,
-  isNavHrefAllowedForInternalUser,
-} from '@/lib/customerNav';
+  filterSidebarNavBySystem,
+  filterSidebarNavByUserPreference,
+} from '@/lib/sidebarNavAccess';
 
 const SIDEBAR_PINNED_KEY = 'pm:appshell:sidebar-pinned';
 
@@ -70,24 +77,18 @@ type FeatureFlags = {
   memosEnabled: boolean;
 };
 
-/** Main product nav — account / search / timer / quick actions live in the top bar. */
+/** Full catalog — system flags/role/permissions filter what may appear; user prefs only hide. */
 function buildNav(flags: FeatureFlags): NavItem[] {
   return [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/projects', label: 'Projects', icon: FolderKanban, section: 'Delivery', recentKind: 'projects' },
     { href: '/planning', label: 'Planning', icon: GanttChart, section: 'Delivery' },
     { href: '/timesheet', label: 'Timesheet', icon: Timer, section: 'Work' },
-    ...(flags.expensesEnabled
-      ? [{ href: '/expenses', label: 'Expenses', icon: Wallet, section: 'Work' } as NavItem]
-      : []),
+    { href: '/expenses', label: 'Expenses', icon: Wallet, section: 'Work' },
     { href: '/call-records', label: 'Call Records', icon: Phone, section: 'Work' },
     { href: '/work-summary', label: 'Work Summary', icon: BookOpen, section: 'Work' },
-    ...(flags.internalTicketsEnabled
-      ? [{ href: '/tickets', label: 'Tickets', icon: Ticket, section: 'Service' } as NavItem]
-      : []),
-    ...(flags.memosEnabled
-      ? [{ href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service', recentKind: 'memos' } as NavItem]
-      : []),
+    { href: '/tickets', label: 'Tickets', icon: Ticket, section: 'Service' },
+    { href: '/memos', label: 'Memos', icon: StickyNote, section: 'Service', recentKind: 'memos' },
     { href: '/customers', label: 'Customers', icon: Building2, section: 'Management', recentKind: 'customers' },
     { href: '/applications', label: 'Applications', icon: Boxes, section: 'Management', recentKind: 'applications' },
     {
@@ -131,12 +132,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [companyName, setCompanyName] = useState('Project Management');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [menuVisibilityOpen, setMenuVisibilityOpen] = useState(false);
+  const menuVisibilityRef = useRef<HTMLDivElement | null>(null);
   const expanded = pinnedExpanded || hovered;
   // Hover-only expand overlays; pinned expand must reserve content width.
   const contentOffsetClass = pinnedExpanded ? 'w-72' : 'w-16';
   const pathname = usePathname();
   const { user, token, isCustomerUser } = useAuth();
+  const { permissions, isLoading: permissionsLoading } = usePermissions();
   const recentNav = useRecentNavAccess(user?.id);
+  const { expanded: recentExpanded, toggleExpanded: toggleRecentExpanded } = useRecentNavExpanded(user?.id);
+  const { hidden: navMenuHidden, isVisible: isNavMenuVisible, setHidden: setNavMenuHidden } =
+    useNavMenuVisibility(user?.id);
   const brandLabel = (companyName || '').trim() || 'Project Management';
   const brandInitial = brandLabel.charAt(0).toUpperCase() || 'P';
 
@@ -149,6 +156,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!pinnedHydrated) return;
     writeSidebarPinned(pinnedExpanded);
   }, [pinnedExpanded, pinnedHydrated]);
+
+  useEffect(() => {
+    if (!menuVisibilityOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (menuVisibilityRef.current && target && !menuVisibilityRef.current.contains(target)) {
+        setMenuVisibilityOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuVisibilityOpen(false);
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuVisibilityOpen]);
+
+  useEffect(() => {
+    if (!expanded) setMenuVisibilityOpen(false);
+  }, [expanded]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -243,14 +273,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const NAV = useMemo(() => buildNav(featureFlags), [featureFlags]);
 
-  const visibleNav = NAV.filter((item) => {
-    if (isCustomerUser) {
-      return isNavHrefAllowedForCustomer(item.href, {
+  const roleAllowedNav = useMemo(
+    () =>
+      filterSidebarNavBySystem(NAV, {
+        isCustomerUser,
+        expensesEnabled: featureFlags.expensesEnabled,
         internalTicketsEnabled: featureFlags.internalTicketsEnabled,
-      });
-    }
-    return isNavHrefAllowedForInternalUser(item.href);
-  });
+        memosEnabled: featureFlags.memosEnabled,
+        permissionsLoading,
+        canViewExpenses: permissions?.canViewExpenses,
+        canCreateExpenses: permissions?.canCreateExpenses,
+        canManageTickets: permissions?.canManageTickets,
+        canCreateTickets: permissions?.canCreateTickets,
+        isAdmin: !!user?.isAdmin,
+        isSupport: !!user?.isSupport,
+      }),
+    [
+      NAV,
+      isCustomerUser,
+      featureFlags.expensesEnabled,
+      featureFlags.internalTicketsEnabled,
+      featureFlags.memosEnabled,
+      permissionsLoading,
+      permissions?.canViewExpenses,
+      permissions?.canCreateExpenses,
+      permissions?.canManageTickets,
+      permissions?.canCreateTickets,
+      user?.isAdmin,
+      user?.isSupport,
+    ]
+  );
+
+  const visibleNav = useMemo(
+    () => filterSidebarNavByUserPreference(roleAllowedNav, navMenuHidden),
+    [roleAllowedNav, navMenuHidden]
+  );
 
   // Group by section so spacing matches legacy (mt/pt on section wrappers).
   const groups: { section?: string; items: NavItem[] }[] = [];
@@ -309,6 +366,62 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           >
             {brandLabel}
           </Link>
+          <div
+            ref={menuVisibilityRef}
+            className={['relative shrink-0', expanded ? '' : 'invisible'].join(' ')}
+            aria-hidden={!expanded}
+          >
+            <button
+              type="button"
+              className="rounded p-1 text-[var(--pm-muted)] hover:bg-[var(--pm-surface-2)] hover:text-[var(--pm-text)]"
+              onClick={() => setMenuVisibilityOpen((open) => !open)}
+              title="Show or hide menus"
+              aria-label="Show or hide menus"
+              aria-expanded={menuVisibilityOpen}
+              aria-haspopup="dialog"
+              tabIndex={expanded ? 0 : -1}
+            >
+              <ListFilter size={14} />
+            </button>
+            {menuVisibilityOpen && (
+              <div
+                role="dialog"
+                aria-label="Menu visibility"
+                className="absolute right-0 top-full z-[90] mt-1 w-56 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] p-2 shadow-xl"
+              >
+                <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--pm-muted)]">
+                  Visible menus
+                </p>
+                <div className="max-h-72 space-y-0.5 overflow-y-auto">
+                  {roleAllowedNav.map((item) => {
+                    const locked = isNavMenuAlwaysVisible(item.href);
+                    const checked = isNavMenuVisible(item.href);
+                    return (
+                      <label
+                        key={item.href}
+                        className={[
+                          'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[var(--pm-text)] hover:bg-[var(--pm-surface)]',
+                          locked ? 'cursor-default opacity-80' : '',
+                        ].join(' ')}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 rounded border-[var(--pm-border)]"
+                          checked={checked}
+                          disabled={locked}
+                          onChange={(event) => setNavMenuHidden(item.href, !event.target.checked)}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        {locked && (
+                          <span className="shrink-0 text-[10px] text-[var(--pm-muted)]">Required</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className={[
@@ -337,31 +450,54 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const recentItems =
                   !isCustomerUser && item.recentKind ? recentNav[item.recentKind] : [];
+                const recentKind = item.recentKind;
+                const showRecentToggle = expanded && !!recentKind && recentItems.length > 0;
+                const recentGroupOpen =
+                  !!recentKind && recentExpanded[recentKind] !== false;
                 return (
                   <div key={item.href} className="space-y-0.5">
-                    <a
-                      href={item.href}
-                      title={item.label}
-                      className={[
-                        'flex h-9 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md px-3 text-sm leading-none no-underline',
-                        active
-                          ? 'bg-[var(--pm-surface-2)] text-[var(--pm-accent-soft)]'
-                          : 'text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]',
-                      ].join(' ')}
-                    >
-                      <span className="flex h-[18px] w-5 shrink-0 items-center justify-center">
-                        <Icon size={18} className="opacity-90" strokeWidth={1.75} />
-                      </span>
-                      <span
+                    <div className="flex items-center gap-0.5">
+                      <a
+                        href={item.href}
+                        title={item.label}
                         className={[
-                          'min-w-0 truncate leading-none',
-                          expanded ? '' : 'invisible w-0 overflow-hidden',
+                          'flex h-9 min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md px-3 text-sm leading-none no-underline',
+                          active
+                            ? 'bg-[var(--pm-surface-2)] text-[var(--pm-accent-soft)]'
+                            : 'text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]',
                         ].join(' ')}
                       >
-                        {item.label}
-                      </span>
-                    </a>
+                        <span className="flex h-[18px] w-5 shrink-0 items-center justify-center">
+                          <Icon size={18} className="opacity-90" strokeWidth={1.75} />
+                        </span>
+                        <span
+                          className={[
+                            'min-w-0 truncate leading-none',
+                            expanded ? '' : 'invisible w-0 overflow-hidden',
+                          ].join(' ')}
+                        >
+                          {item.label}
+                        </span>
+                      </a>
+                      {showRecentToggle && recentKind && (
+                        <button
+                          type="button"
+                          className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]"
+                          onClick={() => toggleRecentExpanded(recentKind)}
+                          title={recentGroupOpen ? 'Collapse recent' : 'Expand recent'}
+                          aria-label={
+                            recentGroupOpen
+                              ? `Collapse recent ${item.label}`
+                              : `Expand recent ${item.label}`
+                          }
+                          aria-expanded={recentGroupOpen}
+                        >
+                          {recentGroupOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                      )}
+                    </div>
                     {expanded &&
+                      recentGroupOpen &&
                       recentItems.map((recent) => {
                         const recentPath = recent.href.split('?')[0];
                         const recentActive =

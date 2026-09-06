@@ -1,7 +1,10 @@
 import {
+  defaultRecentNavExpanded,
   emptyRecentNavAccess,
   parseRecentNavAccess,
+  parseRecentNavExpanded,
   pushRecentNavItem,
+  recentNavExpandedStorageKey,
   recentNavParentHref,
   recentNavStorageKey,
 } from '../../lib/recentNavAccess';
@@ -10,6 +13,8 @@ describe('recentNavAccess', () => {
   it('scopes storage keys by user', () => {
     expect(recentNavStorageKey(42)).toBe('pm:recent-nav-access:u42');
     expect(recentNavStorageKey(null)).toBe('pm:recent-nav-access');
+    expect(recentNavExpandedStorageKey(42)).toBe('pm:recent-nav-expanded:u42');
+    expect(recentNavExpandedStorageKey(null)).toBe('pm:recent-nav-expanded');
   });
 
   it('keeps the newest two items and updates labels for the same id', () => {
@@ -46,5 +51,17 @@ describe('recentNavAccess', () => {
     expect(recentNavParentHref('memos')).toBe('/memos');
     expect(recentNavParentHref('customers')).toBe('/customers');
     expect(recentNavParentHref('applications')).toBe('/applications');
+  });
+
+  it('parses expand/collapse prefs and defaults missing kinds to expanded', () => {
+    expect(defaultRecentNavExpanded().projects).toBe(true);
+    const parsed = parseRecentNavExpanded(
+      JSON.stringify({ projects: false, customers: true, bogus: false })
+    );
+    expect(parsed.projects).toBe(false);
+    expect(parsed.customers).toBe(true);
+    expect(parsed.memos).toBe(true);
+    expect(parsed.applications).toBe(true);
+    expect(parseRecentNavExpanded('not-json')).toEqual(defaultRecentNavExpanded());
   });
 });

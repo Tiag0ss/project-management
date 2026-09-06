@@ -9,8 +9,12 @@ export type RecentNavItem = {
 
 export type RecentNavAccessState = Record<RecentNavKind, RecentNavItem[]>;
 
+/** Whether each recent-items group under a nav parent is expanded in the sidebar. */
+export type RecentNavExpandedState = Record<RecentNavKind, boolean>;
+
 export const RECENT_NAV_LIMIT = 2;
 export const RECENT_NAV_EVENT = 'pm:recent-nav-access';
+export const RECENT_NAV_EXPANDED_EVENT = 'pm:recent-nav-expanded';
 
 const RECENT_NAV_KINDS: RecentNavKind[] = ['projects', 'memos', 'customers', 'applications'];
 
@@ -20,12 +24,28 @@ export function recentNavStorageKey(userId?: number | null): string {
     : 'pm:recent-nav-access';
 }
 
+export function recentNavExpandedStorageKey(userId?: number | null): string {
+  return typeof userId === 'number' && Number.isFinite(userId)
+    ? `pm:recent-nav-expanded:u${userId}`
+    : 'pm:recent-nav-expanded';
+}
+
 export function emptyRecentNavAccess(): RecentNavAccessState {
   return {
     projects: [],
     memos: [],
     customers: [],
     applications: [],
+  };
+}
+
+/** Default: groups start expanded (previous always-visible behaviour). */
+export function defaultRecentNavExpanded(): RecentNavExpandedState {
+  return {
+    projects: true,
+    memos: true,
+    customers: true,
+    applications: true,
   };
 }
 
@@ -133,4 +153,59 @@ export function recentNavParentHref(kind: RecentNavKind): string {
     case 'applications':
       return '/applications';
   }
+}
+
+export function parseRecentNavExpanded(raw: string | null | undefined): RecentNavExpandedState {
+  const state = defaultRecentNavExpanded();
+  if (!raw) return state;
+  try {
+    const parsed = JSON.parse(raw) as Partial<Record<RecentNavKind, unknown>>;
+    for (const kind of RECENT_NAV_KINDS) {
+      if (typeof parsed[kind] === 'boolean') {
+        state[kind] = parsed[kind];
+      }
+    }
+    return state;
+  } catch {
+    return state;
+  }
+}
+
+export function readRecentNavExpanded(userId?: number | null): RecentNavExpandedState {
+  if (typeof window === 'undefined') return defaultRecentNavExpanded();
+  try {
+    return parseRecentNavExpanded(window.localStorage.getItem(recentNavExpandedStorageKey(userId)));
+  } catch {
+    return defaultRecentNavExpanded();
+  }
+}
+
+function writeRecentNavExpanded(state: RecentNavExpandedState, userId?: number | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(recentNavExpandedStorageKey(userId), JSON.stringify(state));
+    window.dispatchEvent(new CustomEvent(RECENT_NAV_EXPANDED_EVENT, { detail: { userId: userId ?? null } }));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export function setRecentNavExpanded(
+  kind: RecentNavKind,
+  expanded: boolean,
+  userId?: number | null
+): RecentNavExpandedState {
+  if (!isRecentNavKind(kind)) return readRecentNavExpanded(userId);
+  const next: RecentNavExpandedState = {
+    ...readRecentNavExpanded(userId),
+    [kind]: expanded,
+  };
+  writeRecentNavExpanded(next, userId);
+  return next;
+}
+
+export function toggleRecentNavExpanded(kind: RecentNavKind, userId?: number | null): RecentNavExpandedState {
+  const current = readRecentNavExpanded(userId);
+  if (!isRecentNavKind(kind)) return current;
+  return setRecentNavExpanded(kind, !current[kind], userId);
 }
