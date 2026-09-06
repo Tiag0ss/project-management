@@ -5,7 +5,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+// extras/scripts → repository root (where root package.json / node_modules live)
+const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function getElectronDir() {
   try {

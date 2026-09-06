@@ -50,16 +50,16 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "Running tests..." -ForegroundColor Cyan
 $ErrorActionPreference = "Continue"
-$testOutput = & npm test 2>&1 | Out-String
+$testOutput = & pnpm run test:unit 2>&1 | Out-String
+$testExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
 
-# Check if tests actually passed (Jest outputs PASS/FAIL)
-if ($testOutput -match "FAIL") {
+if ($testExit -eq 0) {
+    Write-Host "[OK] Unit tests passed" -ForegroundColor Green
+} elseif ($testOutput -match "FAIL") {
     Write-Host "[WARN] Some tests failed - continuing with build" -ForegroundColor Yellow
-} elseif ($testOutput -match "PASS") {
-    Write-Host "[OK] Tests passed" -ForegroundColor Green
 } else {
-    Write-Host "[WARN] Tests not configured - continuing with build" -ForegroundColor Yellow
+    Write-Host "[WARN] Tests failed or not configured - continuing with build" -ForegroundColor Yellow
 }
 
 # Build Docker image

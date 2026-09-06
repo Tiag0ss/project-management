@@ -95,14 +95,15 @@ if ! docker login; then
     exit 1
 fi
 
-# Run tests (optional)
+# Run unit tests (optional — failures warn but do not block the image build)
 echo ""
 echo -e "${BLUE}Running tests...${NC}"
-TEST_OUTPUT="$(npm test 2>&1)" || TEST_EXIT=$?
-if [[ "${TEST_OUTPUT:-}" == *"FAIL"* ]]; then
+TEST_EXIT=0
+TEST_OUTPUT="$(pnpm run test:unit 2>&1)" || TEST_EXIT=$?
+if [[ "${TEST_EXIT}" -eq 0 ]]; then
+    echo -e "${GREEN}[OK] Unit tests passed${NC}"
+elif [[ "${TEST_OUTPUT:-}" == *"FAIL"* ]]; then
     echo -e "${YELLOW}[WARN] Some tests failed - continuing with build${NC}"
-elif [[ "${TEST_OUTPUT:-}" == *"PASS"* ]]; then
-    echo -e "${GREEN}[OK] Tests passed${NC}"
 else
     echo -e "${YELLOW}[WARN] Tests failed or not configured - continuing with build${NC}"
 fi

@@ -15,11 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 COPY package.json pnpm-lock.yaml ./
-COPY desktop ./desktop
-COPY scripts/ensure-electron.mjs ./scripts/
+COPY extras/desktop ./extras/desktop
+COPY extras/scripts/ensure-electron.mjs ./extras/scripts/
 
 RUN pnpm install --frozen-lockfile \
-    && node scripts/ensure-electron.mjs \
+    && node extras/scripts/ensure-electron.mjs \
     && pnpm run desktop:build:linux
 
 # Install dependencies only when needed
@@ -45,7 +45,7 @@ COPY . .
 RUN npx next build && npx tsc --project server/tsconfig.json
 
 # Include desktop Linux installer produced in desktop-builder stage
-COPY --from=desktop-builder /app/release ./release
+COPY --from=desktop-builder /app/extras/release ./release
 
 # Production image, copy all the files and run
 FROM base AS runner
