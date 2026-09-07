@@ -54,7 +54,7 @@ export function TasksToolbar({
   onCreateTask: () => void;
 }) {
   return (
-      <div className="mb-3 flex shrink-0 flex-wrap items-center justify-end gap-2">
+      <div className="mb-1.5 flex shrink-0 flex-wrap items-center justify-end gap-2">
         <div className="flex max-w-full flex-wrap gap-2">
           {canCreate && (
             <>

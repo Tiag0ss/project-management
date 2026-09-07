@@ -61,7 +61,7 @@ export function ReportingSchedulesPanel({
 
   useEffect(() => {
     void loadSchedules();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [projectId]);
 
   const openNewSchedule = () => {

@@ -720,11 +720,12 @@ export function TasksTable({
 
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-3">
-        <div className="shrink-0 space-y-3">
-          {filterPanel}
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+        <div className="shrink-0 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-0 flex-1">{filterPanel}</div>
           {selectedTaskIds.size > 0 && canManage && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2 flex items-center justify-between gap-3 w-full order-last">
               <span className="text-sm text-blue-800 dark:text-blue-200">
                 {selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? 's' : ''} selected
               </span>
@@ -732,14 +733,14 @@ export function TasksTable({
                 <button
                   type="button"
                   onClick={() => setSelectedTaskIds(new Set())}
-                  className="h-9 px-3 rounded-lg text-sm font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  className="h-8 px-3 rounded-lg text-sm font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                   Clear Selection
                 </button>
                 <button
                   type="button"
                   onClick={handleOpenBulkEditModal}
-                  className="h-9 px-3 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+                  className="h-8 px-3 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   Bulk Edit
                 </button>
@@ -748,20 +749,20 @@ export function TasksTable({
           )}
 
           {/* Grid enhancer controls */}
-          <div className="mb-2 flex justify-end relative p-2 pb-0">
+          <div className="relative shrink-0">
             <div className="flex items-center gap-2">
-              <div className="h-9 flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-1">
+              <div className="h-8 flex items-center bg-gray-200 dark:bg-gray-700 rounded-lg p-0.5">
                 <button
                   type="button"
                   onClick={() => setTaskRowDensity('comfortable')}
-                  className={`h-7 px-3 text-sm rounded-md transition-colors ${taskRowDensity === 'comfortable' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                  className={`h-7 px-2.5 text-xs rounded-md transition-colors ${taskRowDensity === 'comfortable' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
                 >
                   Comfy
                 </button>
                 <button
                   type="button"
                   onClick={() => setTaskRowDensity('compact')}
-                  className={`h-7 px-3 text-sm rounded-md transition-colors ${taskRowDensity === 'compact' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
+                  className={`h-7 px-2.5 text-xs rounded-md transition-colors ${taskRowDensity === 'compact' ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
                 >
                   Compact
                 </button>
@@ -778,7 +779,7 @@ export function TasksTable({
                   setTaskColumnsPanelPosition({ top, left });
                   setShowTaskColumnsPanel((previous) => !previous);
                 }}
-                className="h-9 px-3 rounded-lg text-sm font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
+                className="h-8 px-2.5 rounded-lg text-xs font-medium bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-colors"
               >
                 Columns
               </button>
@@ -909,6 +910,7 @@ export function TasksTable({
                   </div>
                 </>
               )}
+          </div>
           </div>
 
         </div>

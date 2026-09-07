@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { type ReactNode } from 'react';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import { SearchableSelect } from '@/components/projects/ProjectInlineFields';
@@ -29,6 +29,7 @@ export function TasksFilterPanel({
   priorityOptions,
   assigneeOptions,
   tagFilterOptions,
+  headerExtra,
 }: {
   filterText: string;
   setFilterText: (value: string) => void;
@@ -53,6 +54,7 @@ export function TasksFilterPanel({
   priorityOptions: Array<{ id: number; name: string }>;
   assigneeOptions: Array<{ id: number; name: string }>;
   tagFilterOptions: Array<{ value: number; label: string; subtitle?: string }>;
+  headerExtra?: ReactNode;
 }) {
   return (
           <CollapsibleFilterPanel
@@ -68,6 +70,8 @@ export function TasksFilterPanel({
               unplannedOnly ? 1 : 0,
             ].reduce((a, b) => a + b, 0)}
             onClear={resetTaskFilters}
+            headerExtra={headerExtra}
+            className="mb-0"
           >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-2">
               <div className="lg:col-span-2">

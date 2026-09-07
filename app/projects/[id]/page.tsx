@@ -9,10 +9,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { useToast } from '@/contexts/ToastContext';
 import { projectsApi, Project } from '@/lib/api/projects';
 import { tasksApi, Task, CreateTaskData } from '@/lib/api/tasks';
-import { organizationsApi, Organization } from '@/lib/api/organizations';
 import { getCustomersByOrganization, Customer } from '@/lib/api/customers';
 import { statusValuesApi, StatusValue } from '@/lib/api/statusValues';
 import { usersApi, User } from '@/lib/api/users';
@@ -2661,7 +2659,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
       <div
         className={
           activeTab === 'tasks'
-            ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-3'
+            ? 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-1.5'
             : 'min-h-0 min-w-0 flex-1 overflow-y-auto pt-3'
         }
       >

@@ -563,7 +563,7 @@ export default function TicketsPage() {
     if (!canCreateTicket || loading || isLoading) return;
     handleOpenCreateModal();
     router.replace('/tickets', { scroll: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when ?new=1 is present
+     
   }, [searchParams, canCreateTicket, loading, isLoading]);
 
   const searchJiraIssues = async (query: string) => {

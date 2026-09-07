@@ -5,6 +5,7 @@ import { formatTicketCreatorLabel, formatTicketRef } from '@/lib/customerPortal'
 
 import { useState, useEffect, useMemo, Suspense, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -464,7 +465,7 @@ function AssignedKanbanTab({
           taskMatchesKanbanFilters(task, group.organizationId)
         )
       ).length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- helpers close over filter state
+     
     [
       localTasks,
       visibleOrganizationGroups,
@@ -2949,12 +2950,12 @@ function DashboardContent() {
                               Latest ticket activity (excluding items that already need your reply). Full list is on Tickets.
                             </p>
                           </div>
-                          <a
+                          <Link
                             href="/tickets"
                             className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline shrink-0"
                           >
                             View all
-                          </a>
+                          </Link>
                         </div>
                         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
                           {portalData.recentActivity.map((ticket) => (
