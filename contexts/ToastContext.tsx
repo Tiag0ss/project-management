@@ -27,7 +27,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const showToast = useCallback((toast: Omit<ToastItem, 'id'>) => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setToasts((prev) => [...prev, { ...toast, id }]);
-    window.setTimeout(() => removeToast(id), 3500);
+    // Errors stay a bit longer so API messages are readable.
+    const durationMs = toast.type === 'error' ? 5500 : 3500;
+    window.setTimeout(() => removeToast(id), durationMs);
   }, [removeToast]);
 
   const value = useMemo<ToastContextValue>(() => ({ showToast }), [showToast]);

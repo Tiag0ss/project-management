@@ -45,9 +45,13 @@ import {
   isLeafTask as isLeafTaskInTree,
 } from '@/lib/planning/leafTasks';
 import { getTaskUserAllocationSegments as buildTaskUserAllocationSegments } from '@/lib/planning/allocationSegments';
+import { filterUnplannedTasksForTray } from '@/lib/planning/filterUnplannedTasks';
+import { getDragAutoScrollDelta } from '@/lib/planning/dragAutoScroll';
 
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const NOT_PLANNED_TRAY_EXPANDED_KEY = 'planning:not-planned-tray:expanded';
+const NOT_PLANNED_TRAY_LIST_LIMIT = 50;
 
 
 const formatDateForInput = (date: Date): string => {
@@ -263,11 +267,32 @@ export default function PlanningPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const ganttContainerRef = useRef<HTMLDivElement>(null);
   const ganttViewOptionsRef = useRef<HTMLDivElement>(null);
+  const notPlannedRowRef = useRef<HTMLDivElement>(null);
+  const notPlannedTrayRef = useRef<HTMLDivElement>(null);
   const suppressTaskClickUntilRef = useRef(0);
   const draggedTaskRef = useRef<Task | null>(null);
   const draggedTaskSourceUserIdRef = useRef<number | null>(null);
   const draggedTaskSourceHeaderIdRef = useRef<number | null>(null);
   const draggedTaskSliceByHoursRef = useRef<boolean>(false);
+  const [notPlannedTrayExpanded, setNotPlannedTrayExpanded] = useState(false);
+  const [notPlannedTrayQuery, setNotPlannedTrayQuery] = useState('');
+
+  const handleDragAutoScroll = useCallback((event: DragEvent) => {
+    const container = scrollContainerRef.current;
+    if (!container || !draggedTaskRef.current) {
+      return;
+    }
+    const delta = getDragAutoScrollDelta(event.clientY, container.getBoundingClientRect());
+    if (delta !== 0) {
+      container.scrollTop += delta;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener('dragover', handleDragAutoScroll);
+    };
+  }, [handleDragAutoScroll]);
   
   // Manual allocation modal state
   const [manualAllocationModal, setManualAllocationModal] = useState<{
@@ -604,12 +629,12 @@ export default function PlanningPage() {
       || normalizedTitle === 'baseline set'
       || normalizedMessage.includes('successfully');
 
-    if (isSuccessAlert) {
-      showToast({ type: 'success', title, message });
-      return;
-    }
-
-    setModalMessage({ type: 'alert', title, message });
+    // Prefer corner toasts over blocking modals for feedback (success + errors).
+    showToast({
+      type: isSuccessAlert ? 'success' : 'error',
+      title,
+      message,
+    });
   };
 
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
@@ -1035,6 +1060,47 @@ export default function PlanningPage() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showGanttViewOptions]);
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(NOT_PLANNED_TRAY_EXPANDED_KEY) === '1') {
+        setNotPlannedTrayExpanded(true);
+      }
+    } catch {
+      // Ignore sessionStorage failures.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(NOT_PLANNED_TRAY_EXPANDED_KEY, notPlannedTrayExpanded ? '1' : '0');
+    } catch {
+      // Ignore sessionStorage failures.
+    }
+  }, [notPlannedTrayExpanded]);
+
+  useEffect(() => {
+    if (!notPlannedTrayExpanded) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setNotPlannedTrayExpanded(false);
+      }
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (notPlannedTrayRef.current && !notPlannedTrayRef.current.contains(target)) {
+        setNotPlannedTrayExpanded(false);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('mousedown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('mousedown', onPointerDown);
+    };
+  }, [notPlannedTrayExpanded]);
 
   useEffect(() => {
     if (users.length === 0) {
@@ -3814,9 +3880,11 @@ export default function PlanningPage() {
     }
     e.dataTransfer.setData('application/x-slice-by-hours', e.ctrlKey ? '1' : '0');
     e.dataTransfer.effectAllowed = 'move';
+    document.addEventListener('dragover', handleDragAutoScroll);
   };
 
   const handleDragEnd = () => {
+    document.removeEventListener('dragover', handleDragAutoScroll);
     setHoveredDropCell(null);
     draggedTaskRef.current = null;
     draggedTaskSourceUserIdRef.current = null;
@@ -6648,15 +6716,18 @@ export default function PlanningPage() {
         }
       );
 
+      const saveData = await saveRes.json().catch(() => null);
       if (!saveRes.ok) {
         if (!options?.silent) {
           setPlanningProgress(prev => ({ ...prev, show: false }));
-          showAlert('Error', 'Failed to save task allocation');
+          const apiMessage =
+            typeof saveData?.message === 'string' && saveData.message.trim()
+              ? saveData.message.trim()
+              : 'Failed to save task allocation';
+          showAlert('Error', apiMessage);
         }
         return null;
       }
-
-      const saveData = await saveRes.json();
 
       const plannedStartDate = allocations.length > 0 ? allocations[0].date : null;
 
@@ -7141,7 +7212,8 @@ export default function PlanningPage() {
 
     return Object.values(groupedByTask)
       .map((group: any) => {
-        group.userNames = Array.from(group.users).map((userId: number) => {
+        const userIds = Array.from(group.users as Set<number>);
+        group.userNames = userIds.map((userId) => {
           const matched = users.find((u) => u.Id === userId);
           return matched?.Username || 'Unknown';
         });
@@ -7453,6 +7525,14 @@ export default function PlanningPage() {
   const visibleUnassignedTasks = unassignedTasks
     .filter(matchesGanttSearch)
     .filter((task) => !hideNotPlannedTasks || taskHasAssignedHours(task));
+  const notPlannedTrayFilter = filterUnplannedTasksForTray(
+    visibleUnassignedTasks,
+    notPlannedTrayQuery,
+    (task) => projects.find((project) => Number(project.Id) === Number(task.ProjectId))?.ProjectName ?? null,
+    NOT_PLANNED_TRAY_LIST_LIMIT
+  );
+  const showNotPlannedTrayChip =
+    isResourceGrouping && canPlanOnThisDevice && visibleUnassignedTasks.length > 0;
   const hiddenUnassignedTasks = hideNotPlannedTasks
     ? unassignedTasks
         .filter(matchesGanttSearch)
@@ -7991,6 +8071,116 @@ export default function PlanningPage() {
               </div>
 
               <div className={`ml-auto flex flex-wrap items-center gap-1.5 ${showGanttViewOptions && isMobile ? 'w-full' : ''}`}>
+                {showNotPlannedTrayChip && (
+                  <div className={`relative ${isMobile ? 'w-full' : ''}`} ref={notPlannedTrayRef}>
+                    <button
+                      type="button"
+                      onClick={() => setNotPlannedTrayExpanded((open) => !open)}
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors ${
+                        notPlannedTrayExpanded
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-950/70 dark:text-red-200 dark:hover:bg-red-900/70'
+                      }`}
+                      aria-expanded={notPlannedTrayExpanded}
+                      title="Search and drag not-planned tasks without scrolling to the bottom"
+                    >
+                      <span className="truncate">Not Planned ({visibleUnassignedTasks.length})</span>
+                      <svg
+                        className={`h-3.5 w-3.5 shrink-0 transition-transform ${notPlannedTrayExpanded ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {notPlannedTrayExpanded && (
+                      <div
+                        className={
+                          isMobile
+                            ? 'mt-2 w-full max-h-[min(50vh,24rem)] flex flex-col gap-1.5 overflow-hidden bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900 rounded-lg shadow-lg z-[120] p-3'
+                            : 'absolute right-0 mt-1 w-[22rem] max-h-[min(50vh,24rem)] flex flex-col gap-1.5 overflow-hidden bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900 rounded-lg shadow-lg z-[120] p-3'
+                        }
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="search"
+                            value={notPlannedTrayQuery}
+                            onChange={(e) => setNotPlannedTrayQuery(e.target.value)}
+                            placeholder="Filter by task, project, or customer…"
+                            className="min-w-0 flex-1 rounded border border-red-200 dark:border-red-800 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-900 dark:text-gray-100"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            className="text-[11px] text-red-700 dark:text-red-300 underline hover:no-underline whitespace-nowrap"
+                            onClick={() => {
+                              notPlannedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                              setNotPlannedTrayExpanded(false);
+                            }}
+                          >
+                            Jump to bottom
+                          </button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto rounded border border-red-100 dark:border-red-900/60">
+                          {notPlannedTrayFilter.matches.length === 0 ? (
+                            <p className="px-2 py-3 text-xs text-gray-500 dark:text-gray-400">
+                              No matching not-planned tasks
+                            </p>
+                          ) : (
+                            <ul className="divide-y divide-red-100 dark:divide-red-900/40">
+                              {notPlannedTrayFilter.matches.map((task) => {
+                                const project = projects.find((p) => Number(p.Id) === Number(task.ProjectId));
+                                const canDragFromTray = !isGanttSearchActive;
+                                return (
+                                  <li key={`tray-unplanned-${task.Id}`}>
+                                    <div
+                                      draggable={canDragFromTray}
+                                      onDragStart={(e) => handleDragStart(e, task, null)}
+                                      onDragEnd={handleDragEnd}
+                                      onClick={() => {
+                                        if (Date.now() < suppressTaskClickUntilRef.current) return;
+                                        void handleTaskClick(task);
+                                      }}
+                                      className={`flex items-start gap-2 px-2 py-1.5 text-xs ${
+                                        canDragFromTray
+                                          ? 'cursor-grab active:cursor-grabbing hover:bg-red-50 dark:hover:bg-red-950/40'
+                                          : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60'
+                                      }`}
+                                      title={
+                                        canDragFromTray
+                                          ? 'Drag onto a user row to plan'
+                                          : 'Clear Gantt search to drag; click to open'
+                                      }
+                                    >
+                                      <span className="min-w-0 flex-1">
+                                        <span className="block truncate font-medium text-gray-900 dark:text-gray-100">
+                                          {task.TaskName}
+                                        </span>
+                                        <span className="block truncate text-[10px] text-gray-500 dark:text-gray-400">
+                                          {[project?.ProjectName, task.CustomerName || project?.CustomerName]
+                                            .filter(Boolean)
+                                            .join(' · ') || 'No project'}
+                                        </span>
+                                      </span>
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
+                        {notPlannedTrayFilter.truncated && (
+                          <p className="text-[10px] text-red-600/90 dark:text-red-400/90">
+                            Showing {notPlannedTrayFilter.matches.length} of {notPlannedTrayFilter.totalMatches} matches.
+                            Refine the filter to narrow results.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {isGanttExpanded && (
                   <input
                     type="text"
@@ -8514,6 +8704,7 @@ export default function PlanningPage() {
                 {/* Unassigned tasks row */}
                 {isResourceGrouping && visibleUnassignedTasks.length > 0 && (
                   <div
+                    ref={notPlannedRowRef}
                     className="order-last flex border-b-2 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20"
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDropOnUser(e, null)}
