@@ -21,6 +21,10 @@ import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { NavModuleIcon } from '@/lib/navIcons';
 import { compareWithPinnedFirst } from '@/lib/pinnedListItems';
+import {
+  removePinnedNavProjectMeta,
+  upsertPinnedNavProjectMeta,
+} from '@/lib/pinnedNavProjectMeta';
 import { usePinnedListItems } from '@/hooks/usePinnedListItems';
 import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 import { Pin, PinOff, Search } from 'lucide-react';
@@ -136,6 +140,18 @@ export default function ProjectsPage() {
       sortDirection: typeof value === 'function' ? value(prev.sortDirection) : value,
     }));
   const { pinnedIds, isPinned, togglePinned } = usePinnedListItems('projects', user?.id);
+
+  const handleToggleProjectPin = (projectId: number) => {
+    const nextPinned = !isPinned(projectId);
+    togglePinned(projectId);
+    if (nextPinned) {
+      const project = projects.find((entry) => entry.Id === projectId);
+      const label = String(project?.ProjectName ?? '').trim() || `Project #${projectId}`;
+      upsertPinnedNavProjectMeta({ id: projectId, label, href: `/projects/${projectId}` }, user?.id);
+    } else {
+      removePinnedNavProjectMeta(projectId, user?.id);
+    }
+  };
   const { permissions, isLoading: isLoadingPermissions } = usePermissions();
   const canViewBudgetInfo = permissions?.canViewBudgetInfo || false;
   const router = useRouter();
@@ -961,7 +977,7 @@ export default function ProjectsPage() {
                       internalTicketsEnabled={internalTicketsEnabled}
                       canViewBudgetInfo={canViewBudgetInfo}
                       pinned={isPinned(project.Id)}
-                      onTogglePin={togglePinned}
+                      onTogglePin={handleToggleProjectPin}
                       onEdit={handleEditProject}
                       onDelete={handleDeleteProject}
                       canEdit={permissions?.canManageProjects || false}
@@ -1109,7 +1125,7 @@ export default function ProjectsPage() {
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    togglePinned(project.Id);
+                                    handleToggleProjectPin(project.Id);
                                   }}
                                   title={isPinned(project.Id) ? 'Unpin project' : 'Pin project to top'}
                                   aria-label={isPinned(project.Id) ? 'Unpin project' : 'Pin project to top'}

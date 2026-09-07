@@ -134,9 +134,22 @@ export function recordRecentNavAccess(
 ): RecentNavAccessState {
   if (!isRecentNavKind(kind)) return readRecentNavAccess(userId);
   const current = readRecentNavAccess(userId);
+  const label = String(item.label || '').trim();
+  const href = String(item.href || '').trim();
+  const id = Number(item.id);
+  const top = current[kind][0];
+  // Avoid localStorage write + shell re-render when nothing meaningful changed.
+  if (
+    top &&
+    top.id === id &&
+    top.label === label &&
+    top.href === href
+  ) {
+    return current;
+  }
   const next: RecentNavAccessState = {
     ...current,
-    [kind]: pushRecentNavItem(current[kind], item),
+    [kind]: pushRecentNavItem(current[kind], { id, label, href }),
   };
   writeRecentNavAccess(next, userId);
   return next;

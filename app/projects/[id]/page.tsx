@@ -24,6 +24,8 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import CustomerUserGuard from '@/components/CustomerUserGuard';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import { recordRecentNavAccess } from '@/lib/recentNavAccess';
+import { readPinnedListIds } from '@/lib/pinnedListItems';
+import { upsertPinnedNavProjectMeta } from '@/lib/pinnedNavProjectMeta';
 import JiraStatusMappingPanel from '@/components/projects/JiraStatusMappingPanel';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useUrlTab } from '@/hooks/useUrlTab';
@@ -245,6 +247,12 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
       { id: project.Id, label: project.ProjectName, href: `/projects/${project.Id}` },
       user?.id
     );
+    if (readPinnedListIds('projects', user?.id).includes(project.Id)) {
+      upsertPinnedNavProjectMeta(
+        { id: project.Id, label: project.ProjectName, href: `/projects/${project.Id}` },
+        user?.id
+      );
+    }
   }, [project?.Id, project?.ProjectName, user?.id]);
 
   const parseMappingJson = (value: any): Record<string, string> => {

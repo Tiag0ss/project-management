@@ -18,11 +18,23 @@ import { getApiUrl } from '@/lib/api/config';
 import { useRecentNavAccess } from '@/hooks/useRecentNavAccess';
 import { useRecentNavExpanded } from '@/hooks/useRecentNavExpanded';
 import { useNavMenuVisibility } from '@/hooks/useNavMenuVisibility';
+import { usePinnedListItems } from '@/hooks/usePinnedListItems';
 import {
   recordRecentNavAccess,
   recentNavParentHref,
   type RecentNavKind,
 } from '@/lib/recentNavAccess';
+import {
+  PINNED_NAV_PROJECT_META_EVENT,
+  isPlaceholderPinnedNavLabel,
+  pinnedNavProjectMetaStorageKey,
+  readPinnedNavProjectMeta,
+  removePinnedNavProjectMeta,
+  resolvePinnedNavProjects,
+  upsertPinnedNavProjectMeta,
+  type PinnedNavProjectMetaMap,
+} from '@/lib/pinnedNavProjectMeta';
+import { readPinnedListIds } from '@/lib/pinnedListItems';
 import { isNavMenuAlwaysVisible } from '@/lib/navMenuVisibility';
 import {
   filterSidebarNavBySystem,
@@ -128,6 +140,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const recentNav = useRecentNavAccess(user?.id);
   const { expanded: recentExpanded, toggleExpanded: toggleRecentExpanded } = useRecentNavExpanded(user?.id);
+  const {
+    pinnedIds: pinnedProjectIds,
+    isPinned: isProjectPinned,
+    setPinned: setProjectPinned,
+  } = usePinnedListItems('projects', user?.id);
+  const [pinnedProjectMeta, setPinnedProjectMeta] = useState<PinnedNavProjectMetaMap>({});
   const { hidden: navMenuHidden, isVisible: isNavMenuVisible, setHidden: setNavMenuHidden } =
     useNavMenuVisibility(user?.id);
   const brandLabel = (companyName || '').trim() || 'Project Management';
@@ -136,6 +154,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setPinnedExpanded(readSidebarPinned());
     setPinnedHydrated(true);
   }, []);
+
+  useEffect(() => {
+    const refreshMeta = () => {
+      setPinnedProjectMeta(readPinnedNavProjectMeta(user?.id));
+    };
+    refreshMeta();
+    const onCustom = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: number | null }>).detail;
+      if (detail && detail.userId != null && user?.id != null && detail.userId !== user.id) return;
+      refreshMeta();
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== pinnedNavProjectMetaStorageKey(user?.id)) return;
+      refreshMeta();
+    };
+    window.addEventListener(PINNED_NAV_PROJECT_META_EVENT, onCustom);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(PINNED_NAV_PROJECT_META_EVENT, onCustom);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [user?.id, pinnedProjectIds]);
 
   useEffect(() => {
     if (!pinnedHydrated) return;
@@ -177,14 +217,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!Number.isFinite(id) || id <= 0) return;
     const kind: RecentNavKind = segment;
     const existing = recentNav[kind].find((item) => item.id === id);
+    const existingMeta = kind === 'projects' ? readPinnedNavProjectMeta(user?.id)[id] : undefined;
     const fallbackLabel =
+      (existing && !isPlaceholderPinnedNavLabel(id, existing.label) ? existing.label : null) ||
+      (existingMeta && !isPlaceholderPinnedNavLabel(id, existingMeta.label) ? existingMeta.label : null) ||
       existing?.label ||
+      existingMeta?.label ||
       (kind === 'projects' ? `Project #${id}` : kind === 'customers' ? `Customer #${id}` : `Application #${id}`);
     recordRecentNavAccess(
       kind,
       { id, label: fallbackLabel, href: `${recentNavParentHref(kind)}/${id}` },
       user?.id
     );
+    if (
+      kind === 'projects' &&
+      readPinnedListIds('projects', user?.id).includes(id) &&
+      !isPlaceholderPinnedNavLabel(id, fallbackLabel)
+    ) {
+      upsertPinnedNavProjectMeta(
+        { id, label: fallbackLabel, href: `${recentNavParentHref(kind)}/${id}` },
+        user?.id
+      );
+    }
     // Only re-run on route changes; recentNav is read for label reuse at touch time.
      
   }, [pathname, user?.id]);
@@ -436,13 +490,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 const recentItems =
                   !isCustomerUser && item.recentKind ? recentNav[item.recentKind] : [];
                 const recentKind = item.recentKind;
-                const showRecentToggle = expanded && !!recentKind && recentItems.length > 0;
+                const isProjectsRecent = recentKind === 'projects';
+                const pinnedProjectRows =
+                  isProjectsRecent && !isCustomerUser
+                    ? resolvePinnedNavProjects(pinnedProjectIds, recentItems, pinnedProjectMeta)
+                    : [];
+                const recentWithoutPinned = isProjectsRecent
+                  ? recentItems.filter((recent) => !isProjectPinned(recent.id))
+                  : recentItems;
+                const childRows = [
+                  ...pinnedProjectRows.map((row) => ({ ...row, kind: 'pinned' as const })),
+                  ...recentWithoutPinned.map((row) => ({ ...row, kind: 'recent' as const })),
+                ];
+                const showRecentToggle = expanded && !!recentKind && childRows.length > 0;
                 const recentGroupOpen =
                   !!recentKind && recentExpanded[recentKind] !== false;
                 return (
                   <div key={item.href} className="space-y-0.5">
                     <div className="flex items-center gap-0.5">
-                      <a
+                      <Link
                         href={item.href}
                         title={item.label}
                         className={[
@@ -463,7 +529,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         >
                           {item.label}
                         </span>
-                      </a>
+                      </Link>
                       {showRecentToggle && recentKind && (
                         <button
                           type="button"
@@ -483,26 +549,72 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </div>
                     {expanded &&
                       recentGroupOpen &&
-                      recentItems.map((recent) => {
-                        const recentPath = recent.href.split('?')[0];
-                        const recentActive =
+                      childRows.map((child) => {
+                        const childPath = child.href.split('?')[0];
+                        const childActive =
                           item.recentKind === 'memos'
-                            ? pathname.startsWith('/memos') && activeMemoId === String(recent.id)
-                            : pathname === recentPath || pathname.startsWith(`${recentPath}/`);
+                            ? pathname.startsWith('/memos') && activeMemoId === String(child.id)
+                            : pathname === childPath || pathname.startsWith(`${childPath}/`);
+                        const showProjectPin = isProjectsRecent;
+                        const pinned = showProjectPin && isProjectPinned(child.id);
                         return (
-                          <a
-                            key={`${item.recentKind}-${recent.id}`}
-                            href={recent.href}
-                            title={recent.label}
-                            className={[
-                              'flex h-8 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md py-0 pl-10 pr-3 text-xs leading-none no-underline',
-                              recentActive
-                                ? 'bg-[var(--pm-surface-2)] text-[var(--pm-accent-soft)]'
-                                : 'text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]',
-                            ].join(' ')}
+                          <div
+                            key={`${item.recentKind}-${child.kind}-${child.id}`}
+                            className="flex items-center gap-0.5"
                           >
-                            <span className="min-w-0 truncate">{recent.label}</span>
-                          </a>
+                            <Link
+                              href={child.href}
+                              title={child.label}
+                              className={[
+                                'flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md py-0 pl-10 pr-1 text-xs leading-none no-underline',
+                                childActive
+                                  ? 'bg-[var(--pm-surface-2)] text-[var(--pm-accent-soft)]'
+                                  : 'text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]',
+                              ].join(' ')}
+                            >
+                              {pinned ? (
+                                <Pin
+                                  size={12}
+                                  strokeWidth={2}
+                                  className="shrink-0 fill-[var(--pm-accent)] text-[var(--pm-accent)]"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <span className="min-w-0 truncate">{child.label}</span>
+                            </Link>
+                            {showProjectPin ? (
+                              <button
+                                type="button"
+                                className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--pm-muted)] hover:bg-[var(--pm-surface)] hover:text-[var(--pm-text)]"
+                                title={pinned ? 'Unpin project' : 'Pin project'}
+                                aria-label={
+                                  pinned
+                                    ? `Unpin ${child.label}`
+                                    : `Pin ${child.label}`
+                                }
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  const nextPinned = !pinned;
+                                  setProjectPinned(child.id, nextPinned);
+                                  if (nextPinned) {
+                                    upsertPinnedNavProjectMeta(
+                                      { id: child.id, label: child.label, href: child.href },
+                                      user?.id
+                                    );
+                                  } else {
+                                    removePinnedNavProjectMeta(child.id, user?.id);
+                                  }
+                                }}
+                              >
+                                {pinned ? (
+                                  <PinOff size={12} strokeWidth={2} />
+                                ) : (
+                                  <Pin size={12} strokeWidth={2} />
+                                )}
+                              </button>
+                            ) : null}
+                          </div>
                         );
                       })}
                   </div>
