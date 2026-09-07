@@ -3087,6 +3087,13 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
     hideCompleted ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
+  const clearProjectFilters = () => {
+    setFilterText('');
+    setFilterStatus('');
+    setFilterCustomer('');
+    setHideCompleted(true);
+  };
+
   const formatDate = (value?: string | null) => {
     if (!value) return '—';
     const key = String(value).split('T')[0];
@@ -3127,11 +3134,7 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
           className="mb-2"
           title="Project filters"
           activeCount={activeFilterCount}
-          onClear={() => {
-            setFilterText('');
-            setFilterStatus('');
-            setFilterCustomer('');
-          }}
+          onClear={clearProjectFilters}
           headerExtra={
             <span className="text-xs text-gray-400">
               {filteredProjects.length} shown
@@ -3184,12 +3187,7 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
               <div className="sm:col-span-2 lg:col-span-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setFilterText('');
-                    setFilterStatus('');
-                    setFilterCustomer('');
-                    setHideCompleted(false);
-                  }}
+                  onClick={clearProjectFilters}
                   className="rounded-lg bg-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                 >
                   Clear filters
@@ -3209,12 +3207,7 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
           <p className="text-sm text-gray-500 dark:text-gray-400">No projects match the current filters.</p>
           <button
             type="button"
-            onClick={() => {
-              setFilterText('');
-              setFilterStatus('');
-              setFilterCustomer('');
-              setHideCompleted(false);
-            }}
+            onClick={clearProjectFilters}
             className="mt-2 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
           >
             Clear filters
