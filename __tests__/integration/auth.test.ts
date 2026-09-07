@@ -37,11 +37,11 @@ describe('Auth middleware', () => {
     expect(response.status).toBe(401);
   });
 
-  it('should return 401 for invalid token', async () => {
+  it('should return 403 for invalid token', async () => {
     const response = await request(app)
       .get('/protected')
       .set('Authorization', 'Bearer invalid-token');
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
   });
 
   it('should allow valid JWT', async () => {

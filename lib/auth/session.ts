@@ -43,7 +43,71 @@ export function isTokenExpired(payload: JwtPayload | null, skewMs = 30_000): boo
   return payload.exp * 1000 <= Date.now() + skewMs;
 }
 
+/** In-memory access token used by silent refresh (avoids React re-renders on JWT rotation). */
+let liveAccessToken: string | null = null;
+
+export function getLiveAccessToken(): string | null {
+  return liveAccessToken;
+}
+
+export function setLiveAccessToken(token: string | null): void {
+  liveAccessToken = token;
+}
+
+/**
+ * Persist a rotated JWT without relying on React state updates.
+ * Callers that must avoid page re-fetches should use this instead of setState.
+ */
+export function persistSilentAccessToken(token: string): void {
+  if (liveAccessToken === token) {
+    return;
+  }
+  liveAccessToken = token;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+    }
+  } catch {
+    // Ignore storage failures (private mode / SSR).
+  }
+}
+
+/** Rewrite Bearer Authorization to the latest silent-refresh token when present. */
+export function applyLiveAccessTokenToFetchArgs(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  latestToken: string | null = liveAccessToken
+): [RequestInfo | URL, RequestInit | undefined] {
+  if (!latestToken) {
+    return [input, init];
+  }
+
+  const rewriteHeaders = (headers: Headers): boolean => {
+    const auth = headers.get('Authorization');
+    if (!auth || !auth.startsWith('Bearer ')) {
+      return false;
+    }
+    headers.set('Authorization', `Bearer ${latestToken}`);
+    return true;
+  };
+
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    const headers = new Headers(input.headers);
+    if (!rewriteHeaders(headers)) {
+      return [input, init];
+    }
+    return [new Request(input, { ...init, headers }), undefined];
+  }
+
+  const headers = new Headers(init?.headers);
+  if (!rewriteHeaders(headers)) {
+    return [input, init];
+  }
+  return [input, { ...init, headers }];
+}
+
 export function clearStoredSession(): void {
+  liveAccessToken = null;
   if (typeof window === 'undefined') {
     return;
   }
@@ -52,6 +116,7 @@ export function clearStoredSession(): void {
 }
 
 export function persistStoredSession(token: string, user: User): void {
+  liveAccessToken = token;
   if (typeof window === 'undefined') {
     return;
   }

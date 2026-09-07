@@ -7,7 +7,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
@@ -190,7 +189,7 @@ export default function ApplicationsPage() {
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!authLoading && !user) router.push(oldPath('/login'));
+    if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
   useEffect(() => {
@@ -1373,7 +1372,7 @@ export default function ApplicationsPage() {
                   Name,Description,RepositoryUrl,OrganizationName,IsCustomerSpecific,CustomerNames
                 </code>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a href={oldPath("/templates/applications_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  <a href="/templates/applications_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                 </p>
               </div>
 

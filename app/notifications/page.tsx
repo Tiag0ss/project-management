@@ -6,7 +6,6 @@ import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import TaskDetailModal from '@/components/TaskDetailModal';
@@ -51,7 +50,7 @@ export default function NotificationsPage() {
   // Check authentication - only redirect if not loading and no token
   useEffect(() => {
     if (!authLoading && !token) {
-      router.push(oldPath('/login'));
+      router.push('/login');
     }
   }, [authLoading, token, router]);
 

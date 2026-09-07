@@ -10,7 +10,7 @@
 
 A full-stack, self-hosted project management application with task tracking, resource planning, time tracking, and multi-tenant organization support.
 
-This project is a work in progress — bugs may still be found; please report them on GitHub.
+**Version 1.0** — production-ready core (projects, planning, time, tickets, reporting, integrations). Report bugs and feature requests on GitHub.
 
 ## Features
 
@@ -29,7 +29,7 @@ This project is a work in progress — bugs may still be found; please report th
 - 🔗 **Integrations** — Jira, GitHub, Gitea, and Outlook calendar (Microsoft Graph); credentials encrypted at rest
 - 📬 **Outlook Email Task Queue** — Route emails via Cloudflare Email Routing to a per-user queue; import as tasks from the project UI ([setup guide](extras/cloudflare/README.md))
 - 🔑 **API Tokens** — Personal `pt_...` tokens for webhooks, Workers, and integrations (Profile → API Tokens)
-- 📝 **Rich Text Editor** — Tiptap-based editor with formatting, images (inline base64), and markdown support
+- 📝 **Rich Text Editor** — Tiptap-based editor with formatting; images upload to `/uploads/editor` (URL references; base64 fallback only if upload is unavailable)
 - 📔 **Memos System** — Calendar-based notes with visibility controls (Private, Organizations, Public), tags, and rich content
 - 🔄 **Recurring Tasks** — Outlook-style recurring time blocks for meetings, standups, and fixed schedules
 - 📧 **Email Notifications** — SMTP integration; assignment, status/priority change, @mention, and due-date reminders
@@ -38,7 +38,7 @@ This project is a work in progress — bugs may still be found; please report th
 - 📈 **Dashboard KPIs & Statistics** — Configurable widgets and aggregate reporting
 - 📊 **Reporting Hub** — Organization/portfolio/delivery/capacity packs, expense analytics (optional module), CSV extract, and advanced Explore pivots (`/reporting`)
 - 💸 **Expenses (optional)** — Project/internal costs, invoice attachments, approval and reimbursement workflow with category caps
-- 🔍 **Global Search** — Cross-entity search with paginated results
+- 🔍 **Global Search** — Cross-entity search with paginated results (including users → profile pages)
 - 🔔 **Real-Time Updates** — Socket.io notifications and live UI refresh
 - 🌙 **Dark Mode** — Full dark mode support across the UI
 - 📱 **Responsive Design** — Mobile-friendly interface with grouped navigation
@@ -46,7 +46,8 @@ This project is a work in progress — bugs may still be found; please report th
 - 🧩 **IDE Extensions** — VS Code / Cursor Kanban sidebar for tasks linked to this app ([extras/ide-extensions/README.md](extras/ide-extensions/README.md))
 - 🧙 **Install Wizard** — Guided first-time setup
 - ⚡ **Optional Redis Cache** — Read-through cache with invalidate-on-write for faster loads; disabled by default
-- 🧠 **[PM Synapse](https://github.com/tiag0ss/pm-synapse)** — Companion Markdown vaults (SSO with this app; optional checkbox→task push). Placeholder repo URL — update when the Synapse repository is published.
+- 🧠 **[PM Synapse](https://github.com/tiag0ss/pm-synapse)** — Companion Markdown vaults (SSO with this app; optional checkbox→task push)
+- 🤖 **AI Assistant (optional)** — SQL-backed assistant; DB views are created on server start via `ensureAiAssistantViews` (see `server/utils/aiAssistantViews.ts`)
 
 ## Additional Notes
 

@@ -4,13 +4,13 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import RichTextEditor from '@/components/RichTextEditor';
+import { sanitizeRichTextHtml } from '@/lib/sanitizeHtml';
 import { getMemos, createMemo, updateMemo, deleteMemo, Memo } from '@/lib/api/memos';
 import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 import { compareWithPinnedFirst } from '@/lib/pinnedListItems';
 import { usePinnedListItems } from '@/hooks/usePinnedListItems';
 import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 import { useRouter, useSearchParams } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
@@ -114,7 +114,7 @@ function MemosPageContent() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
     } else if (user && token) {
       loadMemos();
     }
@@ -734,7 +734,7 @@ function MemosPageContent() {
                     {memo.Content && (
                       <div 
                         className="prose prose-sm dark:prose-invert max-w-none mb-3"
-                        dangerouslySetInnerHTML={{ __html: memo.Content }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(memo.Content) }}
                       />
                     )}
 

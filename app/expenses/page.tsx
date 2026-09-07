@@ -4,8 +4,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
-import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
@@ -91,15 +92,41 @@ export default function ExpensesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [filterOrg, setFilterOrg] = useState('');
-  const [filterProject, setFilterProject] = useState('');
-  const [filterInternalOnly, setFilterInternalOnly] = useState(false);
-  const [filterGroup, setFilterGroup] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterApproval, setFilterApproval] = useState('');
-  const [filterReimbursement, setFilterReimbursement] = useState('');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
+  const [expenseFilters, setExpenseFilters, resetExpenseFilters] = usePersistedFilters(
+    'expenses-list',
+    {
+      filterOrg: '',
+      filterProject: '',
+      filterInternalOnly: false,
+      filterGroup: '',
+      filterCategory: '',
+      filterApproval: '',
+      filterReimbursement: '',
+      filterDateFrom: '',
+      filterDateTo: '',
+    },
+    { userId: user?.id }
+  );
+  const {
+    filterOrg,
+    filterProject,
+    filterInternalOnly,
+    filterGroup,
+    filterCategory,
+    filterApproval,
+    filterReimbursement,
+    filterDateFrom,
+    filterDateTo,
+  } = expenseFilters;
+  const setFilterOrg = (value: string) => setExpenseFilters({ filterOrg: value });
+  const setFilterProject = (value: string) => setExpenseFilters({ filterProject: value });
+  const setFilterInternalOnly = (value: boolean) => setExpenseFilters({ filterInternalOnly: value });
+  const setFilterGroup = (value: string) => setExpenseFilters({ filterGroup: value });
+  const setFilterCategory = (value: string) => setExpenseFilters({ filterCategory: value });
+  const setFilterApproval = (value: string) => setExpenseFilters({ filterApproval: value });
+  const setFilterReimbursement = (value: string) => setExpenseFilters({ filterReimbursement: value });
+  const setFilterDateFrom = (value: string) => setExpenseFilters({ filterDateFrom: value });
+  const setFilterDateTo = (value: string) => setExpenseFilters({ filterDateTo: value });
 
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
@@ -146,11 +173,11 @@ export default function ExpensesPage() {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const projectId = params.get('projectId');
-    if (projectId) setFilterProject(projectId);
+    if (projectId) setExpenseFilters({ filterProject: projectId });
   }, []);
 
   useEffect(() => {
-    if (!authLoading && !user) router.push(oldPath('/login'));
+    if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
   useEffect(() => {
@@ -554,6 +581,10 @@ export default function ExpensesPage() {
             <h1 className="text-xl font-semibold leading-tight text-gray-900 dark:text-white">Expenses</h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               Track project and internal expenses with invoices and reimbursements.
+              {' '}
+              <Link href="/reporting?tab=expenses" className="text-blue-600 dark:text-blue-400 hover:underline">
+                Open expenses reporting
+              </Link>
             </p>
           </div>
           {canCreate && (
@@ -582,15 +613,7 @@ export default function ExpensesPage() {
             filterReimbursement ? 1 : 0,
           ].reduce((a, b) => a + b, 0)}
           onClear={() => {
-            setFilterDateFrom('');
-            setFilterDateTo('');
-            setFilterOrg('');
-            setFilterProject('');
-            setFilterGroup('');
-            setFilterCategory('');
-            setFilterApproval('');
-            setFilterInternalOnly(false);
-            setFilterReimbursement('');
+            resetExpenseFilters();
           }}
           bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
         >

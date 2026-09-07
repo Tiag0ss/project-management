@@ -5,7 +5,6 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -212,7 +211,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
       return;
     }
     if (user && token && featureFlagsLoaded) {
@@ -1223,7 +1222,7 @@ export default function ProjectsPage() {
                   ProjectName,Description,OrganizationName,CustomerName,StartDate,EndDate,IsHobby,IsGlobal,IsVisibleToCustomer,Budget,BudgetType
                 </code>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a href={oldPath("/templates/projects_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  <a href="/templates/projects_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                 </p>
               </div>
 

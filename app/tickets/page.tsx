@@ -6,7 +6,6 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
@@ -241,7 +240,7 @@ export default function TicketsPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
     }
   }, [user, isLoading, router]);
 

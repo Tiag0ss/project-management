@@ -1,5 +1,6 @@
 'use client';
 
+import { sanitizeRichTextHtml } from '@/lib/sanitizeHtml';
 import { useEffect, useMemo, useState } from 'react';
 import { Project } from '@/lib/api/projects';
 import { Task } from '@/lib/api/tasks';
@@ -136,7 +137,7 @@ export function OverviewTab({
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="h-1 w-full" style={backgroundStyle(project.StatusColor || '#6366f1')} />
           <div className="prose prose-sm dark:prose-invert max-w-none p-4 text-gray-700 dark:text-gray-300"
-            dangerouslySetInnerHTML={{ __html: project.Description }} />
+            dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(project.Description) }} />
         </div>
       ) : null}
 

@@ -23,5 +23,9 @@ jobs:
         run: pnpm run lint
       - name: Unit tests
         run: pnpm run test:unit
+      - name: Integration smoke
+        run: pnpm run test:integration:smoke
+        env:
+          JWT_SECRET: test-jwt-secret-key-do-not-use-in-production
       - name: Server typecheck
         run: pnpm exec tsc --project server/tsconfig.json --noEmit

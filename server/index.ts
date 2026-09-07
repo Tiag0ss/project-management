@@ -77,6 +77,7 @@ import slaRulesRoutes from './modules/tickets/slaRules';
 import sprintsRoutes from './modules/projects/sprints';
 import projectMilestonesRoutes from './modules/projects/projectMilestones';
 import portalRoutes from './modules/portal/portal';
+import editorUploadsRoutes from './modules/uploads/editorUploads';
 import applicationsRoutes from './modules/applications/applications';
 import projectReportSchedulesRoutes from './modules/projects/projectReportSchedules';
 import retrospectiveActionsRoutes from './modules/projects/retrospectiveActions';
@@ -307,6 +308,7 @@ app.prepare().then(async () => {
   server.use('/api/sprints', sprintsRoutes);
   server.use('/api/project-milestones', projectMilestonesRoutes);
   server.use('/api/portal', portalRoutes);
+  server.use('/api/uploads', editorUploadsRoutes);
   server.use('/api/project-report-schedules', projectReportSchedulesRoutes);
   server.use('/api/retrospective-actions', retrospectiveActionsRoutes);
   server.use('/api/workflow-transition-policies', workflowTransitionPoliciesRoutes);

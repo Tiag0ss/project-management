@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
@@ -32,12 +33,12 @@ export default function CustomerUserGuard({ children }: CustomerUserGuardProps) 
       <div className="w-full rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] p-8 text-center">
         <h2 className="mb-2 text-xl font-semibold text-[var(--pm-text)]">Access Restricted</h2>
         <p className="text-[var(--pm-muted)]">You don&apos;t have permission to access this page.</p>
-        <a
+        <Link
           href="/dashboard"
           className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
         >
           Go to Dashboard
-        </a>
+        </Link>
       </div>
     );
   }

@@ -5,7 +5,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, use, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
+import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
@@ -248,7 +248,7 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
     }
   }, [user, authLoading, router]);
 
@@ -874,12 +874,12 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
         <div className="max-w-7xl mx-auto py-6 px-4">
           <div className="text-center py-12">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Customer not found</h2>
-            <button
-              onClick={() => router.push(oldPath('/customers'))}
-              className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
+            <Link
+              href="/customers"
+              className="mt-4 inline-block text-blue-600 dark:text-blue-400 hover:underline"
             >
               Back to Customers
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -907,13 +907,12 @@ function CustomerDetailPageContent({ params }: { params: Promise<{ id: string }>
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => router.push(oldPath('/customers'))}
+          <Link
+            href="/customers"
             className="text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
           >
             ← Back to Customers
-          </button>
+          </Link>
         </div>
 
         <PageTabs

@@ -5,7 +5,6 @@ import { getApiUrl } from '@/lib/api/config';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -30,33 +29,26 @@ import { useColorVision } from '@/hooks/useColorVision';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 import { loadOutlookCalendarEvents, type PlannerOutlookEvent } from './hooks/loadOutlookCalendarEvents';
+import {
+  GANTT_NONE_SELECTED,
+  usePlanningGanttViewOptions,
+} from './hooks/usePlanningGanttViewOptions';
+import {
+  PLANNING_HOUR_STEP,
+  floorToPlanningStep,
+  isPlanningStepValue,
+  roundToPlanningStep,
+} from '@/lib/planning/hourStep';
+import { sumAllocationHoursByHeaderId } from '@/lib/planning/sumHoursByHeaderId';
+import {
+  getAllLeafTasks as getAllLeafTasksFromTree,
+  isLeafTask as isLeafTaskInTree,
+} from '@/lib/planning/leafTasks';
+import { getTaskUserAllocationSegments as buildTaskUserAllocationSegments } from '@/lib/planning/allocationSegments';
 
 // Week days constant - reused throughout the component
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const PLANNING_HOUR_STEP = 0.5;
-const GANTT_NONE_SELECTED = -1;
-const PLANNING_GANTT_VIEW_OPTIONS_KEY = 'planning:gantt:view-options';
 
-const roundToPlanningStep = (value: number | string | null | undefined): number => {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return 0;
-  const scaled = Math.round((numericValue / PLANNING_HOUR_STEP) + Number.EPSILON);
-  return Number((scaled * PLANNING_HOUR_STEP).toFixed(2));
-};
-
-const floorToPlanningStep = (value: number | string | null | undefined): number => {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return 0;
-  const scaled = Math.floor((numericValue / PLANNING_HOUR_STEP) + 1e-9);
-  return Number((scaled * PLANNING_HOUR_STEP).toFixed(2));
-};
-
-const isPlanningStepValue = (value: number | string | null | undefined): boolean => {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue) || numericValue <= 0) return false;
-  const scaled = numericValue / PLANNING_HOUR_STEP;
-  return Math.abs(scaled - Math.round(scaled)) < 1e-9;
-};
 
 const formatDateForInput = (date: Date): string => {
   const year = date.getFullYear();
@@ -196,12 +188,9 @@ export default function PlanningPage() {
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [hoveredDropCell, setHoveredDropCell] = useState<{ userId: number; dateKey: string } | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [jiraIntegrationByOrg, setJiraIntegrationByOrg] = useState<Record<number, any>>({});
-  const [_taskAllocations, setTaskAllocations] = useState<any[]>([]);
   const [projectMilestones, setProjectMilestones] = useState<ProjectMilestone[]>([]);
   const [allAllocations, setAllAllocations] = useState<{Id?: number; TaskId: number; TaskAllocationHeaderId?: number | null; UserId: number; AllocationDate: string; AllocatedHours: number; IsHobby: number; IsManual?: number; StartTime?: string; EndTime?: string; PlannedStartDate?: string | null; PlannedEndDate?: string | null; HoursPerDay?: number | null}[]>([]);
   const [childAllocations, setChildAllocations] = useState<{ParentTaskId: number; ChildTaskId: number; TaskAllocationHeaderId?: number | null; AllocationDate: string; AllocatedHours: number; Level: number}[]>([]);
-  const [_taskTimeEntries, setTaskTimeEntries] = useState<any[]>([]);
   const [recurringAllocations, setRecurringAllocations] = useState<any[]>([]);
   const [outlookTimelineEvents, setOutlookTimelineEvents] = useState<PlannerOutlookEvent[]>([]);
   const [isLoadingOutlookCalendar, setIsLoadingOutlookCalendar] = useState(false);
@@ -210,15 +199,24 @@ export default function PlanningPage() {
   const [isStartingOutlookTimer, setIsStartingOutlookTimer] = useState(false);
   const [holidayNamesByUserDate, setHolidayNamesByUserDate] = useState<Record<number, Record<string, string[]>>>({});
   const [devSupportLabelsByUserDate, setDevSupportLabelsByUserDate] = useState<Record<number, Record<string, string[]>>>({});
-  const [loadingAllocations, setLoadingAllocations] = useState(false);
-  const [showDependencyLines, setShowDependencyLines] = useState(true);
-  const [showCriticalPath, setShowCriticalPath] = useState(false);
-  const [showBaseline, setShowBaseline] = useState(false);
-  const [showGanttTotals, setShowGanttTotals] = useState(true);
-  const [showTaskBarHours, setShowTaskBarHours] = useState(true);
-  const [showTimeEntriesOverlay, setShowTimeEntriesOverlay] = useState(false);
-  /** When true, hide Not Planned tasks with no estimated hours (Unscheduled stay on assignee rows). */
-  const [hideNotPlannedTasks, setHideNotPlannedTasks] = useState(false);
+  const {
+    showDependencyLines,
+    setShowDependencyLines,
+    showCriticalPath,
+    setShowCriticalPath,
+    showBaseline,
+    setShowBaseline,
+    showGanttTotals,
+    setShowGanttTotals,
+    showTaskBarHours,
+    setShowTaskBarHours,
+    showTimeEntriesOverlay,
+    setShowTimeEntriesOverlay,
+    hideNotPlannedTasks,
+    setHideNotPlannedTasks,
+    selectedGanttUserIds,
+    setSelectedGanttUserIds,
+  } = usePlanningGanttViewOptions();
   const [plannerTimeEntries, setPlannerTimeEntries] = useState<any[]>([]);
   const [isLoadingPlannerTimeEntries, setIsLoadingPlannerTimeEntries] = useState(false);
   const [showGanttViewOptions, setShowGanttViewOptions] = useState(false);
@@ -246,8 +244,6 @@ export default function PlanningPage() {
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(null);
   const [snapshotOverlayData, setSnapshotOverlayData] = useState<{ headers: any[]; allocations: any[] } | null>(null);
   const [isLoadingSnapshotOverlay, setIsLoadingSnapshotOverlay] = useState(false);
-  const [selectedGanttUserIds, setSelectedGanttUserIds] = useState<number[]>([]);
-  const [hasLoadedGanttViewPrefs, setHasLoadedGanttViewPrefs] = useState(false);
   const [ganttSearch, setGanttSearch] = useState('');
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year' | 'custom'>('week');
   const [customStartDate, setCustomStartDate] = useState(() => formatDateForInput(viewStartDate));
@@ -722,19 +718,10 @@ export default function PlanningPage() {
     return glowIds;
   }, [otherActiveTimerTaskIds, tasks]);
 
-  const allocationHoursByHeaderId = useMemo(() => {
-    const totals = new Map<number, number>();
-    for (const allocation of allAllocations) {
-      const headerId = Number(allocation.TaskAllocationHeaderId || 0);
-      if (!Number.isFinite(headerId) || headerId <= 0) {
-        continue;
-      }
-      const hours = Number(allocation.AllocatedHours || 0);
-      const previous = totals.get(headerId) || 0;
-      totals.set(headerId, roundToPlanningStep(previous + hours));
-    }
-    return totals;
-  }, [allAllocations]);
+  const allocationHoursByHeaderId = useMemo(
+    () => sumAllocationHoursByHeaderId(allAllocations),
+    [allAllocations]
+  );
 
   const shouldSuppressTaskClick = () => Date.now() < suppressTaskClickUntilRef.current;
   const canUseGanttPlanningActions = () => !!canPlanOnThisDevice && ganttGroupBy === 'resource';
@@ -974,7 +961,6 @@ export default function PlanningPage() {
 
           // Close the modal
           setSelectedTask(null);
-          setTaskAllocations([]);
 
           // Reload tasks and allocations to update the Gantt chart
           if (projects.length > 0) {
@@ -991,11 +977,15 @@ export default function PlanningPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push(oldPath('/login'));
-    } else if (user && token) {
+      router.push('/login');
+      return;
+    }
+    // Load once per authenticated user — omit `token` so JWT silent refresh
+    // (X-New-Token while opening a task) does not remount the whole Gantt.
+    if (user && token) {
       loadData();
     }
-  }, [user, isLoading, router, token]);
+  }, [user?.id, isLoading, router]);
 
   useEffect(() => {
     if (!token) return;
@@ -1140,81 +1130,6 @@ export default function PlanningPage() {
       window.removeEventListener('blur', handleWindowBlur);
     };
   }, []);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(PLANNING_GANTT_VIEW_OPTIONS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          showDependencyLines?: boolean;
-          showCriticalPath?: boolean;
-          showBaseline?: boolean;
-          showGanttTotals?: boolean;
-          showTaskBarHours?: boolean;
-          showTimeEntriesOverlay?: boolean;
-          hideNotPlannedTasks?: boolean;
-          selectedGanttUserIds?: unknown;
-        };
-
-        if (typeof parsed.showDependencyLines === 'boolean') setShowDependencyLines(parsed.showDependencyLines);
-        if (typeof parsed.showCriticalPath === 'boolean') setShowCriticalPath(parsed.showCriticalPath);
-        if (typeof parsed.showBaseline === 'boolean') setShowBaseline(parsed.showBaseline);
-        if (typeof parsed.showGanttTotals === 'boolean') setShowGanttTotals(parsed.showGanttTotals);
-        if (typeof parsed.showTaskBarHours === 'boolean') setShowTaskBarHours(parsed.showTaskBarHours);
-        if (typeof parsed.showTimeEntriesOverlay === 'boolean') setShowTimeEntriesOverlay(parsed.showTimeEntriesOverlay);
-        if (typeof parsed.hideNotPlannedTasks === 'boolean') setHideNotPlannedTasks(parsed.hideNotPlannedTasks);
-
-        if (Array.isArray(parsed.selectedGanttUserIds)) {
-          const normalizedIds = parsed.selectedGanttUserIds.filter(
-            (id: unknown): id is number =>
-              typeof id === 'number' && Number.isInteger(id) && (id === GANTT_NONE_SELECTED || id > 0)
-          );
-
-          if (normalizedIds.includes(GANTT_NONE_SELECTED)) {
-            setSelectedGanttUserIds([GANTT_NONE_SELECTED]);
-          } else {
-            setSelectedGanttUserIds(normalizedIds);
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to load Gantt view options from localStorage:', error);
-    } finally {
-      setHasLoadedGanttViewPrefs(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!hasLoadedGanttViewPrefs) return;
-
-    try {
-      localStorage.setItem(
-        PLANNING_GANTT_VIEW_OPTIONS_KEY,
-        JSON.stringify({
-          showDependencyLines,
-          showCriticalPath,
-          showBaseline,
-          showGanttTotals,
-          showTaskBarHours,
-          showTimeEntriesOverlay,
-          hideNotPlannedTasks,
-          selectedGanttUserIds,
-        })
-      );
-    } catch (error) {
-      console.warn('Failed to save Gantt view options to localStorage:', error);
-    }
-  }, [
-    hasLoadedGanttViewPrefs,
-    showDependencyLines,
-    showCriticalPath,
-    showBaseline,
-    showGanttTotals,
-    showTaskBarHours,
-    showTimeEntriesOverlay,
-    hideNotPlannedTasks,
-    selectedGanttUserIds,
-  ]);
 
   // Re-apply canViewOthersPlanning filter after permissions are resolved
   useEffect(() => {
@@ -1737,87 +1652,11 @@ export default function PlanningPage() {
     }
   };
 
-  const handleTaskClick = async (task: Task) => {
+  const handleTaskClick = (task: Task) => {
+    // TaskDetailModal loads its own allocations/time entries/Jira data.
+    // Do not toggle Gantt loading flags here — that replaced the chart with a skeleton.
     const fullTask = tasks.find((entry) => Number(entry.Id) === Number(task.Id)) || task;
-    const canPlanTaskAllocations = !!canPlanOnThisDevice;
     setSelectedTask(fullTask);
-    setLoadingAllocations(true);
-
-    const selectedProject = projects.find((projectEntry) => Number(projectEntry.Id) === Number(fullTask.ProjectId));
-    const organizationId = selectedProject?.OrganizationId;
-
-    if (organizationId && !jiraIntegrationByOrg[organizationId]) {
-      try {
-        const jiraResponse = await fetch(`${getApiUrl()}/api/jira-integrations/organization/${organizationId}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (jiraResponse.ok) {
-          const jiraData = await jiraResponse.json();
-          const integration = jiraData.integration;
-          setJiraIntegrationByOrg((prev) => ({
-            ...prev,
-            [organizationId]: integration?.IsEnabled ? integration : null,
-          }));
-        }
-      } catch {
-        setJiraIntegrationByOrg((prev) => ({
-          ...prev,
-          [organizationId]: null,
-        }));
-      }
-    }
-    
-    try {
-      if (canPlanTaskAllocations) {
-        // Fetch task allocations for planners
-        const allocationsResponse = await fetch(
-          `${getApiUrl()}/api/task-allocations/task/${fullTask.Id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-
-        if (allocationsResponse.ok) {
-          const data = await allocationsResponse.json();
-          setTaskAllocations(data.allocations || []);
-        } else {
-          setTaskAllocations([]);
-        }
-      } else {
-        setTaskAllocations([]);
-      }
-
-      // Fetch time entries
-      const timeEntriesResponse = await fetch(
-        `${getApiUrl()}/api/time-entries/task/${fullTask.Id}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      
-      if (timeEntriesResponse.ok) {
-        const data = await timeEntriesResponse.json();
-        setTaskTimeEntries(data.entries || []);
-      } else {
-        setTaskTimeEntries([]);
-      }
-    } catch (err) {
-      console.error('Failed to load task details:', err);
-      setTaskAllocations([]);
-      setTaskTimeEntries([]);
-    } finally {
-      setLoadingAllocations(false);
-    }
   };
 
   const handleTaskUpdate = async (
@@ -1852,21 +1691,8 @@ export default function PlanningPage() {
   };
 
   // Get all leaf tasks (tasks without children) recursively
-  const getAllLeafTasks = (parentTaskId: number): Task[] => {
-    const children = tasks.filter(t => t.ParentTaskId === parentTaskId);
-    if (children.length === 0) {
-      // This is a leaf task
-      const task = tasks.find(t => t.Id === parentTaskId);
-      return task ? [task] : [];
-    }
-    
-    // Has children - get leaf tasks from all children
-    let leafTasks: Task[] = [];
-    for (const child of children) {
-      leafTasks = leafTasks.concat(getAllLeafTasks(child.Id));
-    }
-    return leafTasks;
-  };
+  const getAllLeafTasks = (parentTaskId: number): Task[] =>
+    getAllLeafTasksFromTree(tasks, parentTaskId) as Task[];
 
   const getTaskRemainingHours = useCallback(async (task: Task): Promise<number> => {
     const estimatedHours = parseFloat(String(task.EstimatedHours || 0));
@@ -2084,9 +1910,7 @@ export default function PlanningPage() {
     return Array.isArray(task.Assignees) && task.Assignees.length > 0;
   };
 
-  const isLeafTask = (taskId: number): boolean => {
-    return !tasks.some((candidate) => candidate.ParentTaskId === taskId);
-  };
+  const isLeafTask = (taskId: number): boolean => isLeafTaskInTree(tasks, taskId);
 
   const isClosedUnscheduledWithAnchor = (task: Task): boolean => {
     return Number(task.UnscheduledWork || 0) === 1
@@ -2528,64 +2352,8 @@ export default function PlanningPage() {
     };
   };
 
-  const getTaskUserAllocationSegments = (taskId: number, userId: number) => {
-    const taskUserAllocations = allAllocations
-      .filter((allocation) => allocation.TaskId === taskId && allocation.UserId === userId)
-      .map((allocation) => ({
-        headerId: allocation.TaskAllocationHeaderId ? Number(allocation.TaskAllocationHeaderId) : null,
-        dateKey: normalizeDateKey(allocation.AllocationDate),
-        plannedStartDate: allocation.PlannedStartDate ? normalizeDateKey(allocation.PlannedStartDate) : null,
-        plannedEndDate: allocation.PlannedEndDate ? normalizeDateKey(allocation.PlannedEndDate) : null,
-      }))
-      .filter((entry) => !!entry.dateKey);
-
-    if (taskUserAllocations.length === 0) {
-      return [] as Array<{ headerId: number | null; startDate: string; endDate: string }>;
-    }
-
-    const groupedByHeader = new Map<string, { 
-      headerId: number | null; 
-      dates: string[];
-      plannedStartDate: string | null;
-      plannedEndDate: string | null;
-    }>();
-
-    for (const entry of taskUserAllocations) {
-      const groupKey = entry.headerId !== null
-        ? `header-${entry.headerId}`
-        : `legacy-${taskId}-${userId}`;
-      const existing = groupedByHeader.get(groupKey);
-      if (existing) {
-        existing.dates.push(entry.dateKey);
-      } else {
-        groupedByHeader.set(groupKey, { 
-          headerId: entry.headerId, 
-          dates: [entry.dateKey],
-          plannedStartDate: entry.plannedStartDate,
-          plannedEndDate: entry.plannedEndDate,
-        });
-      }
-    }
-
-    return Array.from(groupedByHeader.values())
-      .map((group) => {
-        const sortedDates = Array.from(new Set(group.dates)).sort();
-        // Prefer header's PlannedStartDate/EndDate if available, else calculate from dates
-        return {
-          headerId: group.headerId,
-          startDate: group.plannedStartDate || sortedDates[0],
-          endDate: group.plannedEndDate || sortedDates[sortedDates.length - 1],
-        };
-      })
-      .sort((a, b) => {
-        if (a.startDate !== b.startDate) {
-          return a.startDate.localeCompare(b.startDate);
-        }
-        const headerA = a.headerId === null ? Number.MAX_SAFE_INTEGER : a.headerId;
-        const headerB = b.headerId === null ? Number.MAX_SAFE_INTEGER : b.headerId;
-        return headerA - headerB;
-      });
-  };
+  const getTaskUserAllocationSegments = (taskId: number, userId: number) =>
+    buildTaskUserAllocationSegments(allAllocations, taskId, userId, normalizeDateKey);
 
   // Build bar segments from the currently selected snapshot overlay data (same grouping logic as getTaskUserAllocationSegments)
   const getSnapshotBarSegments = (taskId: number, userId: number): Array<{ headerId: number | null; startDate: string; endDate: string }> => {
@@ -7519,7 +7287,8 @@ export default function PlanningPage() {
       ...getBarStyleFromIndices(startIndex, endIndex),
     };
   };
-  const isGanttLoading = isLoadingData || loadingAllocations;
+  // Do not gate on task-detail fetches — that would blank the Gantt when opening a task.
+  const isGanttLoading = isLoadingData;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayDateKey = getDateKeyFromDate(today);
@@ -8032,13 +7801,18 @@ export default function PlanningPage() {
             {/* Permission / device notice */}
             {!canPlanOnThisDevice && (
               <div className="border-b border-yellow-400 bg-yellow-50 px-3 py-1.5 dark:border-yellow-600 dark:bg-yellow-900/20">
-                <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
-                  <span className="shrink-0 text-sm">{isMobile && permissions?.canPlanTasks ? '📱' : '🔒'}</span>
+                <div className="flex flex-wrap items-center gap-2 text-yellow-800 dark:text-yellow-200">
+                  <span className="shrink-0 text-sm" aria-hidden>{isMobile && permissions?.canPlanTasks ? '📱' : '🔒'}</span>
                   <span className="text-xs font-medium sm:text-sm">
                     {isMobile && permissions?.canPlanTasks
-                      ? 'Read-only on this device — use a larger screen to edit allocations.'
+                      ? 'Read-only on this device — open Planning on a desktop or tablet to edit allocations.'
                       : "Read-only view - You don't have permission to plan tasks"}
                   </span>
+                  {isMobile && permissions?.canPlanTasks && (
+                    <span className="text-xs text-yellow-700/90 dark:text-yellow-300/90">
+                      Drag, resize, and planning tools stay on larger screens by design.
+                    </span>
+                  )}
                 </div>
               </div>
             )}

@@ -8,6 +8,7 @@ import ScrollToTopButton from '@/components/ScrollToTopButton';
 import CollapsibleFilterPanel from '@/components/CollapsibleFilterPanel';
 import { getApiUrl } from '@/lib/api/config';
 import { useRouter } from 'next/navigation';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 import RichTextEditor from '@/components/RichTextEditor';
 import { useFormatHours } from '@/lib/useFormatHours';
 import ApprovalStatusBadge from '@/components/ApprovalStatusBadge';
@@ -122,16 +123,29 @@ export default function ApprovalsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Filters
-  const [filterUserId, setFilterUserId] = useState('');
-  const [filterProjectId, setFilterProjectId] = useState('');
-  const [filterDateFrom, setFilterDateFrom] = useState(() => {
+  // Filters (persisted per user)
+  const defaultApprovalFrom = (() => {
     const d = new Date();
     d.setDate(1);
     return d.toISOString().split('T')[0];
-  });
-  const [filterDateTo, setFilterDateTo] = useState(() => new Date().toISOString().split('T')[0]);
-  const [filterStatus, setFilterStatus] = useState('pending');
+  })();
+  const [approvalFilters, setApprovalFilters] = usePersistedFilters(
+    'approvals-time',
+    {
+      filterUserId: '',
+      filterProjectId: '',
+      filterDateFrom: defaultApprovalFrom,
+      filterDateTo: new Date().toISOString().split('T')[0],
+      filterStatus: 'pending',
+    },
+    { userId: user?.id }
+  );
+  const { filterUserId, filterProjectId, filterDateFrom, filterDateTo, filterStatus } = approvalFilters;
+  const setFilterUserId = (value: string) => setApprovalFilters({ filterUserId: value });
+  const setFilterProjectId = (value: string) => setApprovalFilters({ filterProjectId: value });
+  const setFilterDateFrom = (value: string) => setApprovalFilters({ filterDateFrom: value });
+  const setFilterDateTo = (value: string) => setApprovalFilters({ filterDateTo: value });
+  const setFilterStatus = (value: string) => setApprovalFilters({ filterStatus: value });
 
   // Group by user toggle
   const [groupByUser, setGroupByUser] = useState(true);

@@ -25,13 +25,14 @@ This document contains comprehensive test scenarios to verify all functionality 
 19. [Redis Cache](#redis-cache)
 20. [Email Notifications](#email-notifications)
 21. [Search & Navigation](#search--navigation)
-22. [Dark Mode & UI](#dark-mode--ui)
-23. [Integration & End-to-End Scenarios](#integration--end-to-end-scenarios)
-24. [Performance & Stress Testing](#performance--stress-testing)
-25. [Security Testing](#security-testing)
-26. [Backup & Recovery](#backup--recovery)
-27. [Edge Cases & Error Handling](#edge-cases--error-handling)
-28. [Browser Compatibility](#browser-compatibility)
+22. [Expenses](#expenses)
+23. [Dark Mode & UI](#dark-mode--ui)
+24. [Integration & End-to-End Scenarios](#integration--end-to-end-scenarios)
+25. [Performance & Stress Testing](#performance--stress-testing)
+26. [Security Testing](#security-testing)
+27. [Backup & Recovery](#backup--recovery)
+28. [Edge Cases & Error Handling](#edge-cases--error-handling)
+29. [Browser Compatibility](#browser-compatibility)
 
 ---
 
@@ -2018,6 +2019,70 @@ This document contains comprehensive test scenarios to verify all functionality 
 - Disabled notifications not sent
 - Enabled notifications sent normally
 - Preferences saved per user
+
+---
+
+## Expenses
+
+### TC-EXPENSE-001: Enable expenses module
+**Prerequisites:** Admin user  
+**Steps:**
+1. Open System Settings
+2. Enable **Expenses**
+3. Optionally seed default categories for an organization
+4. Open `/expenses`
+
+**Expected:**
+- Expenses page loads (not permanently disabled banner)
+- Categories available when creating an expense
+- Nav link visible for users with expense permissions
+
+### TC-EXPENSE-002: Submit expense
+**Prerequisites:** Expenses enabled; user with `CanCreateExpenses`  
+**Steps:**
+1. Open Expenses → New expense
+2. Select organization (and project or internal)
+3. Choose category, amount, date, description
+4. Attach a receipt (optional)
+5. Submit
+
+**Expected:**
+- Expense appears in list with Submitted / Pending approval status (or Auto-approved if setting on)
+- Attachment downloadable when provided
+- Reporting / expenses summary reflects the amount after approval rules
+
+### TC-EXPENSE-003: Approve and reimburse
+**Prerequisites:** Approver with `CanApproveExpenses`  
+**Steps:**
+1. Open Approvals or expense detail for a pending expense
+2. Approve the expense
+3. Record a reimbursement
+
+**Expected:**
+- Approval status updates
+- Reimbursement history listed on the expense
+- Submitter can see updated status
+
+### TC-EXPENSE-004: Permission and feature-flag denial
+**Steps:**
+1. Disable Expenses in System Settings → call `GET /api/expenses` with a valid token
+2. Re-enable Expenses; call list API as a user without expense permissions
+
+**Expected:**
+- Disabled: `403` with module-disabled message
+- No permission: `403` permission denied
+- UI hides create/approve actions via `usePermissions()` consistently with API
+
+### TC-EXPENSE-005: Reporting link
+**Prerequisites:** Expenses enabled; user with report + expense view rights  
+**Steps:**
+1. Open Reporting
+2. Open expenses-related summary / filters if present
+3. Cross-check totals against Expenses list for the same date range
+
+**Expected:**
+- Totals match leaf expense rows (no double-count)
+- Deep link / navigation back to Expenses works
 
 ---
 

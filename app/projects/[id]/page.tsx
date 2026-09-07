@@ -5,8 +5,8 @@ import { getApiUrl } from '@/lib/api/config';
 import { parseCsv } from '@/lib/csv';
 
 import React, { useState, useEffect, useRef, use, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { projectsApi, Project } from '@/lib/api/projects';
@@ -467,7 +467,7 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
       return;
     }
     if (user && token && featureFlagsLoaded) {
@@ -2638,12 +2638,12 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
               )}
             </div>
           </div>
-          <a
-            href={oldPath('/projects')}
+          <Link
+            href="/projects"
             className="shrink-0 text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
           >
             ← Back to Projects
-          </a>
+          </Link>
         </div>
 
         <PageTabs
@@ -4132,9 +4132,9 @@ function ProjectDetailPageContent({ params }: { params: Promise<{ id: string }> 
                   ProjectId is added automatically from the current project.
                 </p>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a href={oldPath("/templates/tasks_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  <a href="/templates/tasks_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                   {' | '}
-                  <a href={oldPath("/templates/README_TASKS_IMPORT.md")} target="_blank" className="underline hover:text-blue-600 dark:hover:text-blue-200">Read documentation</a>
+                  <a href="/templates/README_TASKS_IMPORT.md" target="_blank" className="underline hover:text-blue-600 dark:hover:text-blue-200">Read documentation</a>
                 </p>
               </div>
 

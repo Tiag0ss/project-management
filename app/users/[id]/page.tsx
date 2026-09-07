@@ -5,7 +5,7 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
+import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import ChangeHistory from '@/components/ChangeHistory';
@@ -102,7 +102,7 @@ export default function UserDetailPage() {
 
   useEffect(() => {
     if (!isLoading && (!currentUser || !currentUser.isAdmin)) {
-      router.push(oldPath('/dashboard'));
+      router.push('/dashboard');
     }
   }, [currentUser, isLoading, router]);
 
@@ -453,12 +453,12 @@ export default function UserDetailPage() {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
             <div className="text-4xl mb-4">😕</div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{error}</h2>
-            <button
-              onClick={() => router.push(oldPath('/users'))}
-              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            <Link
+              href="/users"
+              className="mt-4 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
             >
               Back to Users
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -473,15 +473,15 @@ export default function UserDetailPage() {
       <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
-          <button
-            onClick={() => router.push(oldPath('/users'))}
-            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 transition-colors"
+          <Link
+            href="/users"
+            className="mb-4 inline-flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Back to Users
-          </button>
+          </Link>
 
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center text-2xl font-bold text-blue-600 dark:text-blue-400 flex-shrink-0">

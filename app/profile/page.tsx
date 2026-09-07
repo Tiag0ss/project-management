@@ -7,7 +7,6 @@ import { recurringAllocationsApi, RecurringAllocation } from '@/lib/api/recurrin
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PasswordInput, { clearPasswordInput, readPasswordInput } from '@/components/PasswordInput';
@@ -285,7 +284,7 @@ function ProfilePageContent() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
     } else if (user && token) {
       loadUserProfile();
     }

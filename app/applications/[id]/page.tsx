@@ -1,12 +1,14 @@
 'use client';
 
+import { sanitizeRichTextHtml } from '@/lib/sanitizeHtml';
+
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, use, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
+import Link from 'next/link'
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import RichTextEditor from '@/components/RichTextEditor';
 import SearchableSelect from '@/components/SearchableSelect';
@@ -183,7 +185,7 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   const [taskSearch, setTaskSearch] = useState('');
 
   useEffect(() => {
-    if (!authLoading && !user) router.push(oldPath('/login'));
+    if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
   useEffect(() => {
@@ -724,15 +726,15 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
 
         {/* Back + Header */}
         <div className="mb-6">
-          <button
-            onClick={() => router.push(oldPath('/applications'))}
-            className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 mb-3 transition-colors"
+          <Link
+            href="/applications"
+            className="mb-3 inline-flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Applications
-          </button>
+          </Link>
 
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
@@ -1072,7 +1074,7 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
                         <h3 className="font-semibold text-green-800 dark:text-green-300 mb-2">📋 Patch Notes</h3>
                         <div
                           className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300"
-                          dangerouslySetInnerHTML={{ __html: selectedVersion.PatchNotes }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(selectedVersion.PatchNotes) }}
                         />
                       </div>
                     )}

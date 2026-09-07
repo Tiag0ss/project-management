@@ -171,8 +171,12 @@ describe('POST /api/time-entries', () => {
 
   it('creates a time entry and returns its new ID', async () => {
     // 1. task access check
-    mockExecute.mockResolvedValueOnce([[{ Id: 5, IsHobby: 0 }], []]);
-    // 2. INSERT INTO TimeEntries
+    mockExecute.mockResolvedValueOnce([[{ Id: 5, IsHobby: 0, ProjectId: 1, OrganizationId: 1 }], []]);
+    // 2. auto-approve setting
+    mockExecute.mockResolvedValueOnce([[{ SettingValue: 'false' }], []]);
+    // 3. custom fields definitions
+    mockExecute.mockResolvedValueOnce([[], []]);
+    // 4. INSERT INTO TimeEntries
     mockExecute.mockResolvedValueOnce([{ insertId: 77, affectedRows: 1 }, []]);
 
     const res = await request(app)
@@ -186,7 +190,9 @@ describe('POST /api/time-entries', () => {
   });
 
   it('auto-approves time entry for hobby projects', async () => {
-    mockExecute.mockResolvedValueOnce([[{ Id: 5, IsHobby: 1 }], []]);
+    mockExecute.mockResolvedValueOnce([[{ Id: 5, IsHobby: 1, ProjectId: 1, OrganizationId: 1 }], []]);
+    mockExecute.mockResolvedValueOnce([[{ SettingValue: 'false' }], []]);
+    mockExecute.mockResolvedValueOnce([[], []]);
     mockExecute.mockResolvedValueOnce([{ insertId: 88, affectedRows: 1 }, []]);
 
     const res = await request(app)
@@ -197,7 +203,7 @@ describe('POST /api/time-entries', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     // Verify the INSERT was called with 'approved' status
-    const insertCall = mockExecute.mock.calls[1];
+    const insertCall = mockExecute.mock.calls[3];
     expect(insertCall[1]).toContain('approved');
   });
 });

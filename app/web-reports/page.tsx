@@ -14,8 +14,6 @@ import DynamicQueryBuilder from '@/components/DynamicQueryBuilder';
 import * as savedReportsApi from '@/lib/api/savedReports';
 import { downloadTablePdf } from '@/lib/api/pdfExport';
 import Link from 'next/link'
-import { oldPath } from '@/lib/oldPath';
-
 interface ReportField {
   key: string;
   label: string;
@@ -1383,7 +1381,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
             <p className="text-gray-500 dark:text-gray-400 mb-4">
               Explore (Advanced Reports) is limited to admins and managers.
             </p>
-            <Link href={oldPath("/reporting")} className="text-blue-600 dark:text-blue-400 hover:underline">
+            <Link href="/reporting" className="text-blue-600 dark:text-blue-400 hover:underline">
               Back to Reporting
             </Link>
           </div>
@@ -1399,7 +1397,7 @@ export function WebReportsExplorer({ embedded = false }: { embedded?: boolean })
           <div className={embed ? 'w-full' : 'px-4 py-6 sm:px-0'}>
             {!embed && (
               <div className="mb-4">
-                <Link href={oldPath("/reporting?tab=explore")} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                <Link href="/reporting?tab=explore" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
                   ← Reporting hub
                 </Link>
               </div>

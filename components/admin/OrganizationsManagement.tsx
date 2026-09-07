@@ -5,7 +5,6 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -105,7 +104,7 @@ export default function OrganizationsManagement() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
       return;
     }
     if (user && token && featureFlagsLoaded) {
@@ -983,7 +982,7 @@ export default function OrganizationsManagement() {
                   Name,Abbreviation,Description
                 </code>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a href={oldPath("/templates/organizations_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  <a href="/templates/organizations_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                 </p>
               </div>
 

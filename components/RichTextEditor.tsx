@@ -6,6 +6,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
 import { useEffect, useRef, useState } from 'react';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
+import { useAuth } from '@/contexts/AuthContext';
+import { getApiUrl } from '@/lib/api/config';
 
 interface RichTextEditorProps {
   content: string;
@@ -15,6 +17,15 @@ interface RichTextEditorProps {
   editable?: boolean;
   contentScrollOnly?: boolean;
   contentMaxHeightClass?: string;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read image'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function RichTextEditor({
@@ -28,6 +39,8 @@ export default function RichTextEditor({
 }: RichTextEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [alertModal, setAlertModal] = useState<{ title: string; message: string } | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const { token } = useAuth();
 
   const editor = useEditor({
     extensions: [
@@ -72,33 +85,61 @@ export default function RichTextEditor({
     }
   }, [editable, editor]);
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !editor) return;
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       setAlertModal({ title: 'Invalid file', message: 'Please select an image file' });
       return;
     }
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       setAlertModal({ title: 'File too large', message: 'Image size must be less than 5MB' });
       return;
     }
 
-    // Convert to base64 and insert
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = e.target?.result as string;
-      editor.chain().focus().setImage({ src: base64 }).run();
-    };
-    reader.readAsDataURL(file);
+    try {
+      setIsUploadingImage(true);
+      const fileData = await fileToBase64(file);
 
-    // Reset input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      if (token) {
+        const response = await fetch(`${getApiUrl()}/api/uploads/editor-image`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size,
+            fileData,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data?.data?.url) {
+          editor.chain().focus().setImage({ src: String(data.data.url) }).run();
+          return;
+        }
+        // Fall through to base64 only if upload endpoint is unavailable
+        if (response.status !== 404) {
+          setAlertModal({
+            title: 'Upload failed',
+            message: data?.message || 'Could not upload image. Try again.',
+          });
+          return;
+        }
+      }
+
+      editor.chain().focus().setImage({ src: fileData }).run();
+    } catch {
+      setAlertModal({ title: 'Upload failed', message: 'Could not upload image. Try again.' });
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -257,10 +298,12 @@ export default function RichTextEditor({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="px-2 py-1 rounded text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            disabled={isUploadingImage}
+            className="px-2 py-1 rounded text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors disabled:opacity-60"
             title="Insert Image"
+            aria-label="Insert image"
           >
-            🖼️ Image
+            {isUploadingImage ? 'Uploading…' : '🖼️ Image'}
           </button>
           <input
             ref={fileInputRef}

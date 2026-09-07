@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 export type PageTab = {
   id: string;
   label: string;
@@ -16,7 +18,7 @@ type PageTabsProps = {
 /** Screen-level top tabs for the new AppShell (not left asides). */
 export default function PageTabs({ tabs, activeId, onChange }: PageTabsProps) {
   return (
-    <div className="flex gap-0.5 overflow-x-auto border-b border-[var(--pm-border)] pb-px">
+    <div className="flex gap-0.5 overflow-x-auto border-b border-[var(--pm-border)] pb-px" role="tablist">
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         const disabled = !!tab.disabled;
@@ -29,21 +31,30 @@ export default function PageTabs({ tabs, activeId, onChange }: PageTabsProps) {
         ].join(' ');
         if (tab.href && !disabled) {
           return (
-            <a key={tab.id} href={tab.href} className={className} aria-current={active ? 'page' : undefined}>
+            <Link
+              key={tab.id}
+              href={tab.href}
+              className={className}
+              role="tab"
+              aria-selected={active}
+              aria-current={active ? 'page' : undefined}
+            >
               {tab.label}
-            </a>
+            </Link>
           );
         }
         return (
           <button
             key={tab.id}
             type="button"
+            role="tab"
             className={className}
             onClick={() => {
               if (disabled) return;
               onChange?.(tab.id);
             }}
             disabled={disabled}
+            aria-selected={active}
             aria-current={active ? 'page' : undefined}
           >
             {tab.label}

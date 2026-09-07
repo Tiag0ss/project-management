@@ -16,6 +16,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:integration": "jest --testPathPattern=integration",
+    "test:integration:smoke": "jest --testPathPattern='__tests__/integration/(auth|health|timeEntries|expenses|editorUploads)\\.test\\.ts$'",
     "prebuild": "pnpm run lint",
     "postbuild": "echo Build completed successfully!",
     "desktop:start": "node extras/scripts/ensure-electron.mjs && electron extras/desktop/main.js",

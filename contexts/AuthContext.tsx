@@ -8,11 +8,15 @@ import { authApi, User, LoginCredentials, RegisterData } from '@/lib/api/auth';
 import {
   AUTH_TOKEN_KEY,
   AUTH_USER_KEY,
+  applyLiveAccessTokenToFetchArgs,
   clearStoredSession,
+  getLiveAccessToken,
   isAuthFailureStatus,
   isPublicAuthPath,
+  persistSilentAccessToken,
   persistStoredSession,
   readStoredSession,
+  setLiveAccessToken,
 } from '@/lib/auth/session';
 
 interface AuthContextType {
@@ -45,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     hasHydratedSessionRef.current = true;
     const session = readStoredSession();
     if (!session) return;
+    setLiveAccessToken(session.token);
     setToken(session.token);
     setUser(session.user);
   }, []);
@@ -77,9 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     redirectToLoginIfNeeded();
   }, [clearAuthState, redirectToLoginIfNeeded]);
 
-  const updateToken = useCallback((newToken: string) => {
-    setToken(newToken);
-    localStorage.setItem(AUTH_TOKEN_KEY, newToken);
+  /** Silent JWT rotation: persist only — do not set React token state (avoids page re-fetches). */
+  const updateTokenSilent = useCallback((newToken: string) => {
+    persistSilentAccessToken(newToken);
   }, []);
 
   const validateSessionWithServer = useCallback(async (currentToken: string): Promise<string | null> => {
@@ -107,19 +112,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshToken = useCallback(async () => {
-    const currentToken = localStorage.getItem(AUTH_TOKEN_KEY);
+    const currentToken = getLiveAccessToken() || localStorage.getItem(AUTH_TOKEN_KEY);
     if (!currentToken) {
       return;
     }
 
     const refreshedToken = await validateSessionWithServer(currentToken);
     if (refreshedToken) {
-      updateToken(refreshedToken);
+      updateTokenSilent(refreshedToken);
       return;
     }
 
     handleInvalidSession();
-  }, [handleInvalidSession, updateToken, validateSessionWithServer]);
+  }, [handleInvalidSession, updateTokenSilent, validateSessionWithServer]);
 
   useEffect(() => {
     if (hasInitializedRef.current) {
@@ -155,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      setLiveAccessToken(refreshedToken);
       setToken(refreshedToken);
       setUser(session.user);
       persistStoredSession(refreshedToken, session.user);
@@ -182,12 +188,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
-      const response = await originalFetch(...args);
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const [rawInput, rawInit] = args;
+      const [input, init] = applyLiveAccessTokenToFetchArgs(rawInput, rawInit);
+      const response = init === undefined
+        ? await originalFetch(input)
+        : await originalFetch(input, init);
 
       const newToken = response.headers.get('X-New-Token');
       if (newToken) {
-        updateToken(newToken);
+        updateTokenSilent(newToken);
       }
 
       const hadStoredToken = Boolean(localStorage.getItem(AUTH_TOKEN_KEY));
@@ -215,12 +225,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       window.fetch = originalFetch;
     };
-  }, [handleInvalidSession, updateToken]);
+  }, [handleInvalidSession, updateTokenSilent]);
 
   const login = async (credentials: LoginCredentials) => {
     const response = await authApi.login(credentials);
 
     if (response.success && response.token && response.user) {
+      setLiveAccessToken(response.token);
       setToken(response.token);
       setUser(response.user);
       persistStoredSession(response.token, response.user);

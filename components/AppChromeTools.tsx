@@ -19,9 +19,11 @@ import CustomerFormModal, { CustomerFormValues } from '@/components/CustomerForm
 import TimerStartModal, { TimerMode, TimerStartCallFormValues } from '@/components/TimerStartModal';
 import NavDropdownMenu from '@/components/navbar/NavDropdownMenu';
 import TaskDetailModal from '@/components/TaskDetailModal';
+import GlobalSearchResults from '@/components/chrome/GlobalSearchResults';
 import { useToast } from '@/contexts/ToastContext';
 import { StatusValue } from '@/lib/api/statusValues';
 import { createCustomer, CreateCustomerData } from '@/lib/api/customers';
+import { resolveSearchResultHref } from '@/lib/chrome/searchNavigation';
 import { io, Socket } from 'socket.io-client';
 import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
 import { ColorVisionMode, getStoredColorVisionMode } from '@/lib/colorVision';
@@ -91,6 +93,7 @@ const buildDefaultCustomerFormValues = (organizations: Organization[]): Customer
 });
 
 export default function AppChromeTools({
+  // AppShell only ever passes toolsOnly; default true. Legacy dual-chrome (toolsOnly === false) is unused by AppShell.
   toolsOnly = true,
   leading,
 }: {
@@ -1038,11 +1041,19 @@ export default function AppChromeTools({
     }, 300);
   };
 
-  const handleSearchResultClick = async (type: string, id: number, extra?: any) => {
+  const handleSearchResultClick = async (
+    type: string,
+    id: number,
+    extra?: { ProjectId?: number }
+  ) => {
     setSearchOpen(false);
     setSearchQuery('');
     setSearchResults(null);
-    
+
+    const navigate = (href: string) => {
+      router.push(href);
+    };
+
     switch (type) {
       case 'task':
         if (!token) return;
@@ -1052,7 +1063,7 @@ export default function AppChromeTools({
 
           if (!Number.isFinite(projectId) || projectId <= 0) {
             const response = await fetch(`${getApiUrl()}/api/tasks/${id}`, {
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             });
 
             if (response.ok) {
@@ -1066,25 +1077,53 @@ export default function AppChromeTools({
             return;
           }
 
-          window.location.href = `/projects?task=${id}`;
+          const href = resolveSearchResultHref('task', id) ?? `/projects?task=${id}`;
+          navigate(href);
         } catch {
-          window.location.href = `/projects?task=${id}`;
+          const href = resolveSearchResultHref('task', id) ?? `/projects?task=${id}`;
+          navigate(href);
         }
         break;
       case 'project':
-        window.location.href = `/projects/${id}`;
-        break;
       case 'organization':
-        window.location.href = `/organizations/${id}`;
-        break;
       case 'ticket':
-        if (internalTicketsEnabled) {
-          window.location.href = `/tickets/${id}`;
-        }
+      case 'user': {
+        const href = resolveSearchResultHref(type, id, {
+          projectId: extra?.ProjectId,
+          internalTicketsEnabled,
+        });
+        if (href) navigate(href);
         break;
-      case 'user':
-        // For now, just close the search - users don't have a dedicated page
-        break;
+      }
+    }
+  };
+
+  const handleSearchLoadMore = async () => {
+    if (!token || isSearching) return;
+    const nextPage = searchPage + 1;
+    setIsSearching(true);
+    try {
+      const res = await fetch(
+        `${getApiUrl()}/api/search?q=${encodeURIComponent(searchQuery.trim())}&page=${nextPage}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults((prev: any) => ({
+          tasks: [...(prev?.tasks || []), ...(data.results?.tasks || [])],
+          tickets: [...(prev?.tickets || []), ...(data.results?.tickets || [])],
+          projects: [...(prev?.projects || []), ...(data.results?.projects || [])],
+          organizations: [...(prev?.organizations || []), ...(data.results?.organizations || [])],
+          users: [...(prev?.users || []), ...(data.results?.users || [])],
+          total: (prev?.total || 0) + (data.results?.total || 0),
+        }));
+        setSearchPage(nextPage);
+        setSearchHasMore(data.hasMore || false);
+      }
+    } catch (err) {
+      console.error('Search load more failed:', err);
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -2365,183 +2404,16 @@ export default function AppChromeTools({
                   )}
                 </div>
                 
-                {/* Search Results Dropdown */}
                 {searchOpen && searchResults && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto z-50">
-                    {searchResults.total === 0 ? (
-                      <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                        No results found for "{searchQuery}"
-                      </div>
-                    ) : (
-                      <div className="p-2">
-                        {/* Load More helper – appends next page results */}
-                        {searchHasMore && (
-                          <div className="border-b border-gray-200 dark:border-gray-700 pb-2 mb-2 flex justify-end">
-                            <button
-                              disabled={isSearching}
-                              onClick={async () => {
-                                const nextPage = searchPage + 1;
-                                setIsSearching(true);
-                                try {
-                                  const res = await fetch(
-                                    `${getApiUrl()}/api/search?q=${encodeURIComponent(searchQuery.trim())}&page=${nextPage}`,
-                                    { headers: { 'Authorization': `Bearer ${token}` } }
-                                  );
-                                  if (res.ok) {
-                                    const data = await res.json();
-                                    setSearchResults((prev: any) => ({
-                                      tasks: [...(prev?.tasks || []), ...(data.results?.tasks || [])],
-                                      tickets: [...(prev?.tickets || []), ...(data.results?.tickets || [])],
-                                      projects: [...(prev?.projects || []), ...(data.results?.projects || [])],
-                                      organizations: [...(prev?.organizations || []), ...(data.results?.organizations || [])],
-                                      users: [...(prev?.users || []), ...(data.results?.users || [])],
-                                      total: (prev?.total || 0) + (data.results?.total || 0),
-                                    }));
-                                    setSearchPage(nextPage);
-                                    setSearchHasMore(data.hasMore || false);
-                                  }
-                                } catch {}
-                                finally { setIsSearching(false); }
-                              }}
-                              className="text-xs px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50"
-                            >
-                              {isSearching ? 'Loading…' : 'Load More'}
-                            </button>
-                          </div>
-                        )}
-                        {/* Tasks */}
-                        {searchResults.tasks && searchResults.tasks.length > 0 && (
-                          <div className="mb-3">
-                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                              Tasks ({searchResults.tasks.length})
-                            </div>
-                            {searchResults.tasks.map((task: any) => (
-                              <button
-                                key={`task-${task.Id}`}
-                                onClick={() => handleSearchResultClick('task', task.Id, { ProjectId: task.ProjectId })}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex items-center gap-3"
-                              >
-                                <span className="text-lg">📋</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-gray-900 dark:text-white truncate">
-                                    {task.TaskName}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                    {task.ProjectName} • {task.StatusName || 'Unknown'}
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Tickets */}
-                        {internalTicketsEnabled && searchResults.tickets && searchResults.tickets.length > 0 && (
-                          <div className="mb-3">
-                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                              Tickets ({searchResults.tickets.length})
-                            </div>
-                            {searchResults.tickets.map((ticket: any) => (
-                              <button
-                                key={`ticket-${ticket.Id}`}
-                                onClick={() => handleSearchResultClick('ticket', ticket.Id)}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex items-center gap-3"
-                              >
-                                <span className="text-lg">🎫</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-gray-900 dark:text-white truncate">
-                                    {ticket.TicketNumber ? `${ticket.TicketNumber} • ` : ''}{ticket.Title}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                    {ticket.ProjectName || ticket.OrganizationName} • {ticket.StatusName || 'Unknown'}
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        
-                        {/* Projects */}
-                        {searchResults.projects && searchResults.projects.length > 0 && (
-                          <div className="mb-3">
-                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                              Projects ({searchResults.projects.length})
-                            </div>
-                            {searchResults.projects.map((project: any) => (
-                              <button
-                                key={`project-${project.Id}`}
-                                onClick={() => handleSearchResultClick('project', project.Id)}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex items-center gap-3"
-                              >
-                                <span className="text-lg">📁</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-gray-900 dark:text-white truncate">
-                                    {project.ProjectName}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                    {project.OrganizationName} • {project.StatusName || 'Unknown'}
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        
-                        {/* Organizations */}
-                        {searchResults.organizations && searchResults.organizations.length > 0 && (
-                          <div className="mb-3">
-                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                              Organizations ({searchResults.organizations.length})
-                            </div>
-                            {searchResults.organizations.map((org: any) => (
-                              <button
-                                key={`org-${org.Id}`}
-                                onClick={() => handleSearchResultClick('organization', org.Id)}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg flex items-center gap-3"
-                              >
-                                <span className="text-lg">🏢</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-gray-900 dark:text-white truncate">
-                                    {org.Name}
-                                  </div>
-                                  {org.Description && (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                      {org.Description}
-                                    </div>
-                                  )}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        
-                        {/* Users */}
-                        {searchResults.users && searchResults.users.length > 0 && (
-                          <div>
-                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                              Users ({searchResults.users.length})
-                            </div>
-                            {searchResults.users.map((user: any) => (
-                              <div
-                                key={`user-${user.Id}`}
-                                className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-3"
-                              >
-                                <span className="text-lg">👤</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-gray-900 dark:text-white truncate">
-                                    {user.FirstName} {user.LastName}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                    @{user.Username} • {user.Email}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <GlobalSearchResults
+                    results={searchResults}
+                    onResultClick={handleSearchResultClick}
+                    internalTicketsEnabled={internalTicketsEnabled}
+                    query={searchQuery}
+                    isSearching={isSearching}
+                    hasMore={searchHasMore}
+                    onLoadMore={handleSearchLoadMore}
+                  />
                 )}
               </div>
               )}

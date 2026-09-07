@@ -3,7 +3,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
@@ -112,7 +111,7 @@ export default function DevSupportManagementPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
       return;
     }
 

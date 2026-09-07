@@ -1,5 +1,7 @@
 'use client';
 
+import { sanitizeRichTextHtml } from '@/lib/sanitizeHtml';
+
 import React, { useEffect, useState } from 'react';
 import { getApiUrl } from '@/lib/api/config';
 import { getTaskAttachment } from '@/lib/api/taskAttachments';
@@ -584,7 +586,7 @@ export function ReportingTaskDetailModal({
           <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Description</h3>
           <div 
             className="text-gray-700 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: selectedTask.Description }}
+            dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(selectedTask.Description) }}
           />
         </div>
       )}
@@ -777,7 +779,7 @@ export function ReportingTaskDetailModal({
                   </div>
                   <div
                     className="text-gray-700 dark:text-gray-300 mt-1 prose prose-sm dark:prose-invert max-w-none"
-                    dangerouslySetInnerHTML={{ __html: comment.Comment }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(comment.Comment) }}
                   />
                 </div>
               </div>

@@ -6,7 +6,6 @@ import { getApiUrl } from '@/lib/api/config';
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useToast } from '@/contexts/ToastContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
@@ -177,7 +176,7 @@ export default function CustomersPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
     }
   }, [user, authLoading, router]);
 
@@ -1378,7 +1377,7 @@ export default function CustomersPage() {
                   Name,ExternalName,Email,Phone,Address,Notes,OrganizationNames,DefaultSupportUsername,CreateDefaultProject,DefaultProjectName
                 </code>
                 <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                  <a href={oldPath("/templates/customers_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                  <a href="/templates/customers_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                 </p>
               </div>
 

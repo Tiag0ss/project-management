@@ -5,7 +5,6 @@ import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
 import { useAuth } from '@/contexts/AuthContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
@@ -76,7 +75,7 @@ export default function CallRecordsPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
     }
   }, [user, isLoading, router]);
 
@@ -473,7 +472,7 @@ export default function CallRecordsPage() {
                     Example: 2026-02-03,14:30,45,Teams,"John, Mary",Project Meeting,Discussed requirements
                   </p>
                   <p className="text-sm text-blue-800 dark:text-blue-400 mt-2">
-                    <a href={oldPath("/templates/call_records_import_template.csv")} download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
+                    <a href="/templates/call_records_import_template.csv" download className="underline hover:text-blue-600 dark:hover:text-blue-200">Download template CSV</a>
                   </p>
                 </div>
 

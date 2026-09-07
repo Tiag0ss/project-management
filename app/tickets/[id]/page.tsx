@@ -10,7 +10,7 @@ import {
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
+import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
@@ -21,6 +21,7 @@ import { tasksApi, CreateTaskData, Task } from '@/lib/api/tasks';
 import { organizationsApi, Organization } from '@/lib/api/organizations';
 import { projectsApi, Project } from '@/lib/api/projects';
 import RichTextEditor from '@/components/RichTextEditor';
+import { sanitizeRichTextHtml } from '@/lib/sanitizeHtml';
 import SearchableSelect from '@/components/SearchableSelect';
 import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import CustomFieldsFormSection from '@/components/custom-fields/CustomFieldsFormSection';
@@ -182,7 +183,7 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
     }
   }, [user, isLoading, router]);
 
@@ -401,6 +402,9 @@ export default function TicketDetailPage() {
           setOrgMembers(membersData.users || []);
         }
       }
+
+      // Customer portal: prefetch attachments so the Attachments tab is ready
+      void loadAttachments();
 
       // Load organizations and customers for managers/admins
       if (user?.isManager || user?.isAdmin) {
@@ -807,7 +811,7 @@ export default function TicketDetailPage() {
             headers: { 'Authorization': `Bearer ${token}` },
           });
           if (res.ok) {
-            router.push(oldPath('/tickets'));
+            router.push('/tickets');
           } else {
             const data = await res.json();
             setError(data.message || 'Failed to delete ticket');
@@ -908,12 +912,12 @@ export default function TicketDetailPage() {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-200 dark:border-gray-700">
             <div className="text-4xl mb-3">🎫</div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Internal Ticket System Disabled</h2>
-            <button
-              onClick={() => router.push(oldPath('/dashboard'))}
-              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            <Link
+              href="/dashboard"
+              className="mt-4 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
             >
               Back to Dashboard
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -937,12 +941,12 @@ export default function TicketDetailPage() {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
             <div className="text-4xl mb-4">😕</div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{error}</h2>
-            <button
-              onClick={() => router.push(oldPath('/tickets'))}
-              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            <Link
+              href="/tickets"
+              className="mt-4 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
             >
               Back to Tickets
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -983,15 +987,15 @@ export default function TicketDetailPage() {
       <main className="w-full mx-auto py-6 px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
-          <button
-            onClick={() => router.push(oldPath('/tickets'))}
-            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4"
+          <Link
+            href="/tickets"
+            className="mb-4 inline-flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Back to Tickets
-          </button>
+          </Link>
 
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div className="flex-1 min-w-0">
@@ -1187,7 +1191,7 @@ export default function TicketDetailPage() {
               ) : (
                 <div className="prose dark:prose-invert max-w-none">
                   {ticket.Description ? (
-                    <div dangerouslySetInnerHTML={{ __html: ticket.Description }} />
+                    <div dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(ticket.Description) }} />
                   ) : (
                     <p className="text-gray-400 dark:text-gray-500 italic">No description provided</p>
                   )}
@@ -1231,7 +1235,7 @@ export default function TicketDetailPage() {
                           </div>
                           <div
                             className="text-gray-700 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none"
-                            dangerouslySetInnerHTML={{ __html: comment.Comment }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeRichTextHtml(comment.Comment) }}
                           />
                           
                           {/* Comment Attachments */}

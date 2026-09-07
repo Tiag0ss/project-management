@@ -4,8 +4,8 @@ import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
 
 import { useState, useEffect, use, useMemo, useRef, Suspense } from 'react';
-import { useRouter } from 'next/navigation'
-import { oldPath } from '@/lib/oldPath';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { organizationsApi, Organization, OrganizationMember } from '@/lib/api/organizations';
@@ -148,7 +148,7 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push(oldPath('/login'));
+      router.push('/login');
       return;
     }
     if (user && token && featureFlagsLoaded) {
@@ -383,12 +383,12 @@ function OrganizationDetailPageContent({ params }: { params: Promise<{ id: strin
               </button>
             )}
           </div>
-          <a
+          <Link
             href="/administration?tab=organizations"
             className="text-sm text-[var(--pm-muted)] hover:text-[var(--pm-text)]"
           >
             ← Back to Organizations
-          </a>
+          </Link>
         </div>
 
         <PageTabs
@@ -971,9 +971,9 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
                               </div>
                             </div>
                           </div>
-                          <a href={`/projects/${project.Id}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap">
+                          <Link href={`/projects/${project.Id}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap">
                             Open project
-                          </a>
+                          </Link>
                         </div>
                       </div>
                     );
@@ -1008,9 +1008,9 @@ function OverviewTab({ organization, orgId, token, internalTicketsEnabled }: { o
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Ticket Snapshot</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Current support load inside this organization.</p>
                 </div>
-                <a href={`/tickets?organizationId=${orgId}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap">
+                <Link href={`/tickets?organizationId=${orgId}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap">
                   View tickets
-                </a>
+                </Link>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div className="rounded-lg bg-gray-50 dark:bg-gray-700/60 p-4 text-center">

@@ -10,6 +10,25 @@ The Role Permissions system allows fine-grained control over what users can do i
 
 Default permissions are defined in [`server/database/structure/systemtables/RolePermissions.json`](../server/database/structure/systemtables/RolePermissions.json) and **automatically seeded** when the server starts for the first time.
 
+**Schema fields (source of truth):**
+
+| Field | Purpose |
+|------|---------|
+| `CanViewDashboard` | View dashboard |
+| `CanViewPlanning` | View planning / Gantt |
+| `CanViewProjects` / `CanManageProjects` / `CanCreateProjects` / `CanDeleteProjects` | Projects |
+| `CanViewTasks` / `CanManageTasks` / `CanCreateTasks` / `CanDeleteTasks` / `CanAssignTasks` | Tasks |
+| `CanManageTimeEntries` | Time entries |
+| `CanViewReports` | Reporting hub |
+| `CanViewBudgetInfo` | Budget / cost visibility |
+| `CanManageOrganizations` | Organizations admin |
+| `CanViewCustomers` / `CanManageCustomers` / `CanCreateCustomers` / `CanDeleteCustomers` | Customers |
+| `CanManageUsers` | Users admin |
+| `CanManageTickets` / `CanCreateTickets` / `CanDeleteTickets` / `CanAssignTickets` / `CanCreateTaskFromTicket` | Tickets |
+| `CanPlanTasks` / `CanViewOthersPlanning` | Planning edit / others’ plans |
+| `CanViewApplications` / `CanManageApplications` / `CanCreateApplications` / `CanDeleteApplications` / `CanManageReleases` | Applications & releases |
+| `CanViewExpenses` / `CanCreateExpenses` / `CanManageExpenses` / `CanApproveExpenses` | Expenses module |
+
 **Default permission matrix (summary):**
 
 | Role | Typical capabilities |
@@ -17,6 +36,18 @@ Default permissions are defined in [`server/database/structure/systemtables/Role
 | **Developer** | Manage time entries, create tickets, view/create expenses |
 | **Support** | View dashboard, manage/create/assign tickets, view/create expenses |
 | **Manager** | All permissions (including manage/approve expenses) |
+
+### Backend helper
+
+Prefer shared middleware when a route only needs a role permission gate:
+
+```typescript
+import { requirePermission } from '../../middleware/requirePermission';
+
+router.post('/example', authenticateToken, requirePermission('canCreateProjects'), handler);
+```
+
+Admins always pass. For org-scoped group overrides, keep the existing route-specific checks.
 
 ### Frontend Usage
 
