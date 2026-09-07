@@ -3091,7 +3091,7 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
     setFilterText('');
     setFilterStatus('');
     setFilterCustomer('');
-    setHideCompleted(true);
+    setHideCompleted(false);
   };
 
   const formatDate = (value?: string | null) => {
