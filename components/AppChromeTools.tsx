@@ -7,7 +7,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useState, useRef, useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
-const oldPath = (p: string) => p; // new shell uses canonical routes
 import { useRouter, usePathname } from 'next/navigation';
 import { tasksApi, Task as ApiTask } from '@/lib/api/tasks';
 import { projectsApi, Project as ApiProject } from '@/lib/api/projects';
@@ -1725,15 +1724,14 @@ export default function AppChromeTools({
     canShowOutOfOfficeApprovalsOption ||
     canShowExpenseApprovalsOption;
   const approvalsMenuLabel = expensesEnabled ? 'Approvals & Expenses' : 'Approvals';
-  const approvalsMenuHref = oldPath(
+  const approvalsMenuHref =
     canShowApprovalsOption
       ? '/approvals?tab=time'
       : canShowExpenseApprovalsOption
         ? '/approvals?tab=expenses'
         : canShowVacationApprovalsOption
           ? '/approvals?tab=vacations'
-          : '/approvals?tab=out-of-office'
-  );
+          : '/approvals?tab=out-of-office';
   const canShowDashboardLink = isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard));
   const canShowProjectsLink = !isCustomerUser && (permissionsLoading || permissions?.canViewProjects || permissions?.canManageProjects || permissions?.canCreateProjects);
   const canShowPlanningLink = !isCustomerUser && (permissionsLoading || permissions?.canViewPlanning);
@@ -1812,7 +1810,7 @@ export default function AppChromeTools({
               type="button"
               onClick={() => {
                 if (navTimer?.TimerType === 'callRecord') {
-                  router.push(oldPath('/call-records'));
+                  router.push('/call-records');
                   return;
                 }
                 handleOpenNavTimerTaskDetail();
@@ -1958,9 +1956,9 @@ export default function AppChromeTools({
               {showOverviewSection && (
                 <div>
                   {canShowDashboardLink && (
-                    <a href={oldPath("/dashboard")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/dashboard" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📊</span>{!isSidebarEffectivelyCollapsed && <span>Dashboard</span>}
-                    </a>
+                    </Link>
                   )}
                 </div>
               )}
@@ -1969,14 +1967,14 @@ export default function AppChromeTools({
                 <div className={`${showOverviewSection ? 'mt-1.5 pt-1.5' : ''}`}>
                   {renderSidebarSectionHeader('Delivery')}
                   {canShowProjectsLink && (
-                    <a href={oldPath("/projects")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/projects" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📁</span>{!isSidebarEffectivelyCollapsed && <span>Projects</span>}
-                    </a>
+                    </Link>
                   )}
                   {canShowPlanningLink && (
-                    <a href={oldPath("/planning")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/planning" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📅</span>{!isSidebarEffectivelyCollapsed && <span>Planning</span>}
-                    </a>
+                    </Link>
                   )}
                 </div>
               )}
@@ -1985,24 +1983,24 @@ export default function AppChromeTools({
                 <div className={`${showOverviewSection || showDeliverySection ? 'mt-1.5 pt-1.5' : ''}`}>
                   {renderSidebarSectionHeader('Work Logs')}
                   {canShowTimesheetLink && (
-                    <a href={oldPath("/timesheet")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/timesheet" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Timesheet</span>}
-                    </a>
+                    </Link>
                   )}
                   {canShowExpensesLink && (
-                    <a href={oldPath("/expenses")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/expenses" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">💸</span>{!isSidebarEffectivelyCollapsed && <span>Expenses</span>}
-                    </a>
+                    </Link>
                   )}
                   {canShowCallRecordsLink && (
-                    <a href={oldPath("/call-records")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/call-records" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📞</span>{!isSidebarEffectivelyCollapsed && <span>Call Records</span>}
-                    </a>
+                    </Link>
                   )}
                   {canShowWorkSummaryLink && (
-                    <a href={oldPath("/work-summary")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/work-summary" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📚</span>{!isSidebarEffectivelyCollapsed && <span>Work Summary</span>}
-                    </a>
+                    </Link>
                   )}
                 </div>
               )}
@@ -2011,14 +2009,14 @@ export default function AppChromeTools({
                 <div className={`${showOverviewSection || showDeliverySection || showWorkLogsSection ? 'mt-1.5 pt-1.5' : ''}`}>
                   {renderSidebarSectionHeader('Service')}
                   {canShowTicketsLink && (
-                    <a href={oldPath("/tickets")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/tickets" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">🎫</span>{!isSidebarEffectivelyCollapsed && <span>Tickets</span>}
-                    </a>
+                    </Link>
                   )}
                   {canShowMemosLink && (
-                    <a href={oldPath("/memos")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/memos" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📝</span>{!isSidebarEffectivelyCollapsed && <span>Memos</span>}
-                    </a>
+                    </Link>
                   )}
                 </div>
               )}
@@ -2027,24 +2025,24 @@ export default function AppChromeTools({
                 <div className={`${showOverviewSection || showDeliverySection || showWorkLogsSection || showServiceSection ? 'mt-1.5 pt-1.5' : ''}`}>
                   {renderSidebarSectionHeader('Management')}
                   {canShowCustomersOption && (
-                    <a href={oldPath("/customers")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/customers" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">🏢</span>{!isSidebarEffectivelyCollapsed && <span>Customers</span>}
-                    </a>
+                    </Link>
                   )}
                   {canShowApplicationsOption && (
-                    <a href={oldPath("/applications")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/applications" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">🧩</span>{!isSidebarEffectivelyCollapsed && <span>Applications</span>}
-                    </a>
+                    </Link>
                   )}
                   {canShowAnyApprovalsOption && (
-                    <a href={approvalsMenuHref} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href={approvalsMenuHref} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">✅</span>{!isSidebarEffectivelyCollapsed && <span>{approvalsMenuLabel}</span>}
-                    </a>
+                    </Link>
                   )}
                   {canShowDevSupportManagementOption && (
-                    <a href={oldPath("/dev-support")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/dev-support" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">🛠️</span>{!isSidebarEffectivelyCollapsed && <span>Dev Support</span>}
-                    </a>
+                    </Link>
                   )}
                 </div>
               )}
@@ -2053,9 +2051,9 @@ export default function AppChromeTools({
                 <div className={`${showOverviewSection || showDeliverySection || showWorkLogsSection || showServiceSection || showManagementSection ? 'mt-1.5 pt-1.5' : ''}`}>
                   {renderSidebarSectionHeader('Reporting')}
                   {canShowReportsLink && (
-                    <a href={oldPath("/reporting")} className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
+                    <Link href="/reporting" className={sidebarItemClass} onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}>
                       <span className="w-5 text-center">📊</span>{!isSidebarEffectivelyCollapsed && <span>Reporting</span>}
-                    </a>
+                    </Link>
                   )}
                 </div>
               )}
@@ -2071,13 +2069,13 @@ export default function AppChromeTools({
                   >
                     <span className="w-5 text-center">⬇️</span>{!isSidebarEffectivelyCollapsed && <span>Downloads</span>}
                   </button>
-                  <a
+                  <Link
                     href="/docs"
                     className={`${sidebarItemClass} mb-2`}
                     onClick={() => isFloatingMode && setIsFloatingSidebarOpen(false)}
                   >
                     <span className="w-5 text-center">📘</span>{!isSidebarEffectivelyCollapsed && <span>User Manual</span>}
-                  </a>
+                  </Link>
                 </>
               )}
               {!isSidebarEffectivelyCollapsed && (
@@ -2189,12 +2187,12 @@ export default function AppChromeTools({
               <div className="hidden md:flex space-x-4">
                 {/* Dashboard */}
                 {(isCustomerUser || (!isCustomerUser && (permissionsLoading || permissions?.canViewDashboard))) && (
-                  <a 
-                    href={oldPath("/dashboard")} 
+                  <Link 
+                    href="/dashboard" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
                     📊 Dashboard
-                  </a>
+                  </Link>
                 )}
 
                 {/* Work Dropdown (Projects & Planning) */}
@@ -2263,22 +2261,22 @@ export default function AppChromeTools({
 
                 {/* Tickets */}
                 {internalTicketsEnabled && (user?.isSupport || isCustomerUser || permissions?.canManageTickets || permissions?.canCreateTickets) && (
-                    <a 
-                      href={oldPath("/tickets")} 
+                    <Link 
+                      href="/tickets" 
                       className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                     >
                       🎫 Tickets
-                    </a>
+                    </Link>
                 )}
 
                 {/* Memos */}
                 {!isCustomerUser && memosEnabled && (
-                  <a 
-                    href={oldPath("/memos")} 
+                  <Link 
+                    href="/memos" 
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
                     📝 Memos
-                  </a>
+                  </Link>
                 )}
 
                 {/* Management Dropdown (Customers & Organizations) */}
@@ -2322,12 +2320,12 @@ export default function AppChromeTools({
                 {/* Reports */}
 
                 {!isCustomerUser && (permissionsLoading || permissions?.canViewReports || permissions?.canManageOrganizations || !!user?.isAdmin) && (
-                  <a
-                    href={oldPath("/reporting")}
+                  <Link
+                    href="/reporting"
                     className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2 rounded-md text-sm font-medium"
                   >
                     📊 Reporting
-                  </a>
+                  </Link>
                 )}
               </div>
               )}
@@ -2752,7 +2750,7 @@ export default function AppChromeTools({
                     {notifications.length > 0 && (
                       <div className="p-3 border-t border-gray-200 dark:border-gray-700">
                         <Link
-                          href={oldPath("/notifications")}
+                          href="/notifications"
                           className="block text-center text-sm text-blue-600 dark:text-blue-400 hover:underline"
                           onClick={() => setNotificationsOpen(false)}
                         >
@@ -2798,14 +2796,14 @@ export default function AppChromeTools({
 
                 {dropdownOpen && toolsOnly && (
                   <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-[var(--pm-border)] bg-[var(--pm-panel)] py-1 shadow-lg">
-                    <a
+                    <Link
                       href="/profile"
                       className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
                       onClick={() => setDropdownOpen(false)}
                     >
                       <User size={16} className="shrink-0 text-[var(--pm-muted)]" />
                       My Profile
-                    </a>
+                    </Link>
                     {!isCustomerUser && (
                       <>
                         <button
@@ -2816,27 +2814,27 @@ export default function AppChromeTools({
                           <Download size={16} className="shrink-0 text-[var(--pm-muted)]" />
                           Downloads
                         </button>
-                        <a
+                        <Link
                           href="/docs"
                           className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
                           onClick={() => setDropdownOpen(false)}
                         >
                           <BookOpen size={16} className="shrink-0 text-[var(--pm-muted)]" />
                           User Manual
-                        </a>
+                        </Link>
                       </>
                     )}
                     {(!!user.isAdmin || permissions?.canManageUsers) && (
                       <>
                         <hr className="my-1 border-[var(--pm-border)]" />
-                        <a
+                        <Link
                           href="/administration"
                           className="flex items-center gap-2 px-4 py-2 text-sm text-[var(--pm-text)] hover:bg-[var(--pm-surface-2)]"
                           onClick={() => setDropdownOpen(false)}
                         >
                           <Settings size={16} className="shrink-0 text-[var(--pm-muted)]" />
                           Administration
-                        </a>
+                        </Link>
                       </>
                     )}
                     <hr className="my-1 border-[var(--pm-border)]" />
@@ -2887,13 +2885,13 @@ export default function AppChromeTools({
 
                 {dropdownOpen && !toolsOnly && (
                   <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
-                    <a
-                      href={oldPath("/profile")}
+                    <Link
+                      href="/profile"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => setDropdownOpen(false)}
                     >
                       👤 My Profile
-                    </a>
+                    </Link>
                     {!isCustomerUser && !shouldUseLeftSidebar && (
                       <>
                         <button
@@ -2903,71 +2901,71 @@ export default function AppChromeTools({
                         >
                           ⬇️ Downloads
                         </button>
-                        <a
+                        <Link
                           href="/docs"
                           className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                           onClick={() => setDropdownOpen(false)}
                         >
                           📘 User Manual
-                        </a>
+                        </Link>
                       </>
                     )}
                     {!isCustomerUser && !shouldUseLeftSidebar && (
                     <>
-                    <a
-                      href={oldPath("/timesheet")}
+                    <Link
+                      href="/timesheet"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => setDropdownOpen(false)}
                     >
                       📝 Timesheet
-                    </a>
+                    </Link>
                     {canShowExpensesLink && (
-                    <a
-                      href={oldPath("/expenses")}
+                    <Link
+                      href="/expenses"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => setDropdownOpen(false)}
                     >
                       💸 Expenses
-                    </a>
+                    </Link>
                     )}
-                    <a
-                      href={oldPath("/call-records")}
+                    <Link
+                      href="/call-records"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => setDropdownOpen(false)}
                     >
                       📞 Call Records
-                    </a>
-                    <a
-                      href={oldPath("/work-summary")}
+                    </Link>
+                    <Link
+                      href="/work-summary"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => setDropdownOpen(false)}
                     >
                       📚 Work Summary
-                    </a>
+                    </Link>
                     </>
                     )}
 
                     {!isCustomerUser && (
                     <>
-                    <a
-                      href={oldPath("/dashboard")}
+                    <Link
+                      href="/dashboard"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => setDropdownOpen(false)}
                     >
                       🏠 Overview
-                    </a>
+                    </Link>
                     </>
                     )}
                     {(!!user.isAdmin || permissions?.canManageUsers) && (
                     <>
                     <hr className="my-1 border-gray-200 dark:border-gray-700" />
-                    <a
-                      href={oldPath("/administration")}
+                    <Link
+                      href="/administration"
                       className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                       onClick={() => setDropdownOpen(false)}
                     >
                       ⚙️ Administration
-                    </a>
+                    </Link>
                     </>
                     )}
                     <hr className="my-1 border-gray-200 dark:border-gray-700" />
@@ -3027,83 +3025,83 @@ export default function AppChromeTools({
           <div className="md:hidden sticky top-16 z-[75] w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-lg max-h-[calc(100dvh-4rem)] overflow-y-auto">
             <nav className="px-3 py-3 space-y-1" aria-label="Mobile primary">
               {canShowDashboardLink && (
-                <a href={oldPath("/dashboard")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/dashboard" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📊</span><span>Dashboard</span>
-                </a>
+                </Link>
               )}
               {canShowProjectsLink && (
-                <a href={oldPath("/projects")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/projects" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📁</span><span>Projects</span>
-                </a>
+                </Link>
               )}
               {canShowPlanningLink && (
-                <a href={oldPath("/planning")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/planning" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📅</span><span>Planning</span>
-                </a>
+                </Link>
               )}
               {canShowTimesheetLink && (
-                <a href={oldPath("/timesheet")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/timesheet" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📝</span><span>Timesheet</span>
-                </a>
+                </Link>
               )}
               {canShowExpensesLink && (
-                <a href={oldPath("/expenses")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/expenses" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>💸</span><span>Expenses</span>
-                </a>
+                </Link>
               )}
               {canShowCallRecordsLink && (
-                <a href={oldPath("/call-records")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/call-records" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📞</span><span>Call Records</span>
-                </a>
+                </Link>
               )}
               {canShowWorkSummaryLink && (
-                <a href={oldPath("/work-summary")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/work-summary" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📚</span><span>Work Summary</span>
-                </a>
+                </Link>
               )}
               {canShowTicketsLink && (
-                <a href={oldPath("/tickets")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/tickets" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>🎫</span><span>Tickets</span>
-                </a>
+                </Link>
               )}
               {canShowMemosLink && (
-                <a href={oldPath("/memos")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/memos" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📝</span><span>Memos</span>
-                </a>
+                </Link>
               )}
               {canShowCustomersOption && (
-                <a href={oldPath("/customers")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/customers" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>🏢</span><span>Customers</span>
-                </a>
+                </Link>
               )}
               {canShowApplicationsOption && (
-                <a href={oldPath("/applications")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/applications" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>🧩</span><span>Applications</span>
-                </a>
+                </Link>
               )}
               {canShowAnyApprovalsOption && (
-                <a
+                <Link
                   href={approvalsMenuHref}
                   className={topMobileNavItemClass}
                   onClick={closeTopMobileNav}
                 >
                   <span>✅</span><span>{approvalsMenuLabel}</span>
-                </a>
+                </Link>
               )}
               {canShowDevSupportManagementOption && (
-                <a href={oldPath("/dev-support")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/dev-support" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>🛠️</span><span>Dev Support</span>
-                </a>
+                </Link>
               )}
               {canShowReportsLink && (
-                <a href={oldPath("/reporting")} className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/reporting" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📊</span><span>Reporting</span>
-                </a>
+                </Link>
               )}
               {canShowDocsLink && (
-                <a href="/docs" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
+                <Link href="/docs" className={topMobileNavItemClass} onClick={closeTopMobileNav}>
                   <span>📘</span><span>User Manual</span>
-                </a>
+                </Link>
               )}
             </nav>
           </div>
