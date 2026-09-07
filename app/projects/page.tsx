@@ -831,6 +831,7 @@ export default function ProjectsPage() {
                   filterRAG ? 1 : 0,
                   hideCompleted ? 1 : 0,
                 ].reduce((a, b) => a + b, 0)}
+                onClear={resetListFilters}
                 headerMiddle={
                   <div className="flex flex-wrap items-center gap-1">
                     <button

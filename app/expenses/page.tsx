@@ -581,6 +581,17 @@ export default function ExpensesPage() {
             filterInternalOnly ? 1 : 0,
             filterReimbursement ? 1 : 0,
           ].reduce((a, b) => a + b, 0)}
+          onClear={() => {
+            setFilterDateFrom('');
+            setFilterDateTo('');
+            setFilterOrg('');
+            setFilterProject('');
+            setFilterGroup('');
+            setFilterCategory('');
+            setFilterApproval('');
+            setFilterInternalOnly(false);
+            setFilterReimbursement('');
+          }}
           bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
         >
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">

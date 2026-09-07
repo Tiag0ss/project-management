@@ -11246,6 +11246,7 @@ export default function PlanningPage() {
             <CollapsibleFilterPanel
               title="Allocation filters"
               activeCount={allocationFilterActiveCount}
+              onClear={clearAllocationFilters}
               headerExtra={
                 <span className="text-xs text-gray-400">
                   {filteredAllocationGroups.length} task

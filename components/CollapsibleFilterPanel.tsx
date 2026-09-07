@@ -17,6 +17,12 @@ type CollapsibleFilterPanelProps = {
   headerMiddle?: ReactNode;
   /** Optional content on the right of the toggle (e.g. result count) */
   headerExtra?: ReactNode;
+  /**
+   * When set and `activeCount > 0`, shows Clear in the compact header
+   * so filters can be reset without expanding the panel.
+   */
+  onClear?: () => void;
+  clearLabel?: string;
 };
 
 /**
@@ -32,6 +38,8 @@ export default function CollapsibleFilterPanel({
   bodyClassName = 'p-3 border-t border-[var(--pm-border)]',
   headerMiddle,
   headerExtra,
+  onClear,
+  clearLabel = 'Clear',
 }: CollapsibleFilterPanelProps) {
   const [open, setOpen] = useState(defaultOpen);
   const hasActive = activeCount > 0;
@@ -72,6 +80,16 @@ export default function CollapsibleFilterPanel({
             <div className="flex items-center justify-start gap-1 sm:justify-center">{headerMiddle}</div>
           ) : null}
         </div>
+
+        {hasActive && onClear ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 hover:underline dark:text-blue-400 dark:hover:bg-blue-900/20"
+          >
+            {clearLabel}
+          </button>
+        ) : null}
 
         {headerExtra ? <div className="shrink-0">{headerExtra}</div> : null}
       </div>

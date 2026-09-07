@@ -871,6 +871,8 @@ export default function TicketsPage() {
             !showMyTicketsOnly ? 1 : 0,
             showClosed ? 1 : 0,
           ].reduce((a, b) => a + b, 0)}
+          onClear={resetListFilters}
+          clearLabel="Clear all"
           headerMiddle={
             stats ? (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">

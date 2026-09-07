@@ -67,6 +67,7 @@ export function TasksFilterPanel({
               hideClosed ? 1 : 0,
               unplannedOnly ? 1 : 0,
             ].reduce((a, b) => a + b, 0)}
+            onClear={resetTaskFilters}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-2">
               <div className="lg:col-span-2">

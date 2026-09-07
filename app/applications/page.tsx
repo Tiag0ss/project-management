@@ -935,6 +935,7 @@ export default function ApplicationsPage() {
               filterOrg ? 1 : 0,
               filterVersions !== 'all' ? 1 : 0,
             ].reduce((a, b) => a + b, 0)}
+            onClear={resetListFilters}
             bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
             headerExtra={
               <span className="text-xs text-gray-400">

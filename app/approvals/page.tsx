@@ -788,6 +788,13 @@ export default function ApprovalsPage() {
           className="mb-2"
           title="Timesheet filters"
           activeCount={timesheetFilterActiveCount}
+          onClear={() => {
+            setFilterStatus('pending');
+            setFilterUserId('');
+            setFilterProjectId('');
+            setFilterDateFrom(defaultTimesheetDateFrom);
+            setFilterDateTo(defaultTimesheetDateTo);
+          }}
           bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
@@ -1294,6 +1301,11 @@ export default function ApprovalsPage() {
                   className="mb-2"
                   title={`${leaveLabel} filters`}
                   activeCount={vacationFilterActiveCount}
+                  onClear={() => {
+                    setVacationYear(currentYear);
+                    setSelectedMemberId('');
+                    setVacationStatusFilter('pending');
+                  }}
                   bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
                 >
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

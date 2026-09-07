@@ -3127,6 +3127,11 @@ function ProjectsTab({ orgId, canManage, token }: { orgId: number; canManage: bo
           className="mb-2"
           title="Project filters"
           activeCount={activeFilterCount}
+          onClear={() => {
+            setFilterText('');
+            setFilterStatus('');
+            setFilterCustomer('');
+          }}
           headerExtra={
             <span className="text-xs text-gray-400">
               {filteredProjects.length} shown

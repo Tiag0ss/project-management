@@ -1684,6 +1684,12 @@ export default function TimesheetPage() {
                         className="mb-2"
                         title="Entry filters"
                         activeCount={historyFilterActiveCount}
+                        onClear={() => {
+                          setHistoryDateFrom(defaultHistoryDateFrom);
+                          setHistoryDateTo(defaultHistoryDateTo);
+                          setHistoryProjectFilter('');
+                          setHistoryTaskFilter('');
+                        }}
                         bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
                       >
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">

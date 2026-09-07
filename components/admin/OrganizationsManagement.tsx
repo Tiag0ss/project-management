@@ -520,6 +520,12 @@ export default function OrganizationsManagement() {
       className="mb-2"
       title="Organization filters"
       activeCount={orgFilterActiveCount}
+      onClear={() => {
+        setFilterText('');
+        setRoleFilter('all');
+        setProjectFilter('all');
+        setTicketFilter('all');
+      }}
       bodyClassName="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700"
       headerMiddle={
         organizations.length > 0 ? (
