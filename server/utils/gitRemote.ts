@@ -21,6 +21,19 @@ export interface NormalizedCommit {
   author: string;
   date: string;
   url: string;
+  /** Parent commit SHAs (first parent is the mainline; 2+ means merge). */
+  parents: string[];
+}
+
+export interface NormalizedBranch {
+  name: string;
+  isDefault: boolean;
+}
+
+export interface ListBranchesResult {
+  branches: NormalizedBranch[];
+  defaultBranch: string | null;
+  provider: GitProvider;
 }
 
 export interface GitCredentials {
@@ -35,6 +48,8 @@ export interface ListCommitsResult {
   commits: NormalizedCommit[];
   hasMore: boolean;
   provider: GitProvider;
+  /** Ref used for the listing (default branch when omitted by caller). */
+  branch: string | null;
 }
 
 function stripGitSuffix(name: string): string {
@@ -373,26 +388,238 @@ export async function resolveProjectRepoCredentials(
   return null;
 }
 
+/** Build provider commits list URL (exported for unit tests). */
+export function buildRemoteCommitsListUrl(
+  parsed: ParsedRepo,
+  creds: GitCredentials,
+  options: { page: number; perPage: number; branch?: string | null }
+): string {
+  const { page, perPage } = options;
+  const branch = typeof options.branch === 'string' ? options.branch.trim() : '';
+  const owner = encodeURIComponent(parsed.owner);
+  const repo = encodeURIComponent(parsed.repo);
+
+  if (creds.provider === 'github') {
+    const params = new URLSearchParams({
+      page: String(page),
+      per_page: String(perPage),
+    });
+    if (branch) params.set('sha', branch);
+    return `${creds.apiBaseUrl}/repos/${owner}/${repo}/commits?${params}`;
+  }
+
+  if (creds.provider === 'gitea') {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(perPage),
+    });
+    if (branch) params.set('sha', branch);
+    return `${creds.apiBaseUrl}/api/v1/repos/${owner}/${repo}/commits?${params}`;
+  }
+
+  if (creds.bitbucketKind === 'cloud') {
+    const params = new URLSearchParams({
+      page: String(page),
+      pagelen: String(perPage),
+    });
+    // Without include=, Bitbucket returns commits across all branches.
+    if (branch) params.set('include', branch);
+    return `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}/commits?${params}`;
+  }
+
+  // Bitbucket Server / DC
+  const params = new URLSearchParams({
+    start: String((page - 1) * perPage),
+    limit: String(perPage),
+  });
+  if (branch) params.set('until', branch);
+  return `${creds.apiBaseUrl}/rest/api/1.0/projects/${owner}/repos/${repo}/commits?${params}`;
+}
+
+function parentShasFromGithubLike(parents: unknown): string[] {
+  if (!Array.isArray(parents)) return [];
+  return parents
+    .map((p) => {
+      if (!p || typeof p !== 'object') return '';
+      const sha = (p as { sha?: string }).sha;
+      return typeof sha === 'string' ? sha : '';
+    })
+    .filter(Boolean);
+}
+
+async function fetchDefaultBranchName(
+  parsed: ParsedRepo,
+  creds: GitCredentials
+): Promise<string | null> {
+  const headers = authHeaders(creds);
+  const owner = encodeURIComponent(parsed.owner);
+  const repo = encodeURIComponent(parsed.repo);
+
+  try {
+    if (creds.provider === 'github') {
+      const res = await fetch(`${creds.apiBaseUrl}/repos/${owner}/${repo}`, { headers });
+      if (!res.ok) return null;
+      const body = await res.json();
+      return typeof body?.default_branch === 'string' ? body.default_branch : null;
+    }
+    if (creds.provider === 'gitea') {
+      const res = await fetch(`${creds.apiBaseUrl}/api/v1/repos/${owner}/${repo}`, { headers });
+      if (!res.ok) return null;
+      const body = await res.json();
+      return typeof body?.default_branch === 'string' ? body.default_branch : null;
+    }
+    if (creds.bitbucketKind === 'cloud') {
+      const res = await fetch(
+        `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}`,
+        { headers }
+      );
+      if (!res.ok) return null;
+      const body = await res.json();
+      const name = body?.mainbranch?.name;
+      return typeof name === 'string' ? name : null;
+    }
+    const res = await fetch(
+      `${creds.apiBaseUrl}/rest/api/1.0/projects/${owner}/repos/${repo}/branches/default`,
+      { headers }
+    );
+    if (!res.ok) return null;
+    const body = await res.json();
+    return typeof body?.displayId === 'string'
+      ? body.displayId
+      : typeof body?.id === 'string'
+        ? String(body.id).replace(/^refs\/heads\//, '')
+        : null;
+  } catch (error) {
+    logger.error('fetchDefaultBranchName failed:', creds.provider, error);
+    return null;
+  }
+}
+
+export async function listRemoteBranches(
+  parsed: ParsedRepo,
+  creds: GitCredentials,
+  options: { limit?: number } = {}
+): Promise<ListBranchesResult> {
+  const limit = Math.min(100, Math.max(1, options.limit ?? 100));
+  const headers = authHeaders(creds);
+  const owner = encodeURIComponent(parsed.owner);
+  const repo = encodeURIComponent(parsed.repo);
+  const defaultBranch = await fetchDefaultBranchName(parsed, creds);
+
+  let names: string[] = [];
+
+  if (creds.provider === 'github') {
+    const res = await fetch(
+      `${creds.apiBaseUrl}/repos/${owner}/${repo}/branches?per_page=${limit}&page=1`,
+      { headers }
+    );
+    if (!res.ok) {
+      const errorText = await res.text();
+      logger.error('listRemoteBranches failed:', creds.provider, res.status, errorText);
+      throw new Error(`Failed to list branches (${res.status}): ${res.statusText}`);
+    }
+    const body = await res.json();
+    const list = Array.isArray(body) ? body : [];
+    names = list
+      .map((b: { name?: string }) => (typeof b?.name === 'string' ? b.name : ''))
+      .filter(Boolean);
+  } else if (creds.provider === 'gitea') {
+    const res = await fetch(
+      `${creds.apiBaseUrl}/api/v1/repos/${owner}/${repo}/branches?limit=${limit}&page=1`,
+      { headers }
+    );
+    if (!res.ok) {
+      const errorText = await res.text();
+      logger.error('listRemoteBranches failed:', creds.provider, res.status, errorText);
+      throw new Error(`Failed to list branches (${res.status}): ${res.statusText}`);
+    }
+    const body = await res.json();
+    const list = Array.isArray(body) ? body : [];
+    names = list
+      .map((b: { name?: string }) => (typeof b?.name === 'string' ? b.name : ''))
+      .filter(Boolean);
+  } else if (creds.bitbucketKind === 'cloud') {
+    const res = await fetch(
+      `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}/refs/branches?pagelen=${limit}`,
+      { headers }
+    );
+    if (!res.ok) {
+      const errorText = await res.text();
+      logger.error('listRemoteBranches failed:', creds.provider, res.status, errorText);
+      if (res.status === 401) {
+        throw new Error(
+          'Bitbucket Cloud authentication failed (401). Use your Atlassian account email and an API token with repository read scopes — app passwords are discontinued.'
+        );
+      }
+      throw new Error(`Failed to list branches (${res.status}): ${res.statusText}`);
+    }
+    const body = await res.json();
+    const values = Array.isArray(body.values) ? body.values : [];
+    names = values
+      .map((b: { name?: string }) => (typeof b?.name === 'string' ? b.name : ''))
+      .filter(Boolean);
+  } else {
+    const res = await fetch(
+      `${creds.apiBaseUrl}/rest/api/1.0/projects/${owner}/repos/${repo}/branches?limit=${limit}&start=0`,
+      { headers }
+    );
+    if (!res.ok) {
+      const errorText = await res.text();
+      logger.error('listRemoteBranches failed:', creds.provider, res.status, errorText);
+      throw new Error(`Failed to list branches (${res.status}): ${res.statusText}`);
+    }
+    const body = await res.json();
+    const values = Array.isArray(body.values) ? body.values : [];
+    names = values
+      .map((b: { displayId?: string; id?: string }) => {
+        if (typeof b?.displayId === 'string') return b.displayId;
+        if (typeof b?.id === 'string') return b.id.replace(/^refs\/heads\//, '');
+        return '';
+      })
+      .filter(Boolean);
+  }
+
+  const unique = Array.from(new Set(names));
+  if (defaultBranch && !unique.includes(defaultBranch)) {
+    unique.unshift(defaultBranch);
+  }
+
+  const branches: NormalizedBranch[] = unique.map((name) => ({
+    name,
+    isDefault: Boolean(defaultBranch && name === defaultBranch),
+  }));
+
+  if (!defaultBranch && branches.length > 0) {
+    branches[0] = { ...branches[0], isDefault: true };
+  }
+
+  branches.sort((a, b) => {
+    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return {
+    branches,
+    defaultBranch: defaultBranch || branches.find((b) => b.isDefault)?.name || null,
+    provider: creds.provider,
+  };
+}
+
 export async function listRemoteCommits(
   parsed: ParsedRepo,
   creds: GitCredentials,
-  options: { page?: number; perPage?: number } = {}
+  options: { page?: number; perPage?: number; branch?: string | null } = {}
 ): Promise<ListCommitsResult> {
   const page = Math.max(1, options.page ?? 1);
   const perPage = Math.min(100, Math.max(1, options.perPage ?? 30));
   const headers = authHeaders(creds);
 
-  let fetchUrl: string;
-  if (creds.provider === 'github') {
-    fetchUrl = `${creds.apiBaseUrl}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/commits?page=${page}&per_page=${perPage}`;
-  } else if (creds.provider === 'gitea') {
-    fetchUrl = `${creds.apiBaseUrl}/api/v1/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/commits?page=${page}&limit=${perPage}`;
-  } else if (creds.bitbucketKind === 'cloud') {
-    fetchUrl = `https://api.bitbucket.org/2.0/repositories/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/commits?page=${page}&pagelen=${perPage}`;
-  } else {
-    // Bitbucket Server / DC
-    fetchUrl = `${creds.apiBaseUrl}/rest/api/1.0/projects/${encodeURIComponent(parsed.owner)}/repos/${encodeURIComponent(parsed.repo)}/commits?start=${(page - 1) * perPage}&limit=${perPage}`;
+  let branch = typeof options.branch === 'string' ? options.branch.trim() : '';
+  if (!branch) {
+    branch = (await fetchDefaultBranchName(parsed, creds)) || '';
   }
+
+  const fetchUrl = buildRemoteCommitsListUrl(parsed, creds, { page, perPage, branch: branch || null });
 
   const response = await fetch(fetchUrl, { method: 'GET', headers });
   if (!response.ok) {
@@ -417,12 +644,14 @@ export async function listRemoteCommits(
       commit?: { message?: string; author?: { name?: string; date?: string }; committer?: { date?: string } };
       html_url?: string;
       author?: { login?: string };
+      parents?: Array<{ sha?: string }>;
     }) => ({
       sha: c.sha || '',
       message: c.commit?.message || '',
       author: c.commit?.author?.name || c.author?.login || '',
       date: c.commit?.author?.date || c.commit?.committer?.date || '',
       url: c.html_url || '',
+      parents: parentShasFromGithubLike(c.parents),
     }));
     hasMore = list.length >= perPage;
   } else if (creds.provider === 'gitea') {
@@ -432,12 +661,14 @@ export async function listRemoteCommits(
       commit?: { message?: string; author?: { name?: string; date?: string } };
       html_url?: string;
       author?: { login?: string; username?: string };
+      parents?: Array<{ sha?: string }>;
     }) => ({
       sha: c.sha || '',
       message: c.commit?.message || '',
       author: c.commit?.author?.name || c.author?.login || c.author?.username || '',
       date: c.commit?.author?.date || '',
       url: c.html_url || '',
+      parents: parentShasFromGithubLike(c.parents),
     }));
     hasMore = list.length >= perPage;
   } else if (creds.bitbucketKind === 'cloud') {
@@ -448,12 +679,16 @@ export async function listRemoteCommits(
       date?: string;
       author?: { raw?: string; user?: { display_name?: string } };
       links?: { html?: { href?: string } };
+      parents?: Array<{ hash?: string }>;
     }) => ({
       sha: c.hash || '',
       message: c.message || '',
       author: c.author?.user?.display_name || c.author?.raw || '',
       date: c.date || '',
       url: c.links?.html?.href || '',
+      parents: Array.isArray(c.parents)
+        ? c.parents.map((p) => p?.hash || '').filter(Boolean)
+        : [],
     }));
     hasMore = Boolean(body.next) || values.length >= perPage;
   } else {
@@ -465,17 +700,21 @@ export async function listRemoteCommits(
       authorTimestamp?: number;
       author?: { name?: string; displayName?: string };
       links?: { self?: Array<{ href?: string }> };
+      parents?: Array<{ id?: string }>;
     }) => ({
       sha: c.id || c.displayId || '',
       message: c.message || '',
       author: c.author?.displayName || c.author?.name || '',
       date: c.authorTimestamp ? new Date(c.authorTimestamp).toISOString() : '',
       url: c.links?.self?.[0]?.href || '',
+      parents: Array.isArray(c.parents)
+        ? c.parents.map((p) => p?.id || '').filter(Boolean)
+        : [],
     }));
     hasMore = body.isLastPage === false || values.length >= perPage;
   }
 
-  return { commits, hasMore, provider: creds.provider };
+  return { commits, hasMore, provider: creds.provider, branch: branch || null };
 }
 
 /**
@@ -494,10 +733,12 @@ export async function listCommitsForTask(
   const matched: NormalizedCommit[] = [];
   let lastHasMore = false;
   let provider = creds.provider;
+  let branch: string | null = null;
 
   for (let page = 1; page <= maxPages; page++) {
     const result = await listRemoteCommits(parsed, creds, { page, perPage });
     provider = result.provider;
+    branch = result.branch;
     lastHasMore = result.hasMore;
     for (const c of result.commits) {
       if (commitMatchesTask(c.message, taskId, gitHubIssueNumber, giteaIssueNumber)) {
@@ -510,5 +751,5 @@ export async function listCommitsForTask(
     }
   }
 
-  return { commits: matched, hasMore: lastHasMore, provider };
+  return { commits: matched, hasMore: lastHasMore, provider, branch };
 }

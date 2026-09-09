@@ -4,7 +4,7 @@ import { sanitizeRichTextHtml } from '@/lib/sanitizeHtml';
 
 import PageLoadingSkeleton from '@/components/PageLoadingSkeleton';
 import { getApiUrl } from '@/lib/api/config';
-import { useState, useEffect, use, Suspense } from 'react';
+import { useState, useEffect, use, useMemo, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { useRouter } from 'next/navigation'
@@ -16,12 +16,14 @@ import SearchableMultiSelect from '@/components/SearchableMultiSelect';
 import TaskDetailModal from '@/components/TaskDetailModal';
 import ConfirmAlertModal from '@/components/ConfirmAlertModal';
 import CommitMessage from '@/components/CommitMessage';
+import CommitGraphRail from '@/components/CommitGraphRail';
 import { Task, tasksApi } from '@/lib/api/tasks';
 import { Project, projectsApi } from '@/lib/api/projects';
 import { useColorVision } from '@/hooks/useColorVision';
 import { useUrlTab } from '@/hooks/useUrlTab';
 import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 import { NavModuleIcon } from '@/lib/navIcons';
+import { layoutCommitGraph } from '@/lib/git/commitGraphLayout';
 
 type Tab = 'overview' | 'versions' | 'commits';
 const APPLICATION_DETAIL_TABS = ['overview', 'versions', 'commits'] as const;
@@ -32,6 +34,12 @@ interface RemoteCommit {
   author: string;
   date: string;
   url: string;
+  parents?: string[];
+}
+
+interface RemoteBranch {
+  name: string;
+  isDefault: boolean;
 }
 
 const VERSION_STATUSES = ['Planning', 'In Development', 'Testing', 'Released', 'Archived'];
@@ -127,6 +135,10 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   const [commitsHasMore, setCommitsHasMore] = useState(false);
   const [commitsPage, setCommitsPage] = useState(1);
   const [commitsLoaded, setCommitsLoaded] = useState(false);
+  const [commitBranches, setCommitBranches] = useState<RemoteBranch[]>([]);
+  const [commitBranch, setCommitBranch] = useState('');
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchesLoaded, setBranchesLoaded] = useState(false);
 
   // Version modal state
   const [showVersionModal, setShowVersionModal] = useState(false);
@@ -195,10 +207,15 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   }, [token, id]);
 
   useEffect(() => {
-    if (activeTab === 'commits' && token && id && !commitsLoaded && !commitsLoading) {
-      void loadCommits(1, false);
+    if (activeTab !== 'commits' || !token || !id) return;
+    if (!branchesLoaded && !branchesLoading) {
+      void loadCommitBranches();
+      return;
     }
-  }, [activeTab, token, id, commitsLoaded, commitsLoading]);
+    if (branchesLoaded && commitBranch && !commitsLoaded && !commitsLoading) {
+      void loadCommits(1, false, commitBranch);
+    }
+  }, [activeTab, token, id, branchesLoaded, branchesLoading, commitBranch, commitsLoaded, commitsLoading]);
 
   useEffect(() => {
     if (!application?.Id || !application.Name) return;
@@ -208,6 +225,20 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
       user?.id
     );
   }, [application?.Id, application?.Name, user?.id]);
+
+  const commitGraphInputs = useMemo(
+    () =>
+      commits.map((c) => ({
+        sha: c.sha,
+        parents: Array.isArray(c.parents) ? c.parents : [],
+      })),
+    [commits]
+  );
+
+  const commitGraphRows = useMemo(
+    () => layoutCommitGraph(commitGraphInputs),
+    [commitGraphInputs]
+  );
 
   const loadApplication = async () => {
     setIsLoading(true);
@@ -226,13 +257,52 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
     }
   };
 
-  const loadCommits = async (page = 1, append = false) => {
+  const loadCommitBranches = async () => {
     if (!token || !id) return;
+    setBranchesLoading(true);
+    setCommitsError('');
+    try {
+      const res = await fetch(`${getApiUrl()}/api/applications/${id}/branches`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load branches');
+      }
+      const branches = (data.data?.branches || []) as RemoteBranch[];
+      setCommitBranches(branches);
+      const preferred =
+        (typeof data.data?.defaultBranch === 'string' && data.data.defaultBranch) ||
+        branches.find((b) => b.isDefault)?.name ||
+        branches[0]?.name ||
+        '';
+      setCommitBranch(preferred);
+      setBranchesLoaded(true);
+      setCommitsLoaded(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load branches';
+      setCommitsError(message);
+      setCommitBranches([]);
+      setBranchesLoaded(true);
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const loadCommits = async (page = 1, append = false, branchOverride?: string) => {
+    if (!token || !id) return;
+    const branch = (branchOverride ?? commitBranch).trim();
+    if (!branch) return;
     setCommitsLoading(true);
     setCommitsError('');
     try {
+      const params = new URLSearchParams({
+        page: String(page),
+        per_page: '30',
+        branch,
+      });
       const res = await fetch(
-        `${getApiUrl()}/api/applications/${id}/commits?page=${page}&per_page=30`,
+        `${getApiUrl()}/api/applications/${id}/commits?${params}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await res.json();
@@ -244,6 +314,9 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
       setCommitsProvider(data.data?.provider || null);
       setCommitsHasMore(Boolean(data.data?.hasMore));
       setCommitsPage(page);
+      if (typeof data.data?.branch === 'string' && data.data.branch) {
+        setCommitBranch(data.data.branch);
+      }
       setCommitsLoaded(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load commits';
@@ -1155,28 +1228,49 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
               <div>
                 <h2 className="font-semibold text-gray-900 dark:text-white">Commit history</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Recent commits from the application repository
+                  Branch-scoped history with merge graph
                   {commitsProvider ? ` (${commitsProvider})` : ''}.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setCommitsLoaded(false);
-                  void loadCommits(1, false);
-                }}
-                disabled={commitsLoading || !application.RepositoryUrl}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg text-sm transition-colors"
-              >
-                {commitsLoading ? 'Loading…' : 'Refresh'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-[12rem] w-56">
+                  <SearchableSelect
+                    value={commitBranch}
+                    onChange={(value) => {
+                      setCommitBranch(value);
+                      setCommits([]);
+                      setCommitsLoaded(false);
+                      setCommitsPage(1);
+                    }}
+                    options={commitBranches.map((b) => ({
+                      value: b.name,
+                      label: b.isDefault ? `${b.name} (default)` : b.name,
+                    }))}
+                    placeholder={branchesLoading ? 'Loading branches…' : 'Select branch'}
+                    emptyText="No branches"
+                    disabled={branchesLoading || !application.RepositoryUrl || commitBranches.length === 0}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBranchesLoaded(false);
+                    setCommitsLoaded(false);
+                    void loadCommitBranches();
+                  }}
+                  disabled={commitsLoading || branchesLoading || !application.RepositoryUrl}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg text-sm transition-colors"
+                >
+                  {commitsLoading || branchesLoading ? 'Loading…' : 'Refresh'}
+                </button>
+              </div>
             </div>
 
             {!application.RepositoryUrl ? (
               <p className="text-gray-500 dark:text-gray-400 text-center py-8">
                 No repository URL configured for this application.
               </p>
-            ) : commitsLoading && commits.length === 0 ? (
+            ) : (commitsLoading || branchesLoading) && commits.length === 0 ? (
               <p className="text-gray-500 dark:text-gray-400 text-center py-8">Loading commits…</p>
             ) : commitsError ? (
               <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
@@ -1185,45 +1279,66 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
             ) : commits.length === 0 ? (
               <p className="text-gray-500 dark:text-gray-400 text-center py-8">No commits found.</p>
             ) : (
-              <div className="space-y-2">
-                {commits.map((c) => {
+              <div className="space-y-0">
+                {commits.map((c, index) => {
                   const shortSha = (c.sha || '').slice(0, 7);
+                  const graphRow = commitGraphRows[index];
+                  const previousEdges = index > 0 ? commitGraphRows[index - 1]?.edges : [];
+                  const isMerge = Boolean(graphRow?.isMerge || (c.parents && c.parents.length > 1));
                   return (
                     <div
                       key={c.sha || `${c.date}-${c.message}`}
-                      className="flex flex-col sm:flex-row sm:items-start gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                      id={c.sha ? `commit-${c.sha}` : undefined}
+                      className="flex items-stretch gap-2 py-0 rounded-sm scroll-mt-24"
                     >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start gap-2">
-                          <code className="text-xs font-mono text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">{shortSha || '—'}</code>
-                          <CommitMessage
-                            message={c.message || ''}
-                            token={token || undefined}
-                            onTaskClick={(taskId) => {
-                              void handleOpenTaskById(taskId);
-                            }}
-                          />
+                      {graphRow && (
+                        <div className="shrink-0 self-stretch flex items-stretch">
+                          <CommitGraphRail row={graphRow} previousEdges={previousEdges} height={56} />
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {c.author || 'Unknown author'}
-                          {c.date ? ` · ${new Date(c.date).toLocaleString()}` : ''}
-                        </div>
-                      </div>
-                      {c.url && (
-                        <a
-                          href={c.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-blue-600 dark:text-blue-400 hover:underline shrink-0"
-                        >
-                          Open
-                        </a>
                       )}
+                      <div className="flex flex-1 min-w-0 flex-col sm:flex-row sm:items-start gap-2 py-2 pr-1 border-b border-gray-100 dark:border-gray-700/60">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start gap-2 flex-wrap">
+                            <code className="text-xs font-mono text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">{shortSha || '—'}</code>
+                            {isMerge && (
+                              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+                                merge
+                              </span>
+                            )}
+                            {!isMerge && (graphRow?.joinColumns?.length || 0) > 1 && (
+                              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                                split
+                              </span>
+                            )}
+                            <CommitMessage
+                              message={c.message || ''}
+                              token={token || undefined}
+                              onTaskClick={(taskId) => {
+                                void handleOpenTaskById(taskId);
+                              }}
+                            />
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {c.author || 'Unknown author'}
+                            {c.date ? ` · ${new Date(c.date).toLocaleString()}` : ''}
+                          </div>
+                        </div>
+                        {c.url && (
+                          <a
+                            href={c.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline shrink-0"
+                          >
+                            Open
+                          </a>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
                 {commitsHasMore && (
-                  <div className="pt-2 text-center">
+                  <div className="pt-3 text-center">
                     <button
                       type="button"
                       disabled={commitsLoading}

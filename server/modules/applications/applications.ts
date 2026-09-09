@@ -13,6 +13,7 @@ import {
   parseRepositoryUrl,
   resolveGitCredentials,
   listRemoteCommits,
+  listRemoteBranches,
 } from '../../utils/gitRemote';
 import { exclusiveApplicationVcsFks } from '../../utils/vcsIntegrationHelpers';
 import {
@@ -500,13 +501,11 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
   }
 });
 
-// GET /api/applications/:id/commits - list remote commits for application RepositoryUrl
-router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Response) => {
+// GET /api/applications/:id/branches - list remote branches for application RepositoryUrl
+router.get('/:id/branches', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
-    const perPage = Math.min(100, Math.max(1, parseInt(String(req.query.per_page || '30'), 10) || 30));
 
     const [apps] = await pool.execute<RowDataPacket[]>(
       `SELECT a.Id, a.OrganizationId, a.RepositoryUrl,
@@ -549,7 +548,75 @@ router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Resp
       });
     }
 
-    const result = await listRemoteCommits(parsed, creds, { page, perPage });
+    const result = await listRemoteBranches(parsed, creds);
+    res.json({
+      success: true,
+      data: {
+        branches: result.branches,
+        defaultBranch: result.defaultBranch,
+        provider: result.provider,
+      },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch branches';
+    logger.error('Error fetching application branches:', error);
+    res.status(500).json({ success: false, message });
+  }
+});
+
+// GET /api/applications/:id/commits - list remote commits for application RepositoryUrl
+router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const perPage = Math.min(100, Math.max(1, parseInt(String(req.query.per_page || '30'), 10) || 30));
+    const branchRaw = typeof req.query.branch === 'string' ? req.query.branch.trim() : '';
+
+    const [apps] = await pool.execute<RowDataPacket[]>(
+      `SELECT a.Id, a.OrganizationId, a.RepositoryUrl,
+              a.GitHubIntegrationId, a.GiteaIntegrationId, a.BitbucketIntegrationId
+       FROM Applications a
+       INNER JOIN OrganizationMembers om ON a.OrganizationId = om.OrganizationId AND om.UserId = ?
+       WHERE a.Id = ? AND a.IsActive = 1`,
+      [userId, id]
+    );
+
+    if (apps.length === 0) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    const repositoryUrl = apps[0].RepositoryUrl as string | null;
+    if (!repositoryUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'Application has no repository URL configured',
+      });
+    }
+
+    const parsed = parseRepositoryUrl(repositoryUrl);
+    if (!parsed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not parse repository URL',
+      });
+    }
+
+    const creds = await resolveGitCredentials(Number(apps[0].OrganizationId), parsed, {
+      githubIntegrationId: apps[0].GitHubIntegrationId,
+      giteaIntegrationId: apps[0].GiteaIntegrationId,
+      bitbucketIntegrationId: apps[0].BitbucketIntegrationId,
+    });
+    if (!creds) {
+      return res.status(400).json({
+        success: false,
+        message: 'No matching GitHub, Gitea, or Bitbucket integration is enabled for this organization',
+      });
+    }
+
+    let branch = branchRaw;
+    const result = await listRemoteCommits(parsed, creds, { page, perPage, branch: branch || null });
+    branch = result.branch || branch;
     res.json({
       success: true,
       data: {
@@ -558,6 +625,7 @@ router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Resp
         hasMore: result.hasMore,
         page,
         perPage,
+        branch: branch || null,
       },
     });
   } catch (error: unknown) {
