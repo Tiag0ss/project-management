@@ -24,6 +24,7 @@ import { useUrlTab } from '@/hooks/useUrlTab';
 import { recordRecentNavAccess } from '@/lib/recentNavAccess';
 import { NavModuleIcon } from '@/lib/navIcons';
 import { layoutCommitGraph } from '@/lib/git/commitGraphLayout';
+import { decorateLaneHeadBranchNames } from '@/lib/git/commitLaneHeadLabels';
 
 type Tab = 'overview' | 'versions' | 'commits';
 const APPLICATION_DETAIL_TABS = ['overview', 'versions', 'commits'] as const;
@@ -35,11 +36,25 @@ interface RemoteCommit {
   date: string;
   url: string;
   parents?: string[];
+  branches?: string[];
+  mergedFrom?: string[];
+  mergeInto?: string | null;
 }
 
 interface RemoteBranch {
   name: string;
   isDefault: boolean;
+}
+
+const ALL_BRANCHES_VALUE = '__all__';
+
+function mergedBranchesLabel(commit: RemoteCommit): string {
+  const from = (commit.mergedFrom || []).map((name) => name.trim()).filter(Boolean);
+  const into = (commit.mergeInto || '').trim();
+  if (from.length > 0 && into) return `${from.join(', ')} → ${into}`;
+  if (from.length > 0) return from.join(', ');
+  if (into) return `into ${into}`;
+  return '';
 }
 
 const VERSION_STATUSES = ['Planning', 'In Development', 'Testing', 'Released', 'Archived'];
@@ -136,7 +151,7 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   const [commitsPage, setCommitsPage] = useState(1);
   const [commitsLoaded, setCommitsLoaded] = useState(false);
   const [commitBranches, setCommitBranches] = useState<RemoteBranch[]>([]);
-  const [commitBranch, setCommitBranch] = useState('');
+  const [commitBranch, setCommitBranch] = useState(ALL_BRANCHES_VALUE);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [branchesLoaded, setBranchesLoaded] = useState(false);
 
@@ -212,8 +227,8 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
       void loadCommitBranches();
       return;
     }
-    if (branchesLoaded && commitBranch && !commitsLoaded && !commitsLoading) {
-      void loadCommits(1, false, commitBranch);
+    if (branchesLoaded && !commitsLoaded && !commitsLoading) {
+      void loadCommits(1, false, commitBranch || ALL_BRANCHES_VALUE);
     }
   }, [activeTab, token, id, branchesLoaded, branchesLoading, commitBranch, commitsLoaded, commitsLoading]);
 
@@ -238,6 +253,11 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
   const commitGraphRows = useMemo(
     () => layoutCommitGraph(commitGraphInputs),
     [commitGraphInputs]
+  );
+
+  const commitLaneHeadBranches = useMemo(
+    () => decorateLaneHeadBranchNames(commits, commitGraphRows),
+    [commits, commitGraphRows]
   );
 
   const loadApplication = async () => {
@@ -271,18 +291,14 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
       }
       const branches = (data.data?.branches || []) as RemoteBranch[];
       setCommitBranches(branches);
-      const preferred =
-        (typeof data.data?.defaultBranch === 'string' && data.data.defaultBranch) ||
-        branches.find((b) => b.isDefault)?.name ||
-        branches[0]?.name ||
-        '';
-      setCommitBranch(preferred);
+      setCommitBranch(ALL_BRANCHES_VALUE);
       setBranchesLoaded(true);
       setCommitsLoaded(false);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load branches';
       setCommitsError(message);
       setCommitBranches([]);
+      setCommitBranch(ALL_BRANCHES_VALUE);
       setBranchesLoaded(true);
     } finally {
       setBranchesLoading(false);
@@ -291,16 +307,16 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
 
   const loadCommits = async (page = 1, append = false, branchOverride?: string) => {
     if (!token || !id) return;
-    const branch = (branchOverride ?? commitBranch).trim();
-    if (!branch) return;
+    const selected = (branchOverride ?? commitBranch).trim() || ALL_BRANCHES_VALUE;
+    const allBranches = selected === ALL_BRANCHES_VALUE;
     setCommitsLoading(true);
     setCommitsError('');
     try {
       const params = new URLSearchParams({
         page: String(page),
         per_page: '30',
-        branch,
       });
+      if (!allBranches) params.set('branch', selected);
       const res = await fetch(
         `${getApiUrl()}/api/applications/${id}/commits?${params}`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -310,11 +326,25 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
         throw new Error(data.message || 'Failed to load commits');
       }
       const next = (data.data?.commits || []) as RemoteCommit[];
-      setCommits((prev) => (append ? [...prev, ...next] : next));
+      setCommits((prev) => {
+        const combined = append ? [...prev] : [];
+        const seen = new Set(combined.map((commit) => commit.sha).filter(Boolean));
+        for (const commit of next) {
+          if (commit.sha && seen.has(commit.sha)) continue;
+          if (commit.sha) seen.add(commit.sha);
+          combined.push(commit);
+        }
+        return combined.sort((a, b) => {
+          const dateA = a.date ? Date.parse(a.date) : 0;
+          const dateB = b.date ? Date.parse(b.date) : 0;
+          if (dateA !== dateB) return dateB - dateA;
+          return String(a.sha).localeCompare(String(b.sha));
+        });
+      });
       setCommitsProvider(data.data?.provider || null);
       setCommitsHasMore(Boolean(data.data?.hasMore));
       setCommitsPage(page);
-      if (typeof data.data?.branch === 'string' && data.data.branch) {
+      if (!allBranches && typeof data.data?.branch === 'string' && data.data.branch) {
         setCommitBranch(data.data.branch);
       }
       setCommitsLoaded(true);
@@ -1228,27 +1258,32 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
               <div>
                 <h2 className="font-semibold text-gray-900 dark:text-white">Commit history</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Branch-scoped history with merge graph
+                  {commitBranch === ALL_BRANCHES_VALUE
+                    ? 'Graph of all branches, with merge sources labelled'
+                    : 'Branch-scoped history with merge graph'}
                   {commitsProvider ? ` (${commitsProvider})` : ''}.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-[12rem] w-56">
                   <SearchableSelect
-                    value={commitBranch}
+                    value={commitBranch || ALL_BRANCHES_VALUE}
                     onChange={(value) => {
-                      setCommitBranch(value);
+                      setCommitBranch(value || ALL_BRANCHES_VALUE);
                       setCommits([]);
                       setCommitsLoaded(false);
                       setCommitsPage(1);
                     }}
-                    options={commitBranches.map((b) => ({
-                      value: b.name,
-                      label: b.isDefault ? `${b.name} (default)` : b.name,
-                    }))}
-                    placeholder={branchesLoading ? 'Loading branches…' : 'Select branch'}
-                    emptyText="No branches"
-                    disabled={branchesLoading || !application.RepositoryUrl || commitBranches.length === 0}
+                    options={[
+                      { value: ALL_BRANCHES_VALUE, label: 'All branches' },
+                      ...commitBranches.map((b) => ({
+                        value: b.name,
+                        label: b.isDefault ? `${b.name} (default)` : b.name,
+                      })),
+                    ]}
+                    placeholder={branchesLoading ? 'Loading branches…' : 'All branches'}
+                    emptyText="All branches"
+                    disabled={branchesLoading || !application.RepositoryUrl}
                   />
                 </div>
                 <button
@@ -1285,6 +1320,14 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
                   const graphRow = commitGraphRows[index];
                   const previousEdges = index > 0 ? commitGraphRows[index - 1]?.edges : [];
                   const isMerge = Boolean(graphRow?.isMerge || (c.parents && c.parents.length > 1));
+                  const mergeLabel = isMerge ? mergedBranchesLabel(c) : '';
+                  const tipBranches = Array.from(
+                    new Set(
+                      [...(c.branches || []), ...(commitLaneHeadBranches[index] || [])]
+                        .map((name) => name.trim())
+                        .filter(Boolean)
+                    )
+                  );
                   return (
                     <div
                       key={c.sha || `${c.date}-${c.message}`}
@@ -1305,6 +1348,23 @@ function ApplicationDetailPageContent({ params }: { params: Promise<{ id: string
                                 merge
                               </span>
                             )}
+                            {mergeLabel && (
+                              <span
+                                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-purple-50 text-purple-800 dark:bg-purple-950/40 dark:text-purple-200"
+                                title={`Merged ${mergeLabel}`}
+                              >
+                                {mergeLabel}
+                              </span>
+                            )}
+                            {tipBranches.map((branchName) => (
+                              <span
+                                key={`${c.sha}-${branchName}`}
+                                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                title={`Branch ${branchName}`}
+                              >
+                                {branchName}
+                              </span>
+                            ))}
                             {!isMerge && (graphRow?.joinColumns?.length || 0) > 1 && (
                               <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
                                 split

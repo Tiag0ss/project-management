@@ -55,6 +55,15 @@ describe('layoutCommitGraph', () => {
 describe('buildRemoteCommitsListUrl', () => {
   const parsed = { provider: 'github' as const, host: 'github.com', owner: 'acme', repo: 'app' };
 
+  it('omits sha= when listing without a branch filter', () => {
+    const url = buildRemoteCommitsListUrl(
+      parsed,
+      { provider: 'github', apiBaseUrl: 'https://api.github.com', token: 't' },
+      { page: 1, perPage: 30 }
+    );
+    expect(url).not.toContain('sha=');
+  });
+
   it('scopes GitHub commits with sha=', () => {
     const url = buildRemoteCommitsListUrl(
       parsed,

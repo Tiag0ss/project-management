@@ -614,9 +614,14 @@ router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Resp
       });
     }
 
-    let branch = branchRaw;
-    const result = await listRemoteCommits(parsed, creds, { page, perPage, branch: branch || null });
-    branch = result.branch || branch;
+    const allBranches = !branchRaw || branchRaw === '*' || branchRaw.toLowerCase() === 'all';
+    const result = await listRemoteCommits(parsed, creds, {
+      page,
+      perPage,
+      branch: allBranches ? null : branchRaw,
+      allBranches,
+      annotateBranches: true,
+    });
     res.json({
       success: true,
       data: {
@@ -625,7 +630,8 @@ router.get('/:id/commits', authenticateToken, async (req: AuthRequest, res: Resp
         hasMore: result.hasMore,
         page,
         perPage,
-        branch: branch || null,
+        branch: allBranches ? null : result.branch || branchRaw || null,
+        allBranches,
       },
     });
   } catch (error: unknown) {

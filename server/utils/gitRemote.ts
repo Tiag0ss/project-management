@@ -1,6 +1,10 @@
 import { RowDataPacket } from '../config/database';
 import { pool } from '../config/database';
 import { decrypt } from './encryption';
+import {
+  annotateCommitBranchMeta,
+  mergeCommitMembership,
+} from './commitBranchMeta';
 import logger from './logger';
 
 export type GitProvider = 'github' | 'gitea' | 'bitbucket';
@@ -23,11 +27,18 @@ export interface NormalizedCommit {
   url: string;
   /** Parent commit SHAs (first parent is the mainline; 2+ means merge). */
   parents: string[];
+  /** Branch tips that currently point at this commit. */
+  branches?: string[];
+  /** Incoming branch names for merge commits. */
+  mergedFrom?: string[];
+  /** Destination branch name for merge commits, when known. */
+  mergeInto?: string | null;
 }
 
 export interface NormalizedBranch {
   name: string;
   isDefault: boolean;
+  sha?: string;
 }
 
 export interface ListBranchesResult {
@@ -50,7 +61,11 @@ export interface ListCommitsResult {
   provider: GitProvider;
   /** Ref used for the listing (default branch when omitted by caller). */
   branch: string | null;
+  allBranches?: boolean;
 }
+
+const ALL_BRANCH_FETCH_LIMIT = 25;
+const ALL_BRANCH_CONCURRENCY = 4;
 
 function stripGitSuffix(name: string): string {
   return name.replace(/\.git$/i, '');
@@ -447,6 +462,99 @@ function parentShasFromGithubLike(parents: unknown): string[] {
     .filter(Boolean);
 }
 
+function tipShaFromUnknown(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return '';
+  const value = raw as { sha?: unknown; id?: unknown; hash?: unknown };
+  if (typeof value.sha === 'string' && value.sha) return value.sha;
+  if (typeof value.id === 'string' && value.id) return value.id;
+  if (typeof value.hash === 'string' && value.hash) return value.hash;
+  return '';
+}
+
+function finalizeBranchList(
+  items: Array<{ name: string; sha: string }>,
+  defaultBranch: string | null
+): NormalizedBranch[] {
+  const byName = new Map<string, string>();
+  for (const item of items) {
+    const name = String(item.name || '').trim();
+    if (!name || byName.has(name)) continue;
+    byName.set(name, String(item.sha || '').trim());
+  }
+  if (defaultBranch && !byName.has(defaultBranch)) {
+    byName.set(defaultBranch, '');
+  }
+
+  const branches: NormalizedBranch[] = [...byName.entries()].map(([name, sha]) => ({
+    name,
+    sha: sha || undefined,
+    isDefault: Boolean(defaultBranch && name === defaultBranch),
+  }));
+
+  if (!defaultBranch && branches.length > 0) {
+    branches[0] = { ...branches[0], isDefault: true };
+  }
+
+  branches.sort((a, b) => {
+    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return branches;
+}
+
+function sortCommitsByDateDesc(commits: NormalizedCommit[]): NormalizedCommit[] {
+  return [...commits].sort((a, b) => {
+    const dateA = a.date ? Date.parse(a.date) : 0;
+    const dateB = b.date ? Date.parse(b.date) : 0;
+    if (dateA !== dateB) return dateB - dateA;
+    return String(a.sha).localeCompare(String(b.sha));
+  });
+}
+
+function applyCommitBranchMeta(
+  commits: NormalizedCommit[],
+  branchTips: Array<{ name: string; sha?: string }>,
+  membership?: Map<string, Set<string>>
+): NormalizedCommit[] {
+  const annotations = annotateCommitBranchMeta(
+    commits.map((commit) => ({
+      sha: commit.sha,
+      parents: commit.parents,
+      message: commit.message,
+    })),
+    branchTips
+      .map((tip) => ({ name: tip.name, sha: String(tip.sha || '') }))
+      .filter((tip) => tip.name && tip.sha),
+    membership
+  );
+  return commits.map((commit, index) => {
+    const meta = annotations[index];
+    return {
+      ...commit,
+      branches: meta?.branches || [],
+      mergedFrom: meta?.mergedFrom || [],
+      mergeInto: meta?.mergeInto ?? null,
+    };
+  });
+}
+
+async function mapLimit<T, R>(items: T[], limit: number, mapper: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= items.length) return;
+        out[index] = await mapper(items[index]);
+      }
+    })
+  );
+  return out;
+}
+
 async function fetchDefaultBranchName(
   parsed: ParsedRepo,
   creds: GitCredentials
@@ -506,7 +614,7 @@ export async function listRemoteBranches(
   const repo = encodeURIComponent(parsed.repo);
   const defaultBranch = await fetchDefaultBranchName(parsed, creds);
 
-  let names: string[] = [];
+  let items: Array<{ name: string; sha: string }> = [];
 
   if (creds.provider === 'github') {
     const res = await fetch(
@@ -520,9 +628,12 @@ export async function listRemoteBranches(
     }
     const body = await res.json();
     const list = Array.isArray(body) ? body : [];
-    names = list
-      .map((b: { name?: string }) => (typeof b?.name === 'string' ? b.name : ''))
-      .filter(Boolean);
+    items = list
+      .map((b: { name?: string; commit?: unknown }) => ({
+        name: typeof b?.name === 'string' ? b.name : '',
+        sha: tipShaFromUnknown(b?.commit),
+      }))
+      .filter((b: { name: string }) => Boolean(b.name));
   } else if (creds.provider === 'gitea') {
     const res = await fetch(
       `${creds.apiBaseUrl}/api/v1/repos/${owner}/${repo}/branches?limit=${limit}&page=1`,
@@ -535,9 +646,12 @@ export async function listRemoteBranches(
     }
     const body = await res.json();
     const list = Array.isArray(body) ? body : [];
-    names = list
-      .map((b: { name?: string }) => (typeof b?.name === 'string' ? b.name : ''))
-      .filter(Boolean);
+    items = list
+      .map((b: { name?: string; commit?: unknown }) => ({
+        name: typeof b?.name === 'string' ? b.name : '',
+        sha: tipShaFromUnknown(b?.commit),
+      }))
+      .filter((b: { name: string }) => Boolean(b.name));
   } else if (creds.bitbucketKind === 'cloud') {
     const res = await fetch(
       `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}/refs/branches?pagelen=${limit}`,
@@ -555,9 +669,12 @@ export async function listRemoteBranches(
     }
     const body = await res.json();
     const values = Array.isArray(body.values) ? body.values : [];
-    names = values
-      .map((b: { name?: string }) => (typeof b?.name === 'string' ? b.name : ''))
-      .filter(Boolean);
+    items = values
+      .map((b: { name?: string; target?: unknown }) => ({
+        name: typeof b?.name === 'string' ? b.name : '',
+        sha: tipShaFromUnknown(b?.target),
+      }))
+      .filter((b: { name: string }) => Boolean(b.name));
   } else {
     const res = await fetch(
       `${creds.apiBaseUrl}/rest/api/1.0/projects/${owner}/repos/${repo}/branches?limit=${limit}&start=0`,
@@ -570,34 +687,23 @@ export async function listRemoteBranches(
     }
     const body = await res.json();
     const values = Array.isArray(body.values) ? body.values : [];
-    names = values
-      .map((b: { displayId?: string; id?: string }) => {
-        if (typeof b?.displayId === 'string') return b.displayId;
-        if (typeof b?.id === 'string') return b.id.replace(/^refs\/heads\//, '');
-        return '';
+    items = values
+      .map((b: { displayId?: string; id?: string; latestCommit?: string }) => {
+        const name =
+          typeof b?.displayId === 'string'
+            ? b.displayId
+            : typeof b?.id === 'string'
+              ? b.id.replace(/^refs\/heads\//, '')
+              : '';
+        return {
+          name,
+          sha: typeof b?.latestCommit === 'string' ? b.latestCommit : '',
+        };
       })
-      .filter(Boolean);
+      .filter((b: { name: string }) => Boolean(b.name));
   }
 
-  const unique = Array.from(new Set(names));
-  if (defaultBranch && !unique.includes(defaultBranch)) {
-    unique.unshift(defaultBranch);
-  }
-
-  const branches: NormalizedBranch[] = unique.map((name) => ({
-    name,
-    isDefault: Boolean(defaultBranch && name === defaultBranch),
-  }));
-
-  if (!defaultBranch && branches.length > 0) {
-    branches[0] = { ...branches[0], isDefault: true };
-  }
-
-  branches.sort((a, b) => {
-    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-
+  const branches = finalizeBranchList(items, defaultBranch);
   return {
     branches,
     defaultBranch: defaultBranch || branches.find((b) => b.isDefault)?.name || null,
@@ -605,20 +711,14 @@ export async function listRemoteBranches(
   };
 }
 
-export async function listRemoteCommits(
+async function fetchRemoteCommitsPage(
   parsed: ParsedRepo,
   creds: GitCredentials,
-  options: { page?: number; perPage?: number; branch?: string | null } = {}
-): Promise<ListCommitsResult> {
-  const page = Math.max(1, options.page ?? 1);
-  const perPage = Math.min(100, Math.max(1, options.perPage ?? 30));
+  options: { page: number; perPage: number; branch?: string | null }
+): Promise<{ commits: NormalizedCommit[]; hasMore: boolean }> {
+  const { page, perPage } = options;
+  const branch = typeof options.branch === 'string' ? options.branch.trim() : '';
   const headers = authHeaders(creds);
-
-  let branch = typeof options.branch === 'string' ? options.branch.trim() : '';
-  if (!branch) {
-    branch = (await fetchDefaultBranchName(parsed, creds)) || '';
-  }
-
   const fetchUrl = buildRemoteCommitsListUrl(parsed, creds, { page, perPage, branch: branch || null });
 
   const response = await fetch(fetchUrl, { method: 'GET', headers });
@@ -714,7 +814,151 @@ export async function listRemoteCommits(
     hasMore = body.isLastPage === false || values.length >= perPage;
   }
 
-  return { commits, hasMore, provider: creds.provider, branch: branch || null };
+  return { commits, hasMore };
+}
+
+async function listRemoteCommitsAllBranches(
+  parsed: ParsedRepo,
+  creds: GitCredentials,
+  options: { page: number; perPage: number }
+): Promise<ListCommitsResult> {
+  const { page, perPage } = options;
+  const branchList = await listRemoteBranches(parsed, creds);
+  const branches = branchList.branches.slice(0, ALL_BRANCH_FETCH_LIMIT);
+
+  if (branches.length === 0) {
+    return {
+      commits: [],
+      hasMore: false,
+      provider: creds.provider,
+      branch: null,
+      allBranches: true,
+    };
+  }
+
+  // Bitbucket Cloud already returns commits across all refs when include= is omitted.
+  if (creds.provider === 'bitbucket' && creds.bitbucketKind === 'cloud') {
+    const pageResult = await fetchRemoteCommitsPage(parsed, creds, { page, perPage, branch: null });
+    return {
+      commits: applyCommitBranchMeta(pageResult.commits, branches),
+      hasMore: pageResult.hasMore,
+      provider: creds.provider,
+      branch: null,
+      allBranches: true,
+    };
+  }
+
+  const pages = await mapLimit(branches, ALL_BRANCH_CONCURRENCY, async (branch) => {
+    try {
+      const result = await fetchRemoteCommitsPage(parsed, creds, {
+        page,
+        perPage,
+        branch: branch.name,
+      });
+      return { branchName: branch.name, ...result, error: null as Error | null };
+    } catch (error: unknown) {
+      const err = error instanceof Error ? error : new Error('Failed to list commits');
+      logger.error('listRemoteCommits all-branches fan-out failed:', branch.name, err);
+      return { branchName: branch.name, commits: [] as NormalizedCommit[], hasMore: false, error: err };
+    }
+  });
+
+  const successful = pages.filter((p) => !p.error);
+  if (successful.length === 0) {
+    const firstError = pages.find((p) => p.error)?.error;
+    throw firstError || new Error('Failed to list commits');
+  }
+
+  const bySha = new Map<string, NormalizedCommit>();
+  for (const pageResult of successful) {
+    for (const commit of pageResult.commits) {
+      const sha = String(commit.sha || '').trim().toLowerCase();
+      if (!sha || bySha.has(sha)) continue;
+      bySha.set(sha, commit);
+    }
+  }
+
+  const membership = mergeCommitMembership(
+    successful.map((pageResult) => ({
+      branchName: pageResult.branchName,
+      shas: pageResult.commits.map((commit) => commit.sha),
+    }))
+  );
+
+  const tips = branches.map((branch) => {
+    const page = successful.find((item) => item.branchName === branch.name);
+    return {
+      name: branch.name,
+      sha: branch.sha || page?.commits[0]?.sha || '',
+    };
+  });
+
+  return {
+    commits: applyCommitBranchMeta(sortCommitsByDateDesc([...bySha.values()]), tips, membership),
+    hasMore: successful.some((pageResult) => pageResult.hasMore),
+    provider: creds.provider,
+    branch: null,
+    allBranches: true,
+  };
+}
+
+export async function listRemoteCommits(
+  parsed: ParsedRepo,
+  creds: GitCredentials,
+  options: {
+    page?: number;
+    perPage?: number;
+    branch?: string | null;
+    allBranches?: boolean;
+    annotateBranches?: boolean;
+  } = {}
+): Promise<ListCommitsResult> {
+  const page = Math.max(1, options.page ?? 1);
+  const perPage = Math.min(100, Math.max(1, options.perPage ?? 30));
+
+  if (options.allBranches) {
+    return listRemoteCommitsAllBranches(parsed, creds, { page, perPage });
+  }
+
+  let branch = typeof options.branch === 'string' ? options.branch.trim() : '';
+  if (!branch) {
+    branch = (await fetchDefaultBranchName(parsed, creds)) || '';
+  }
+
+  const pageResult = await fetchRemoteCommitsPage(parsed, creds, {
+    page,
+    perPage,
+    branch: branch || null,
+  });
+
+  if (!options.annotateBranches) {
+    return {
+      commits: pageResult.commits,
+      hasMore: pageResult.hasMore,
+      provider: creds.provider,
+      branch: branch || null,
+      allBranches: false,
+    };
+  }
+
+  let branchTips: NormalizedBranch[] = [];
+  try {
+    branchTips = (await listRemoteBranches(parsed, creds)).branches;
+  } catch (error: unknown) {
+    logger.error('listRemoteCommits branch-tip lookup failed:', error);
+  }
+
+  const membership = branch
+    ? mergeCommitMembership([{ branchName: branch, shas: pageResult.commits.map((commit) => commit.sha) }])
+    : undefined;
+
+  return {
+    commits: applyCommitBranchMeta(pageResult.commits, branchTips, membership),
+    hasMore: pageResult.hasMore,
+    provider: creds.provider,
+    branch: branch || null,
+    allBranches: false,
+  };
 }
 
 /**
