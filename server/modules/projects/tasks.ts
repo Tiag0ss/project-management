@@ -8,7 +8,7 @@ import { logActivity } from '../admin/activityLogs';
 import { sanitizeRichText } from '../../utils/sanitize';
 import { getReportingAccess } from '../../utils/reportingAccess';
 import { computeCompletionPercentages } from '../../utils/taskCompletion';
-import { sendNotificationEmail } from '../../utils/emailService';
+import { shouldNotifyTaskAssignee } from '../../utils/taskAssignmentNotify';
 import { resolveHistoryValues } from '../../utils/changeLog';
 import { cachedJson, ENTITY_TTL_SECONDS } from '../../utils/cachedJson';
 import { cacheKeys } from '../../services/cacheKeys';
@@ -1957,14 +1957,6 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
           Number(taskId),
           oldTask.ProjectId
         );
-        try {
-          const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.AssignedTo]);
-          if (uRows.length > 0) {
-            await sendNotificationEmail(oldTask.AssignedTo, uRows[0].Email, 'task_status', 'Task Priority Changed',
-              `Task "${taskName || oldTask.TaskName}" priority changed from "${oldPriorityName}" to "${newPriorityName}"`,
-              `/projects/${oldTask.ProjectId}`);
-          }
-        } catch {}
       }
       
       // Notify creator (if different)
@@ -1978,14 +1970,6 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
           Number(taskId),
           oldTask.ProjectId
         );
-        try {
-          const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.CreatedBy]);
-          if (uRows.length > 0) {
-            await sendNotificationEmail(oldTask.CreatedBy, uRows[0].Email, 'task_status', 'Task Priority Changed',
-              `Task "${taskName || oldTask.TaskName}" priority changed from "${oldPriorityName}" to "${newPriorityName}"`,
-              `/projects/${oldTask.ProjectId}`);
-          }
-        } catch {}
       }
     }
 
@@ -2000,14 +1984,6 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
         Number(taskId),
         oldTask.ProjectId
       );
-      try {
-        const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [assignedTo]);
-        if (uRows.length > 0) {
-          await sendNotificationEmail(assignedTo, uRows[0].Email, 'task_assigned', 'Task Assigned to You',
-            `You have been assigned to task "${taskName || oldTask.TaskName}" in project "${oldTask.ProjectName}"`,
-            `/projects/${oldTask.ProjectId}`);
-        }
-      } catch {}
     }
 
     // If status changed, notify the assignee and creator
@@ -2031,14 +2007,6 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
           Number(taskId),
           oldTask.ProjectId
         );
-        try {
-          const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.AssignedTo]);
-          if (uRows.length > 0) {
-            await sendNotificationEmail(oldTask.AssignedTo, uRows[0].Email, 'task_status', 'Task Status Changed',
-              `Task "${taskName || oldTask.TaskName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
-              `/projects/${oldTask.ProjectId}`);
-          }
-        } catch {}
       }
       
       // Notify creator (if different from current user and assignee)
@@ -2052,14 +2020,6 @@ router.put('/:id', authenticateToken, validateRequest(updateTaskBodySchema), asy
           Number(taskId),
           oldTask.ProjectId
         );
-        try {
-          const [uRows] = await pool.execute<RowDataPacket[]>('SELECT Email FROM Users WHERE Id = ?', [oldTask.CreatedBy]);
-          if (uRows.length > 0) {
-            await sendNotificationEmail(oldTask.CreatedBy, uRows[0].Email, 'task_status', 'Task Status Changed',
-              `Task "${taskName || oldTask.TaskName}" status changed from "${oldStatusName}" to "${newStatusName}"`,
-              `/projects/${oldTask.ProjectId}`);
-          }
-        } catch {}
       }
     }
 
@@ -2295,7 +2255,7 @@ router.post('/:id/assignees', authenticateToken, async (req: AuthRequest, res: R
 
     // Verify access
     const [access] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.Id, t.TaskName, p.Id as ProjectId, p.ProjectName, p.OrganizationId,
+      `SELECT t.Id, t.TaskName, t.AssignedTo, p.Id as ProjectId, p.ProjectName, p.OrganizationId,
               COALESCE(pg.CanManageTasks, 0) as CanManageTasks, om.Role
        FROM Tasks t
        JOIN Projects p ON t.ProjectId = p.Id
@@ -2321,6 +2281,13 @@ router.post('/:id/assignees', authenticateToken, async (req: AuthRequest, res: R
       return res.status(400).json({ success: false, message: 'User is not a member of this organisation' });
     }
 
+    const [existingAssignees] = await pool.execute<RowDataPacket[]>(
+      `SELECT UserId FROM TaskAssignees WHERE TaskId = ? AND UserId = ?`,
+      [taskId, assigneeUserId]
+    );
+    const alreadyOnTask =
+      existingAssignees.length > 0 || Number(access[0].AssignedTo) === Number(assigneeUserId);
+
     // Insert (ignore duplicate)
     await pool.execute(
       `INSERT IGNORE INTO TaskAssignees (TaskId, UserId, AssignedBy) VALUES (?, ?, ?)`,
@@ -2333,12 +2300,17 @@ router.post('/:id/assignees', authenticateToken, async (req: AuthRequest, res: R
       [assigneeUserId, taskId]
     );
 
-    // Notify the new assignee (if different from current user)
-    if (Number(assigneeUserId) !== userId) {
+    if (
+      shouldNotifyTaskAssignee({
+        actorUserId: userId,
+        assigneeUserId: Number(assigneeUserId),
+        alreadyOnTask,
+      })
+    ) {
       await createNotification(
         Number(assigneeUserId),
         'task_assigned',
-        'New Task Assigned',
+        'Task Assigned to You',
         `You have been assigned to task "${access[0].TaskName}" in project "${access[0].ProjectName}"`,
         `/projects/${access[0].ProjectId}`,
         Number(taskId),
