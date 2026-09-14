@@ -56,6 +56,7 @@ export const PREFERENCES_EARLY_APPLY_SCRIPT = `
 (function () {
   try {
     var themeMode = localStorage.getItem('themeMode');
+    var themePalette = localStorage.getItem('themePalette');
     var colorVisionMode = localStorage.getItem('colorVisionMode');
     var resolved = themeMode === 'dark' ? 'dark' : themeMode === 'light' ? 'light'
       : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -64,6 +65,11 @@ export const PREFERENCES_EARLY_APPLY_SCRIPT = `
     root.classList.toggle('light', resolved === 'light');
     if (themeMode === 'system' || themeMode === 'light' || themeMode === 'dark') {
       root.setAttribute('data-theme-mode', themeMode);
+    }
+    if (themePalette === 'synapse' || themePalette === 'catppuccin' || themePalette === 'ocean' || themePalette === 'forest') {
+      root.setAttribute('data-theme-palette', themePalette);
+    } else {
+      root.setAttribute('data-theme-palette', 'synapse');
     }
     if (colorVisionMode && colorVisionMode !== 'default') {
       root.setAttribute('data-color-vision', colorVisionMode);

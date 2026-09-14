@@ -25,9 +25,16 @@ import { StatusValue } from '@/lib/api/statusValues';
 import { createCustomer, CreateCustomerData } from '@/lib/api/customers';
 import { resolveSearchResultHref } from '@/lib/chrome/searchNavigation';
 import { io, Socket } from 'socket.io-client';
-import { ThemeMode, getStoredThemeMode, setThemeMode } from '@/lib/theme';
+import {
+  ThemeMode,
+  ThemePalette,
+  getStoredThemeMode,
+  getStoredThemePalette,
+  setThemeMode,
+} from '@/lib/theme';
 import { ColorVisionMode, getStoredColorVisionMode } from '@/lib/colorVision';
 import ColorVisionPicker from '@/components/navbar/ColorVisionPicker';
+import ThemePalettePicker from '@/components/navbar/ThemePalettePicker';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import {
   BookOpen,
@@ -109,6 +116,7 @@ export default function AppChromeTools({
   const isMobile = useIsMobile();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [themePalette, setThemePaletteState] = useState<ThemePalette>('synapse');
   const [colorVisionMode, setColorVisionModeState] = useState<ColorVisionMode>('default');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const quickActionsRef = useRef<HTMLDivElement>(null);
@@ -286,6 +294,7 @@ export default function AppChromeTools({
 
   useEffect(() => {
     setThemeModeState(getStoredThemeMode());
+    setThemePaletteState(getStoredThemePalette());
     setColorVisionModeState(getStoredColorVisionMode());
   }, []);
 
@@ -2736,6 +2745,11 @@ export default function AppChromeTools({
                         ))}
                       </div>
                     </div>
+                    <ThemePalettePicker
+                      themePalette={themePalette}
+                      onChange={setThemePaletteState}
+                      variant="synapse"
+                    />
                     <ColorVisionPicker
                       colorVisionMode={colorVisionMode}
                       onChange={setColorVisionModeState}
@@ -2865,6 +2879,10 @@ export default function AppChromeTools({
                         ))}
                       </div>
                     </div>
+                    <ThemePalettePicker
+                      themePalette={themePalette}
+                      onChange={setThemePaletteState}
+                    />
                     <ColorVisionPicker
                       colorVisionMode={colorVisionMode}
                       onChange={setColorVisionModeState}
