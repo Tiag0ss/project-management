@@ -16,7 +16,7 @@ import { getApiUrl } from '@/lib/api/config';
 import { reportingApi, ReportingAccessInfo, DeltaMetric } from '@/lib/api/reporting';
 import { defaultReportingRange, formatDelta, previousPeriod } from '@/lib/reporting/period';
 import { EXTRACT_DATASETS, EXTRACT_FILTER_CONFIG } from '@/lib/reporting/extractDatasets';
-import { downloadCsv, toCsv } from '@/lib/csv';
+import { downloadCsv, toCsv, type CsvRow } from '@/lib/csv';
 import { stripHtml } from '@/lib/stripHtml';
 import { useFormatHours } from '@/lib/useFormatHours';
 import { WebReportsExplorer } from '@/app/web-reports/page';
@@ -566,22 +566,33 @@ function ReportingHubInner() {
   const exportExtractCsv = () => {
     if (!extractRecords.length) return;
     const keys = Object.keys(extractRecords[0]);
-    const rows = extractRecords.map((row) => {
-      const next: Record<string, unknown> = { ...row };
+    const rows: CsvRow[] = extractRecords.map((row) => {
+      const next: CsvRow = {};
       for (const key of keys) {
-        if (/description|notes/i.test(key) && typeof next[key] === 'string') {
-          next[key] = stripHtml(next[key] as string);
+        const raw = row[key];
+        if (/description|notes/i.test(key) && typeof raw === 'string') {
+          next[key] = stripHtml(raw);
+        } else {
+          next[key] = raw == null ? '' : String(raw);
         }
       }
       return next;
     });
-    downloadCsv(toCsv(rows, keys), `extract-${extractDataset}.csv`);
+    downloadCsv(`extract-${extractDataset}.csv`, toCsv(rows, keys));
   };
 
   const exportQualityCsv = (rows: any[], name: string) => {
     if (!rows?.length) return;
     const keys = Object.keys(rows[0]);
-    downloadCsv(toCsv(rows, keys), `data-quality-${name}.csv`);
+    const csvRows: CsvRow[] = rows.map((row) => {
+      const next: CsvRow = {};
+      for (const key of keys) {
+        const raw = row[key];
+        next[key] = raw == null ? '' : String(raw);
+      }
+      return next;
+    });
+    downloadCsv(`data-quality-${name}.csv`, toCsv(csvRows, keys));
   };
 
   const createDigest = async () => {

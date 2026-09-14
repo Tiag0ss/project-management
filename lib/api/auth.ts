@@ -5,9 +5,10 @@ const API_BASE_URL = getApiUrl();
 
 interface EncryptionSessionResponse {
   success: boolean;
-  sessionToken: string;
-  publicKey: string;
-  expiresInSeconds: number;
+  sessionToken?: string;
+  publicKey?: string;
+  expiresInSeconds?: number;
+  message?: string;
 }
 
 interface EncryptedAuthPayload {

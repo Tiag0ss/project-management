@@ -24,6 +24,18 @@ const ALLOWED_TYPES = [
   'text/plain',
 ];
 
+const FILE_ICONS: Record<string, string> = {
+  'image/': '🖼️',
+  'application/pdf': '📄',
+  'application/msword': '📝',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '📝',
+  'application/vnd.ms-excel': '📊',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '📊',
+  'application/zip': '📦',
+  'application/x-zip-compressed': '📦',
+  'text/plain': '📃',
+};
+
 export default function AttachmentUploader({ onUpload, maxSize = 10 * 1024 * 1024, disabled = false }: AttachmentUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');

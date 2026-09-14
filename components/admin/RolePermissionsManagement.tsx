@@ -195,6 +195,11 @@ export default function RolePermissionsManagement({
         CanCreateTaskFromTicket: false,
         CanPlanTasks: false,
         CanViewOthersPlanning: false,
+        CanViewApplications: false,
+        CanManageApplications: false,
+        CanCreateApplications: false,
+        CanDeleteApplications: false,
+        CanManageReleases: false,
         CanViewExpenses: false,
         CanCreateExpenses: false,
         CanManageExpenses: false,
@@ -243,6 +248,11 @@ export default function RolePermissionsManagement({
         CanCreateTaskFromTicket: currentPerms.CanCreateTaskFromTicket,
         CanPlanTasks: currentPerms.CanPlanTasks,
         CanViewOthersPlanning: currentPerms.CanViewOthersPlanning,
+        CanViewApplications: currentPerms.CanViewApplications,
+        CanManageApplications: currentPerms.CanManageApplications,
+        CanCreateApplications: currentPerms.CanCreateApplications,
+        CanDeleteApplications: currentPerms.CanDeleteApplications,
+        CanManageReleases: currentPerms.CanManageReleases,
         CanViewExpenses: currentPerms.CanViewExpenses,
         CanCreateExpenses: currentPerms.CanCreateExpenses,
         CanManageExpenses: currentPerms.CanManageExpenses,
@@ -330,7 +340,9 @@ export default function RolePermissionsManagement({
             <div className="grid grid-cols-1 gap-1 p-2 sm:grid-cols-2 lg:grid-cols-3">
               {category.permissions.map((key) => {
                 const label = PERMISSION_LABELS[key];
-                const isChecked = currentPerms ? !!(currentPerms as Record<string, unknown>)[key] : false;
+                const isChecked = currentPerms
+                  ? Boolean((currentPerms as unknown as Record<string, unknown>)[key])
+                  : false;
 
                 return (
                   <label

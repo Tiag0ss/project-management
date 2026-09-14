@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from 'express';
+import type { Application, Request, Response } from 'express';
 import { testConnection } from './config/database';
 import { getRedisStatus, testRedisConnection } from './config/redis';
 import logger from './utils/logger';
@@ -43,6 +43,6 @@ export async function healthHandler(_req: Request, res: Response): Promise<void>
   }
 }
 
-export function registerHealthRoute(server: Express): void {
+export function registerHealthRoute(server: Application): void {
   server.get('/health', healthHandler);
 }
