@@ -12,6 +12,7 @@
     "start:server": "NODE_ENV=production node dist/server/index.js",
     "start:prod": "NODE_ENV=production node dist/server/index.js",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

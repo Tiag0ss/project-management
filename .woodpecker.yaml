@@ -6,7 +6,6 @@ steps:
       - corepack prepare pnpm@10 --activate
       - pnpm install --frozen-lockfile
       - pnpm lint
-      - pnpm exec tsc --noEmit
       - pnpm typecheck
       - pnpm test:unit
 
