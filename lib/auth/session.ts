@@ -62,6 +62,13 @@ export function persistSilentAccessToken(token: string): void {
   if (liveAccessToken === token) {
     return;
   }
+  // A rotated token is only ever supposed to extend the session. Guard against a
+  // malformed/stale X-New-Token (e.g. a server-side bug) silently overwriting a
+  // perfectly good live token and poisoning every subsequent request in this tab.
+  const payload = parseJwtPayload(token);
+  if (isTokenExpired(payload)) {
+    return;
+  }
   liveAccessToken = token;
   try {
     if (typeof localStorage !== 'undefined') {
