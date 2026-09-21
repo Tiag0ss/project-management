@@ -115,6 +115,11 @@ const apiRequest = async (method, endpoint, body) => {
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  const rotatedToken = response.headers.get('X-New-Token');
+  if (rotatedToken && rotatedToken !== session.token) {
+    setSession({ ...session, token: rotatedToken });
+  }
+
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data?.message || `Request failed (${response.status})`);

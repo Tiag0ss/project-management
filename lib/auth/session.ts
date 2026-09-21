@@ -123,10 +123,22 @@ export function extractBearerToken(input: RequestInfo | URL, init: RequestInit |
   return auth.slice('Bearer '.length);
 }
 
-export function clearStoredSession(): void {
+/**
+ * Clear the session. `failingToken`, when given, scopes the localStorage wipe: since
+ * localStorage is shared across every tab of the origin, a tab whose own (possibly long-stale)
+ * token was just rejected should not blow away a *different*, newer token that another tab
+ * (e.g. a fresh login) has since written there.
+ */
+export function clearStoredSession(failingToken?: string | null): void {
   liveAccessToken = null;
   if (typeof window === 'undefined') {
     return;
+  }
+  if (failingToken) {
+    const storedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (storedToken && storedToken !== failingToken) {
+      return;
+    }
   }
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_USER_KEY);
