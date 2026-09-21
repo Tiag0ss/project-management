@@ -5,8 +5,14 @@ import {
   setLiveAccessToken,
 } from '../../lib/auth/session';
 
+function makeJwt(exp: number): string {
+  const encode = (obj: object) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ userId: 1, exp })}.signature`;
+}
+
 describe('silent access token', () => {
   const memory = new Map<string, string>();
+  const futureToken = () => makeJwt(Math.floor(Date.now() / 1000) + 3600);
 
   beforeAll(() => {
     Object.defineProperty(globalThis, 'localStorage', {
@@ -30,12 +36,24 @@ describe('silent access token', () => {
   });
 
   it('persists silently without requiring React state', () => {
-    persistSilentAccessToken('token-a');
-    expect(getLiveAccessToken()).toBe('token-a');
-    expect(localStorage.getItem('authToken')).toBe('token-a');
+    const tokenA = futureToken();
+    persistSilentAccessToken(tokenA);
+    expect(getLiveAccessToken()).toBe(tokenA);
+    expect(localStorage.getItem('authToken')).toBe(tokenA);
 
-    persistSilentAccessToken('token-a');
-    expect(getLiveAccessToken()).toBe('token-a');
+    persistSilentAccessToken(tokenA);
+    expect(getLiveAccessToken()).toBe(tokenA);
+  });
+
+  it('ignores an already-expired rotated token instead of poisoning the live session', () => {
+    const goodToken = futureToken();
+    persistSilentAccessToken(goodToken);
+
+    const expiredToken = makeJwt(Math.floor(Date.now() / 1000) - 3600);
+    persistSilentAccessToken(expiredToken);
+
+    expect(getLiveAccessToken()).toBe(goodToken);
+    expect(localStorage.getItem('authToken')).toBe(goodToken);
   });
 
   it('rewrites Bearer Authorization on fetch init', () => {
