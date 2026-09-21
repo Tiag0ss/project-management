@@ -10,6 +10,7 @@ import {
   AUTH_USER_KEY,
   applyLiveAccessTokenToFetchArgs,
   clearStoredSession,
+  extractBearerToken,
   getLiveAccessToken,
   isAuthFailureStatus,
   isPublicAuthPath,
@@ -191,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.fetch = async (...args: Parameters<typeof fetch>) => {
       const [rawInput, rawInit] = args;
       const [input, init] = applyLiveAccessTokenToFetchArgs(rawInput, rawInit);
+      const sentToken = extractBearerToken(input, init);
       const response = init === undefined
         ? await originalFetch(input)
         : await originalFetch(input, init);
@@ -215,7 +217,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (isAuthFailureStatus(response.status, message)) {
-          handleInvalidSession();
+          // A request can carry a token that was already superseded by a rotation or a
+          // fresh login by the time its (possibly slow) response arrives. Only treat this
+          // as a real session failure if it was actually testing the session's current token.
+          const currentToken = getLiveAccessToken();
+          if (!sentToken || !currentToken || sentToken === currentToken) {
+            handleInvalidSession();
+          }
         }
       }
 

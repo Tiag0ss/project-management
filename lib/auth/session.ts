@@ -106,6 +106,23 @@ export function applyLiveAccessTokenToFetchArgs(
   return [input, { ...init, headers }];
 }
 
+/** Read the bearer token actually attached to a (possibly rewritten) fetch call, if any. */
+export function extractBearerToken(input: RequestInfo | URL, init: RequestInit | undefined): string | null {
+  let headers: Headers | null = null;
+
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    headers = input.headers;
+  } else if (init?.headers) {
+    headers = init.headers instanceof Headers ? init.headers : new Headers(init.headers);
+  }
+
+  const auth = headers?.get('Authorization');
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return null;
+  }
+  return auth.slice('Bearer '.length);
+}
+
 export function clearStoredSession(): void {
   liveAccessToken = null;
   if (typeof window === 'undefined') {

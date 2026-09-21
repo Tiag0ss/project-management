@@ -153,6 +153,8 @@ export async function authenticateToken(req: AuthRequest, res: Response, next: N
           isDeveloper: decoded.isDeveloper,
           isManager: decoded.isManager,
           customerId: decoded.customerId,
+          countryCode: decoded.countryCode,
+          hoursDisplayFormat: decoded.hoursDisplayFormat,
           ...(decoded.sso ? { sso: true } : {}),
         },
         JWT_SECRET!,
