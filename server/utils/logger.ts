@@ -28,7 +28,7 @@ const consoleFormat = winston.format.combine(
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: logFormat,
-  defaultMeta: { service: 'project-management-api' },
+  defaultMeta: { service: 'myelin-api' },
   transports: [
     // Write errors to error.log
     new winston.transports.File({

@@ -1,1 +1,1 @@
-rootProject.name = "project-management-pending-tasks"
+rootProject.name = "myelin-pending-tasks"

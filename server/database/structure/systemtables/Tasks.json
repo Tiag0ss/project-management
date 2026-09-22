@@ -173,13 +173,13 @@
       "FieldName": "SynapseVaultId",
       "DataType": "int",
       "NotNullable": false,
-      "Comment": "PM Synapse vault id this task was pushed from (one-way link; UI only)"
+      "Comment": "Synapse vault id this task was pushed from (one-way link; UI only)"
     },
     {
       "FieldName": "SynapseNoteId",
       "DataType": "int",
       "NotNullable": false,
-      "Comment": "PM Synapse note id containing the source checkbox"
+      "Comment": "Synapse note id containing the source checkbox"
     },
     {
       "FieldName": "SynapseMarkerId",
@@ -191,7 +191,7 @@
       "FieldName": "SynapseNoteUrl",
       "DataType": "varchar(1024)",
       "NotNullable": false,
-      "Comment": "Absolute URL to open the source note in PM Synapse"
+      "Comment": "Absolute URL to open the source note in Synapse"
     },
     {
       "FieldName": "CompletionPercentage",

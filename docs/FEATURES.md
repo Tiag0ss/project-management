@@ -1,4 +1,4 @@
-# Project Management App — Feature Reference
+# Myelin — Feature Reference
 
 Comprehensive documentation of all features available in the application. Use this as the primary reference when implementing new features, writing tests, or onboarding new team members.
 
@@ -1120,9 +1120,9 @@ Admins can view all tokens under Administration; regular users manage only their
 
 ---
 
-## 21b. SSO for companion apps (PM Synapse)
+## 21b. SSO for companion apps (Synapse)
 
-Minimal OAuth-style handoff so companion apps (e.g. **PM Synapse**) can use the same users without planner UI changes.
+Minimal OAuth-style handoff so companion apps (e.g. **Synapse**) can use the same users without planner UI changes.
 
 1. Companion redirects the browser to `/sso/authorize?redirect_uri=…&state=…&client_id=…`
 2. User logs in on PM if needed (`returnUrl` supported on `/login`)

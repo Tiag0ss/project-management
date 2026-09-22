@@ -29,7 +29,7 @@ export default function Home() {
   const [isCheckingInstall, setIsCheckingInstall] = useState(true);
   const [customFrontpage, setCustomFrontpage] = useState<string | null>(null);
   const [isLoadingFrontpage, setIsLoadingFrontpage] = useState(true);
-  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyName, setCompanyName] = useState('Myelin');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
 
   const loadStats = async () => {
@@ -66,7 +66,7 @@ export default function Home() {
         isDemo = data.demoMode === true;
         setAllowPublicRegistration(data.allowPublicRegistration === true);
         setRegistrationType(data.publicRegistrationType || 'internal');
-        setCompanyName(data.companyName || 'Project Management');
+        setCompanyName(data.companyName || 'Myelin');
         setCompanyLogoUrl(data.companyLogoUrl || '');
       }
     } catch {
@@ -135,7 +135,7 @@ export default function Home() {
     return <div dangerouslySetInnerHTML={{ __html: customFrontpage }} />;
   }
 
-  const brand = (companyName || '').trim() || 'Project Management';
+  const brand = (companyName || '').trim() || 'Myelin';
   const initial = brand.charAt(0).toUpperCase() || 'P';
   const hasStats = stats.users > 0 || stats.projects > 0 || stats.tasks > 0;
 
@@ -216,7 +216,7 @@ export default function Home() {
               Your projects, your infrastructure.
             </p>
             <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[var(--pm-muted)] sm:text-base">
-              A self-hosted project management platform. Deploy on your own servers, keep full control
+              Myelin — a self-hosted project and delivery platform. Deploy on your own servers, keep full control
               over your data, and tailor workflows to your team.
             </p>
 
@@ -288,7 +288,7 @@ export default function Home() {
               </div>
               <span className="text-sm font-semibold text-[var(--pm-text)]">{brand}</span>
             </div>
-            <p className="text-xs text-[var(--pm-muted)]">Self-hosted project management platform</p>
+            <p className="text-xs text-[var(--pm-muted)]">Self-hosted delivery platform · Myelin</p>
           </div>
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--pm-muted)]">

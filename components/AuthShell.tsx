@@ -35,7 +35,7 @@ export default function AuthShell({
   footer,
   children,
 }: AuthShellProps) {
-  const brand = (companyName || '').trim() || 'Project Management';
+  const brand = (companyName || '').trim() || 'Myelin';
   const initial = brand.charAt(0).toUpperCase() || 'P';
 
   return (

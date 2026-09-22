@@ -77,7 +77,7 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
             <head>
               <meta charset="UTF-8" />
               <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-              <title>Project Management — Kanban</title>
+              <title>Myelin — Kanban</title>
               <style>$css</style>
             </head>
             <body>
@@ -191,7 +191,7 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
             "ready" -> pushConfig()
             "configure" -> {
                 notify(
-                    "Open Settings → Tools → Project Management to set Base URL and API token, then click Refresh on the board.",
+                    "Open Settings → Tools → Myelin to set Base URL and API token, then click Refresh on the board.",
                     NotificationType.INFORMATION
                 )
             }
@@ -310,7 +310,7 @@ class KanbanPanel : JPanel(BorderLayout()), com.intellij.openapi.Disposable {
 
     private fun notify(message: String, type: NotificationType) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("Project Management")
+            .getNotificationGroup("Myelin")
             .createNotification(message, type)
             .notify(null)
     }

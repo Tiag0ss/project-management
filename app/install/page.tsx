@@ -169,7 +169,7 @@ export default function InstallPage() {
     <AuthShell
       title="System Setup"
       description="Welcome. Configure the administrator account and primary organization."
-      companyName="Project Management"
+      companyName="Myelin"
       maxWidthClassName="max-w-lg"
       footer={
         <p>This setup wizard only appears when no users exist in the system.</p>

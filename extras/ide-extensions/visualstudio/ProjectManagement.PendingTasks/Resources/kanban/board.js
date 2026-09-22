@@ -966,7 +966,7 @@
     const appBtn = document.createElement('button');
     appBtn.type = 'button';
     appBtn.textContent = 'App';
-    appBtn.title = 'Open task in Project Management';
+    appBtn.title = 'Open task in Myelin';
     appBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       const base = String(config.baseUrl || '').replace(/\/+$/, '');

@@ -1,4 +1,4 @@
-# 🚀 Deployment Guide - Project Management App
+# 🚀 Deployment Guide - Myelin
 
 ## Pre-Deployment Checklist
 
@@ -144,10 +144,10 @@ CMD ["npm", "run", "start:prod"]
 
 ```bash
 # Build Docker image
-docker build -t project-management .
+docker build -t myelin .
 
 # Run container
-docker run -d -p 3000:3000 --env-file .env.production project-management
+docker run -d -p 3000:3000 --env-file .env.production myelin
 ```
 
 ---
@@ -267,17 +267,17 @@ curl https://yourdomain.com/health
 }
 ```
 
-### SSO (PM Synapse and other companions)
+### SSO (Synapse and other companions)
 
-Set on the Project Management server:
+Set on the Myelin server:
 
 ```env
 ALLOWED_SSO_REDIRECTS=https://synapse.example.com/api/auth/sso/callback
-SSO_CLIENT_ID=pm-synapse
+SSO_CLIENT_ID=synapse
 SSO_CLIENT_SECRET=long-random-secret
 ```
 
-Authorize URL (browser): `https://pm.example.com/sso/authorize?redirect_uri=…&state=…&client_id=pm-synapse`  
+Authorize URL (browser): `https://pm.example.com/sso/authorize?redirect_uri=…&state=…&client_id=synapse`  
 Token exchange (server): `POST /api/sso/token` with `code`, `client_id`, `client_secret` → `accessToken` + `refreshToken`.
 
 Silent renew (server): `POST /api/sso/token` with `grant_type=refresh_token`, `refresh_token`, `client_id`, `client_secret`.
@@ -326,7 +326,7 @@ rsync -avz /path/to/app/uploads/ /backups/uploads/
 ```bash
 # 1. Clone repository
 git clone <repository-url>
-cd projectmanagementapp
+cd myelin
 
 # 2. Install dependencies
 npm ci --only=production
@@ -433,7 +433,7 @@ cd extras/ide-extensions/vscode
 # Required: ignore the monorepo workspace so deps land in this folder
 pnpm install --ignore-workspace
 pnpm run package
-# Output: project-management-pending-tasks-<version>.vsix
+# Output: myelin-pending-tasks-<version>.vsix
 ```
 
 `package` and `package:cursor` are the same command — Cursor uses the VS Code extension format; there is no separate “Cursor build”.
@@ -445,7 +445,7 @@ If `pnpm install` alone reports “Already up to date” but there is no local `
 1. Copy the `.vsix` to the machine (release artifact, internal share, etc.).
 2. Command Palette → **Extensions: Install from VSIX…** → select the file.
 3. Reload window if prompted.
-4. Open the **Project Management** activity-bar icon → **Kanban** → **Configure** (Base URL + token) → select a project.
+4. Open the **Myelin** activity-bar icon → **Kanban** → **Configure** (Base URL + token) → select a project.
 5. Optional: set `projectManagement.refreshIntervalSeconds` / `projectManagement.aiAutoSubmit` in Settings.
 
 **Dev loop (no VSIX)**
@@ -476,7 +476,7 @@ cp ../shared-kanban/board.css ../shared-kanban/board.js src/main/resources/kanba
 ```
 
 Install: **Settings → Plugins → ⚙ → Install Plugin from Disk** → select the ZIP.  
-Configure: **Settings → Tools → Project Management**. Tool window: **PM Kanban**.
+Configure: **Settings → Tools → Myelin**. Tool window: **PM Kanban**.
 
 ### Build & deploy — Visual Studio 2022
 
@@ -484,7 +484,7 @@ Configure: **Settings → Tools → Project Management**. Tool window: **PM Kanb
 2. Ensure WebView2 package restore succeeds; copy `shared-kanban` assets into `Resources/kanban/` if needed.
 3. Build **Release** → produces a `.vsix`.
 4. Install on target PCs (double-click `.vsix` or Extensions → Install from disk).
-5. Configure: **Tools → Options → Project Management**.
+5. Configure: **Tools → Options → Myelin**.
 6. Open: **View → PM Kanban**.
 
 ### Ops notes

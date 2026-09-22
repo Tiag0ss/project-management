@@ -237,7 +237,7 @@ app.prepare().then(async () => {
 
   // API Documentation with Swagger
   server.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-    customSiteTitle: 'Project Management API Documentation',
+    customSiteTitle: 'Myelin API Documentation',
     customCss: '.swagger-ui .topbar { display: none }',
   }));
 

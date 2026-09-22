@@ -122,7 +122,7 @@ export async function sendPromptToAiChat(prompt: string, autoSubmit: boolean): P
 export async function configureConnection(context: vscode.ExtensionContext): Promise<boolean> {
   const currentUrl = getBaseUrl();
   const baseUrl = await vscode.window.showInputBox({
-    title: 'Project Management — Base URL',
+    title: 'Myelin — Base URL',
     prompt: 'No trailing slash. HTTPS with valid cert, or HTTP on LAN.',
     value: currentUrl,
     ignoreFocusOut: true,
@@ -132,7 +132,7 @@ export async function configureConnection(context: vscode.ExtensionContext): Pro
 
   const existingToken = await getApiToken(context);
   const tokenInput = await vscode.window.showInputBox({
-    title: 'Project Management — API Token',
+    title: 'Myelin — API Token',
     prompt: existingToken
       ? 'Paste a new pt_… token from Profile → API Tokens (leave empty to keep the current token)'
       : 'Paste pt_… token from Profile → API Tokens',

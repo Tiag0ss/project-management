@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# Production Deployment Script - Project Management App
+# Production Deployment Script - Myelin
 # ==============================================================================
 # This script automates the production deployment process
 # Run with: ./deploy.sh

@@ -2,12 +2,12 @@
   "name": "pm-desktop-timer",
   "version": "0.2.0",
   "description": "Desktop timer app for time entries and call records",
-  "author": "Project Management",
+  "author": "Myelin",
   "main": "main.js",
   "private": true,
   "build": {
-    "appId": "com.projectmanagement.desktop",
-    "productName": "PM Desktop Timer",
+    "appId": "com.myelin.desktop",
+    "productName": "Myelin Desktop Timer",
     "directories": {
       "output": "../release"
     },

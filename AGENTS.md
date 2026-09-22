@@ -1,6 +1,6 @@
-# Agent context — Project Management
+# Agent context — Myelin
 
-Cursor agents: read **`.cursor/rules/project-management.mdc`** (always on) plus scoped rules for the files you edit.
+Cursor agents: read **`.cursor/rules/myelin.mdc`** (always on) plus scoped rules for the files you edit.
 
 ## Language (mandatory)
 
@@ -38,7 +38,7 @@ Cursor agents: read **`.cursor/rules/project-management.mdc`** (always on) plus 
 
 | File | When |
 |------|------|
-| `project-management.mdc` | **Always** — stack, map, non-negotiables |
+| `myelin.mdc` | **Always** — stack, map, non-negotiables |
 | `backend-express.mdc` | `server/**` |
 | `frontend-nextjs.mdc` | `app/**`, `components/**`, `lib/**` |
 | `database-json-schema.mdc` | `server/database/**` |

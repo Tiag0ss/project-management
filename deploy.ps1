@@ -1,5 +1,5 @@
 # ==============================================================================
-# Production Deployment Script - Project Management App (Windows)
+# Production Deployment Script - Myelin (Windows)
 # ==============================================================================
 # This script automates the production deployment process on Windows
 # Run with: .\deploy.ps1

@@ -146,7 +146,7 @@ export default function AppChromeTools({
   const [memosEnabled, setMemosEnabled] = useState(true);
   const [expensesEnabled, setExpensesEnabled] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
-  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyName, setCompanyName] = useState('Myelin');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const [navbarMenuLayout, setNavbarMenuLayout] = useState<'top' | 'left'>('top');
   const [navbarLeftMode, setNavbarLeftMode] = useState<'fixed' | 'floating'>('fixed');
@@ -338,11 +338,11 @@ export default function AppChromeTools({
         const publicRes = await fetch(`${getApiUrl()}/api/system-settings/public`);
         if (publicRes.ok) {
           const publicData = await publicRes.json();
-          setCompanyName(publicData.companyName || 'Project Management');
+          setCompanyName(publicData.companyName || 'Myelin');
           setCompanyLogoUrl(publicData.companyLogoUrl || '');
           setIsDemoMode(publicData.demoMode === true);
         } else {
-          setCompanyName('Project Management');
+          setCompanyName('Myelin');
           setCompanyLogoUrl('');
           setIsDemoMode(false);
         }
@@ -374,7 +374,7 @@ export default function AppChromeTools({
         setInternalTicketsEnabled(true);
         setMemosEnabled(true);
         setExpensesEnabled(false);
-        setCompanyName('Project Management');
+        setCompanyName('Myelin');
         setCompanyLogoUrl('');
         setIsDemoMode(false);
       }
@@ -2220,7 +2220,7 @@ export default function AppChromeTools({
                       : 'max-w-[100px] xs:max-w-[140px] sm:max-w-[220px] md:max-w-none'
                   }`}
                 >
-                  {companyName || 'Project Management'}
+                  {companyName || 'Myelin'}
                 </h1>
                 {isDemoMode && (
                   <span

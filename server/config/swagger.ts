@@ -4,9 +4,9 @@ const options: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Project Management API',
+      title: 'Myelin API',
       version: '1.0.0',
-      description: 'API documentation for Project Management Application',
+      description: 'API documentation for Myelinlication',
       contact: {
         name: 'API Support',
       },

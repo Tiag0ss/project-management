@@ -24,7 +24,7 @@ steps:
   build-and-push:
     image: woodpeckerci/plugin-docker-buildx
     settings:
-      repo: tiag0ss/project-management
+      repo: tiag0ss/myelin
       dockerfile: Dockerfile
       username:
         from_secret: DOCKER_USERNAME

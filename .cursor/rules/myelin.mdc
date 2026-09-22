@@ -3,7 +3,7 @@ description: Master agent context — architecture, non-negotiables, file map, a
 alwaysApply: true
 ---
 
-# Project Management — agent master context
+# Myelin — agent master context
 
 Read this rule first. For depth, use scoped rules in `.cursor/rules/` and skills in `.cursor/skills/`.
 

@@ -23,7 +23,7 @@ export default function ResetPasswordPage() {
   const [isTokenValid, setIsTokenValid] = useState(false);
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyName, setCompanyName] = useState('Myelin');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const router = useRouter();
 
@@ -43,7 +43,7 @@ export default function ResetPasswordPage() {
         const response = await fetch(`${getApiUrl()}/api/system-settings/public`);
         if (response.ok) {
           const data = await response.json();
-          setCompanyName(data.companyName || 'Project Management');
+          setCompanyName(data.companyName || 'Myelin');
           setCompanyLogoUrl(data.companyLogoUrl || '');
         }
       } catch {

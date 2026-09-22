@@ -95,7 +95,7 @@ router.get('/public', async (req, res: Response) => {
         return {
           allowPublicRegistration: parseBooleanSetting(settingsObj.allowPublicRegistration),
           publicRegistrationType: settingsObj.publicRegistrationType || 'internal',
-          companyName: settingsObj.companyName || 'Project Management',
+          companyName: settingsObj.companyName || 'Myelin',
           companyLogoUrl: settingsObj.companyLogoUrl || '',
           faviconUrl: settingsObj.faviconUrl || '',
           frontpageEnabled: settingsObj.frontpageEnabled !== 'false',

@@ -24,7 +24,7 @@ class PmSettingsConfigurable : Configurable {
     private lateinit var maxCardsSpinner: JSpinner
     private lateinit var aiInProgressSpinner: JSpinner
 
-    override fun getDisplayName(): String = "Project Management"
+    override fun getDisplayName(): String = "Myelin"
 
     override fun createComponent(): JComponent {
         baseUrlField = JTextField()

@@ -18,7 +18,7 @@ export default function ForgotPasswordPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyName, setCompanyName] = useState('Myelin');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export default function ForgotPasswordPage() {
         const response = await fetch(`${getApiUrl()}/api/system-settings/public`);
         if (response.ok) {
           const data = await response.json();
-          setCompanyName(data.companyName || 'Project Management');
+          setCompanyName(data.companyName || 'Myelin');
           setCompanyLogoUrl(data.companyLogoUrl || '');
         }
       } catch {

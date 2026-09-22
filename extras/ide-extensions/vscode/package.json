@@ -1,9 +1,9 @@
 {
-  "name": "project-management-pending-tasks",
-  "displayName": "Project Management — Kanban",
+  "name": "myelin-pending-tasks",
+  "displayName": "Myelin — Kanban",
   "description": "Project Kanban board in an editor tab (API token). Drag cards to change status. Send tasks to AI Chat. Works in VS Code and Cursor.",
   "version": "0.4.0",
-  "publisher": "project-management",
+  "publisher": "myelin",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -21,7 +21,7 @@
       "activitybar": [
         {
           "id": "projectManagement",
-          "title": "Project Management",
+          "title": "Myelin",
           "icon": "media/pm.svg"
         }
       ]
@@ -37,21 +37,21 @@
     "commands": [
       {
         "command": "pm.openKanban",
-        "title": "Project Management: Open Kanban",
+        "title": "Myelin: Open Kanban",
         "icon": "$(layout)"
       },
       {
         "command": "pm.refreshKanban",
-        "title": "Project Management: Refresh Kanban",
+        "title": "Myelin: Refresh Kanban",
         "icon": "$(refresh)"
       },
       {
         "command": "pm.configure",
-        "title": "Project Management: Configure Connection"
+        "title": "Myelin: Configure Connection"
       },
       {
         "command": "pm.testConnection",
-        "title": "Project Management: Test Connection"
+        "title": "Myelin: Test Connection"
       }
     ],
     "menus": {
@@ -73,7 +73,7 @@
       ]
     },
     "configuration": {
-      "title": "Project Management",
+      "title": "Myelin",
       "properties": {
         "projectManagement.baseUrl": {
           "type": "string",

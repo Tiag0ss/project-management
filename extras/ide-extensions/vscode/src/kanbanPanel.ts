@@ -303,7 +303,7 @@ export class KanbanPanel {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
-  <title>Project Management — Kanban</title>
+  <title>Myelin — Kanban</title>
   <link rel="stylesheet" href="${cssUri}" />
 </head>
 <body>

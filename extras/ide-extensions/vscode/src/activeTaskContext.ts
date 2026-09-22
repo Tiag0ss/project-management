@@ -29,7 +29,7 @@ function buildCursorrulesBlock(tasks: ActiveTaskEntry[]): string {
   if (tasks.length === 0) {
     return [
       START_MARKER,
-      '# Managed by Project Management Kanban extension — do not edit this block by hand.',
+      '# Managed by Myelin Kanban extension — do not edit this block by hand.',
       '# No active PM tasks since the last commit.',
       END_MARKER,
     ].join('\n');
@@ -39,7 +39,7 @@ function buildCursorrulesBlock(tasks: ActiveTaskEntry[]): string {
   const ids = tasks.map((t) => `Task #${t.taskId}`).join(', ');
   return [
     START_MARKER,
-    '# Managed by Project Management Kanban extension — do not edit this block by hand.',
+    '# Managed by Myelin Kanban extension — do not edit this block by hand.',
     '# Cursor "Generate commit message" reads .cursorrules (not .cursor/rules).',
     'When generating a Git commit message for this repository, include ALL of these task references',
     '(tasks worked on since the last successful commit):',
@@ -212,7 +212,7 @@ if [ -f "$RULES" ] && grep -q 'PM-ACTIVE-TASK:START' "$RULES" 2>/dev/null; then
   END='# >>> PM-ACTIVE-TASK:END'
   TMP="$(mktemp)"
   awk -v start="$START" -v end="$END" '
-    $0 == start { skip=1; print start; print "# Managed by Project Management Kanban extension — do not edit this block by hand."; print "# No active PM tasks since the last commit."; next }
+    $0 == start { skip=1; print start; print "# Managed by Myelin Kanban extension — do not edit this block by hand."; print "# No active PM tasks since the last commit."; next }
     $0 == end { skip=0; print end; next }
     skip { next }
     { print }

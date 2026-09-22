@@ -11,7 +11,7 @@ export interface PublicBranding {
   faviconUrl: string;
 }
 
-const DEFAULT_COMPANY_NAME = 'Project Management App';
+const DEFAULT_COMPANY_NAME = 'Myelin';
 
 export async function getPublicBranding(): Promise<PublicBranding> {
   try {

@@ -335,7 +335,7 @@ router.post('/setup', async (req: Request, res: Response) => {
         ['autoApproveTimeEntries', 'false'],
         ['autoApproveVacations', 'false'],
         ['autoApproveOutOfOffice', 'false'],
-        ['companyName', 'Project Management'],
+        ['companyName', 'Myelin'],
         ['companyLogoUrl', ''],
         ['faviconUrl', ''],
       ];

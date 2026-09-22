@@ -127,7 +127,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     internalTicketsEnabled: true,
     memosEnabled: true,
   });
-  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyName, setCompanyName] = useState('Myelin');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [menuVisibilityOpen, setMenuVisibilityOpen] = useState(false);
@@ -148,7 +148,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [pinnedProjectMeta, setPinnedProjectMeta] = useState<PinnedNavProjectMetaMap>({});
   const { hidden: navMenuHidden, isVisible: isNavMenuVisible, setHidden: setNavMenuHidden } =
     useNavMenuVisibility(user?.id);
-  const brandLabel = (companyName || '').trim() || 'Project Management';
+  const brandLabel = (companyName || '').trim() || 'Myelin';
 
   useEffect(() => {
     setPinnedExpanded(readSidebarPinned());
@@ -250,17 +250,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         const publicRes = await fetch(`${getApiUrl()}/api/system-settings/public`);
         if (publicRes.ok && !cancelled) {
           const publicData = await publicRes.json();
-          setCompanyName(publicData.companyName || 'Project Management');
+          setCompanyName(publicData.companyName || 'Myelin');
           setCompanyLogoUrl(publicData.companyLogoUrl || '');
           setIsDemoMode(publicData.demoMode === true);
         } else if (!cancelled) {
-          setCompanyName('Project Management');
+          setCompanyName('Myelin');
           setCompanyLogoUrl('');
           setIsDemoMode(false);
         }
       } catch {
         if (!cancelled) {
-          setCompanyName('Project Management');
+          setCompanyName('Myelin');
           setCompanyLogoUrl('');
           setIsDemoMode(false);
         }

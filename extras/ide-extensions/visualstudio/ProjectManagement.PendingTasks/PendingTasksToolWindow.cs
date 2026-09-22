@@ -98,7 +98,7 @@ namespace ProjectManagement.PendingTasks
 <head>
   <meta charset=""UTF-8"" />
   <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"" />
-  <title>Project Management — Kanban</title>
+  <title>Myelin — Kanban</title>
   <style>{css}</style>
 </head>
 <body>
@@ -199,7 +199,7 @@ namespace ProjectManagement.PendingTasks
                     break;
                 case "configure":
                     System.Windows.MessageBox.Show(
-                        "Open Tools → Options → Project Management to set Base URL and API token, then click Refresh on the board.",
+                        "Open Tools → Options → Myelin to set Base URL and API token, then click Refresh on the board.",
                         "Configure Connection");
                     break;
                 case "projectSelected":
@@ -281,7 +281,7 @@ namespace ProjectManagement.PendingTasks
                     {
                         var message = obj?["message"]?.ToString();
                         if (!string.IsNullOrWhiteSpace(message))
-                            System.Windows.MessageBox.Show(message, "Project Management");
+                            System.Windows.MessageBox.Show(message, "Myelin");
                     }
                     break;
                 case "apiRequest":

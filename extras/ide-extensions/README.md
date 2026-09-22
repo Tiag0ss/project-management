@@ -1,4 +1,4 @@
-# Project Management — IDE Extensions
+# Myelin — IDE Extensions
 
 IDE plugins that show a **project Kanban** using the app REST API and `pt_` API tokens. Shared board UI: [`shared-kanban/`](./shared-kanban/).
 
@@ -50,7 +50,7 @@ After editing [`shared-kanban/`](./shared-kanban/), copy `board.css` / `board.js
 cd ide-extensions/vscode
 pnpm install --ignore-workspace
 pnpm run package
-# → project-management-pending-tasks-<version>.vsix
+# → myelin-pending-tasks-<version>.vsix
 ```
 
 Install: Command Palette → **Extensions: Install from VSIX…**

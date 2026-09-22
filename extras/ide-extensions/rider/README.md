@@ -1,11 +1,11 @@
-# Rider — Project Management Kanban
+# Rider — Myelin Kanban
 
 Tool window (**PM Kanban**) with a JBCef-hosted board. Select a project, drag cards to change status.
 
 ## Setup
 
 1. Create a `pt_…` API token in the web app (Profile → API Tokens).
-2. **Settings → Tools → Project Management**: Base URL + API token.
+2. **Settings → Tools → Myelin**: Base URL + API token.
 3. Open **View → Tool Windows → PM Kanban**, pick a project.
 
 The API token is kept in the plugin settings file (and also in the IDE PasswordSafe when that store is durable). If tokens vanished after restart, set **Settings → Appearance & Behavior → System Settings → Passwords** to a saving option (not “Do not save”), then re-apply the token once after upgrading.

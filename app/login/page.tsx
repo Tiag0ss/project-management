@@ -22,7 +22,7 @@ function LoginPageInner() {
   const [isLoading, setIsLoading] = useState(false);
   const [allowPublicRegistration, setAllowPublicRegistration] = useState(false);
   const [registrationType, setRegistrationType] = useState<'internal' | 'customer'>('internal');
-  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyName, setCompanyName] = useState('Myelin');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const { login } = useAuth();
   const router = useRouter();
@@ -59,7 +59,7 @@ function LoginPageInner() {
         const data = await response.json();
         setAllowPublicRegistration(data.allowPublicRegistration === true);
         setRegistrationType(data.publicRegistrationType || 'internal');
-        setCompanyName(data.companyName || 'Project Management');
+        setCompanyName(data.companyName || 'Myelin');
         setCompanyLogoUrl(data.companyLogoUrl || '');
       }
     } catch {

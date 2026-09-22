@@ -45,7 +45,7 @@ export function isIdeExtensionFile(fileName: string, kind: IdeExtensionKind): bo
   if (kind === 'vscode') {
     return (
       lower.endsWith('.vsix') &&
-      (lower.includes('project-management-pending-tasks') ||
+      (lower.includes('myelin-pending-tasks') ||
         lower.includes('pending-tasks') ||
         lower.includes('vscode') ||
         lower.includes('cursor'))
@@ -59,7 +59,7 @@ export function isIdeExtensionFile(fileName: string, kind: IdeExtensionKind): bo
   }
   // Visual Studio VSIX — avoid claiming the VS Code package name
   if (!lower.endsWith('.vsix')) return false;
-  if (lower.includes('project-management-pending-tasks') || lower.includes('vscode') || lower.includes('cursor')) {
+  if (lower.includes('myelin-pending-tasks') || lower.includes('vscode') || lower.includes('cursor')) {
     return false;
   }
   return (

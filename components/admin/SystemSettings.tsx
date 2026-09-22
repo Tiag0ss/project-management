@@ -184,7 +184,7 @@ export default function SystemSettings({
   const [activeTab, setActiveTab] = useState<SettingsTab>('branding');
   const formRef = useRef<HTMLFormElement>(null);
   const [settings, setSettings] = useState<SystemSettings>({
-    companyName: 'Project Management',
+    companyName: 'Myelin',
     companyLogoUrl: '',
     faviconUrl: '',
     smtpHost: '',
@@ -268,7 +268,7 @@ export default function SystemSettings({
       if (response.ok) {
         const data = await response.json();
         setSettings({
-          companyName: data.settings.companyName || 'Project Management',
+          companyName: data.settings.companyName || 'Myelin',
           companyLogoUrl: data.settings.companyLogoUrl || '',
           faviconUrl: data.settings.faviconUrl || '',
           smtpHost: data.settings.smtpHost || '',
@@ -573,7 +573,7 @@ export default function SystemSettings({
                   type="text"
                   value={settings.companyName || ''}
                   onChange={(e) => handleChange('companyName', e.target.value)}
-                  placeholder="Project Management"
+                  placeholder="Myelin"
                   className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
               </div>
@@ -732,7 +732,7 @@ export default function SystemSettings({
                   type="text"
                   value={settings.smtpFromName}
                   onChange={(e) => handleChange('smtpFromName', e.target.value)}
-                  placeholder="Project Management System"
+                  placeholder="Myelin"
                   className="w-full rounded-md border border-[var(--pm-border)] bg-[var(--pm-panel)] px-3 py-1.5 text-sm text-[var(--pm-text)] outline-none focus:border-[var(--pm-accent)]"
                 />
               </div>

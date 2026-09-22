@@ -14,7 +14,7 @@ function SsoAuthorizeInner() {
     const run = async () => {
       const redirectUri = searchParams.get('redirect_uri') || searchParams.get('redirectUri') || '';
       const state = searchParams.get('state') || '';
-      const clientId = searchParams.get('client_id') || searchParams.get('clientId') || 'pm-synapse';
+      const clientId = searchParams.get('client_id') || searchParams.get('clientId') || 'synapse';
 
       if (!redirectUri) {
         setMessage('Missing redirect_uri');

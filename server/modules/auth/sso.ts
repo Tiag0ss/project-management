@@ -75,7 +75,7 @@ function parseClients(): Array<{ clientId: string; clientSecret: string }> {
       return { clientId, clientSecret };
     }).filter((c) => c.clientId && c.clientSecret);
   }
-  const clientId = process.env.SSO_CLIENT_ID || 'pm-synapse';
+  const clientId = process.env.SSO_CLIENT_ID || 'synapse';
   const clientSecret = process.env.SSO_CLIENT_SECRET || SSO_SHARED_SECRET;
   if (clientId && clientSecret) {
     return [{ clientId, clientSecret }];
@@ -160,7 +160,7 @@ router.post('/handoff', authenticateToken, async (req: AuthRequest, res: Respons
     pruneCodes();
     const redirectUri = String(req.body?.redirectUri || req.body?.redirect_uri || '').trim();
     const state = String(req.body?.state || '').trim();
-    const clientId = String(req.body?.clientId || req.body?.client_id || 'pm-synapse').trim();
+    const clientId = String(req.body?.clientId || req.body?.client_id || 'synapse').trim();
 
     if (!redirectUri) {
       return res.status(400).json({ success: false, message: 'redirectUri is required' });

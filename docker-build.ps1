@@ -1,5 +1,5 @@
 # ==============================================================================
-# Docker Build and Push Script - Project Management App (Windows)
+# Docker Build and Push Script - Myelin (Windows)
 # ==============================================================================
 # This script builds and pushes Docker images to Docker Hub
 # Usage: .\docker-build.ps1 [version]
@@ -27,7 +27,7 @@ if ([string]::IsNullOrEmpty($DOCKER_USERNAME)) {
     exit 1
 }
 
-$ImageName = "$DOCKER_USERNAME/project-management"
+$ImageName = "$DOCKER_USERNAME/myelin"
 $ImageTag = "${ImageName}:${Version}"
 
 Write-Host ""

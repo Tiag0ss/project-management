@@ -212,7 +212,7 @@ export class TaskDetailPanel {
     ${timerBtn}
     <button type="button" class="secondary" id="ai">Send to AI</button>
   </div>
-  <p class="hint">Read-only preview. “Open in app” opens the full task modal in Project Management.</p>
+  <p class="hint">Read-only preview. “Open in app” opens the full task modal in Myelin.</p>
   <section>
     <h2>Description</h2>
     <pre>${escapeHtml(description)}</pre>

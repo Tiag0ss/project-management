@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# Docker Build and Push Script - Project Management App
+# Docker Build and Push Script - Myelin
 # ==============================================================================
 # This script builds and pushes Docker images to Docker Hub
 # Usage: ./docker-build.sh [version]
@@ -52,8 +52,8 @@ if ! docker info >/dev/null 2>&1; then
         echo -e "${YELLOW}Note: this project is on an NTFS/external drive.${NC}"
         echo "Even with Docker working, builds from NTFS often fail."
         echo "Copy to a native Linux path first, e.g.:"
-        echo "  rsync -a --exclude node_modules --exclude .next --exclude dist . ~/project-management/"
-        echo "  cd ~/project-management && ./docker-build.sh"
+        echo "  rsync -a --exclude node_modules --exclude .next --exclude dist . ~/myelin/"
+        echo "  cd ~/myelin && ./docker-build.sh"
     fi
     exit 1
 fi
@@ -78,7 +78,7 @@ fi
 
 # Get version from argument or use 'latest'
 VERSION=${1:-latest}
-IMAGE_NAME="${DOCKER_USERNAME}/project-management"
+IMAGE_NAME="${DOCKER_USERNAME}/myelin"
 IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
 
 echo ""
@@ -121,7 +121,7 @@ build_with_buildx() {
     # Ensure a buildx builder exists (creates Image Index + provenance attestation on push)
     if ! docker buildx inspect --bootstrap >/dev/null 2>&1; then
         echo -e "${BLUE}Creating buildx builder...${NC}"
-        docker buildx create --name project-management-builder --use --bootstrap >/dev/null
+        docker buildx create --name myelin-builder --use --bootstrap >/dev/null
     fi
 
     docker buildx build \

@@ -3,12 +3,12 @@
  User: admin
  Pwd: admin1
  
- # Project Management App
+ # Myelin
 
-[![Docker Hub](https://img.shields.io/docker/pulls/tiag0ss/project-management?label=Docker%20Pulls&logo=docker)](https://hub.docker.com/r/tiag0ss/project-management)
-[![Docker Image](https://img.shields.io/badge/Docker%20Hub-tiag0ss%2Fproject--management-blue?logo=docker)](https://hub.docker.com/r/tiag0ss/project-management)
+[![Docker Hub](https://img.shields.io/docker/pulls/tiag0ss/myelin?label=Docker%20Pulls&logo=docker)](https://hub.docker.com/r/tiag0ss/myelin)
+[![Docker Image](https://img.shields.io/badge/Docker%20Hub-tiag0ss%2Fmyelin-blue?logo=docker)](https://hub.docker.com/r/tiag0ss/myelin)
 
-A full-stack, self-hosted project management application with task tracking, resource planning, time tracking, and multi-tenant organization support.
+**Myelin** is a full-stack, self-hosted project and delivery platform with task tracking, resource planning, time tracking, and multi-tenant organization support.
 
 **Version 1.0** — production-ready core (projects, planning, time, tickets, reporting, integrations). Report bugs and feature requests on GitHub.
 
@@ -46,7 +46,7 @@ A full-stack, self-hosted project management application with task tracking, res
 - 🧩 **IDE Extensions** — VS Code / Cursor Kanban sidebar for tasks linked to this app ([extras/ide-extensions/README.md](extras/ide-extensions/README.md))
 - 🧙 **Install Wizard** — Guided first-time setup
 - ⚡ **Optional Redis Cache** — Read-through cache with invalidate-on-write for faster loads; disabled by default
-- 🧠 **[PM Synapse](https://github.com/tiag0ss/pm-synapse)** — Companion Markdown vaults (SSO with this app; optional checkbox→task push)
+- 🧠 **[Synapse](https://github.com/tiag0ss/synapse)** — Companion Markdown vaults (SSO with Myelin; optional checkbox→task push)
 - 🤖 **AI Assistant (optional)** — SQL-backed assistant; DB views are created on server start via `ensureAiAssistantViews` (see `server/utils/aiAssistantViews.ts`)
 
 ## Additional Notes
@@ -73,8 +73,8 @@ A full-stack, self-hosted project management application with task tracking, res
 ## Local Development
 
 ```bash
-git clone https://github.com/tiag0ss/project-management.git
-cd project-management
+git clone https://github.com/tiag0ss/myelin.git
+cd myelin
 pnpm install
 cp .env.example .env
 # Edit .env (database, JWT_SECRET, etc.)
@@ -187,10 +187,10 @@ For MSSQL, point `DB_HOST` to your SQL Server instance instead of the bundled My
 
 ```bash
 docker run -d \
-  --name project-management \
+  --name myelin \
   -p 3000:3000 \
   --env-file .env.docker \
-  tiag0ss/project-management:latest
+  tiag0ss/myelin:latest
 ```
 
 ### 4. First-Time Setup
@@ -229,14 +229,14 @@ docker run -d \
 | `REDIS_KEY_PREFIX` | No | `pm:` | Key prefix for all cache entries |
 | `REDIS_DEFAULT_TTL_SECONDS` | No | `300` | Safety TTL for cached entities (invalidated on writes) |
 | `ALLOWED_SSO_REDIRECTS` | No | — | Comma-separated SSO callback URLs (e.g. Synapse `http://localhost:3010/api/auth/sso/callback`) |
-| `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | No | — | SSO client credentials for companions such as [PM Synapse](https://github.com/tiag0ss/pm-synapse) |
+| `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` | No | — | SSO client credentials for companions such as [Synapse](https://github.com/tiag0ss/synapse) |
 
 ## Ports
 
 | Port | Description |
 |------|-------------|
 | `3000` | Application (frontend + API) |
-| `3010` | [PM Synapse](https://github.com/tiag0ss/pm-synapse) companion (optional, separate process) |
+| `3010` | [Synapse](https://github.com/tiag0ss/synapse) companion (optional, separate process) |
 | `6379` | Redis (optional, Docker `redis` profile only) |
 | `3306` | MySQL (Docker Compose default) |
 
@@ -277,7 +277,7 @@ Single container serves Next.js frontend and Express API. MySQL or MSSQL is the 
 
 ```
 +----------------------------------+
-|   project-management:latest      |
+|   myelin:latest      |
 |                                  |
 |  +-----------+  +------------+   |
 |  | Next.js   |  | Express    |   |
@@ -310,14 +310,14 @@ docker compose up -d
 ### Database (MySQL)
 
 ```bash
-docker exec project-management-mysql \
+docker exec myelin-mysql \
   mysqldump -u root -p"$DB_PASSWORD" projectmanagement > backup.sql
 ```
 
 ### Restore (MySQL)
 
 ```bash
-docker exec -i project-management-mysql \
+docker exec -i myelin-mysql \
   mysql -u root -p"$DB_PASSWORD" projectmanagement < backup.sql
 ```
 
@@ -344,8 +344,8 @@ MIT
 
 ## Links
 
-- 🐳 [Docker Hub](https://hub.docker.com/r/tiag0ss/project-management)
-- 🐛 [Report Issues](https://github.com/tiag0ss/project-management/issues)
-- 📖 [Source Code](https://github.com/tiag0ss/project-management)
+- 🐳 [Docker Hub](https://hub.docker.com/r/tiag0ss/myelin)
+- 🐛 [Report Issues](https://github.com/tiag0ss/myelin/issues)
+- 📖 [Source Code](https://github.com/tiag0ss/myelin)
 - 📬 [Cloudflare Email Task Queue](extras/cloudflare/README.md)
 - 🧪 [Testing Scenarios](TESTING_SCENARIOS.md)

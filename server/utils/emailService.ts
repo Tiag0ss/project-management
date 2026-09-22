@@ -60,7 +60,7 @@ async function getSMTPConfig(): Promise<SMTPConfig | null> {
       user: config.smtpUser,
       pass: decrypt(config.smtpPassword),
       fromEmail: config.smtpFrom,
-      fromName: config.smtpFromName || 'Project Management System',
+      fromName: config.smtpFromName || 'Myelin',
     };
   } catch (error) {
     logger.error('Error getting SMTP config:', error);

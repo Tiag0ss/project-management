@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>com.projectmanagement.pendingtasks</id>
-  <name>Project Management — Kanban</name>
-  <vendor>Project Management</vendor>
+  <name>Myelin — Kanban</name>
+  <vendor>Myelin</vendor>
   <description><![CDATA[
     Project Kanban board in a tool window via API token (pt_). Select a project, drag cards to change status.
     Send to AI copies a prompt to the clipboard (JetBrains AI has no stable public prefill API in v1).
@@ -23,7 +23,7 @@
             parentId="tools"
             instance="com.projectmanagement.pendingtasks.PmSettingsConfigurable"
             id="com.projectmanagement.pendingtasks.settings"
-            displayName="Project Management"/>
-    <notificationGroup id="Project Management" displayType="BALLOON"/>
+            displayName="Myelin"/>
+    <notificationGroup id="Myelin" displayType="BALLOON"/>
   </extensions>
 </idea-plugin>

@@ -89,7 +89,7 @@ export default function FrontpageEditor() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Project Management</title>
+  <title>Myelin</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -121,7 +121,7 @@ export default function FrontpageEditor() {
       <div class="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <div class="flex items-center gap-2">
           <div class="flex h-8 w-8 items-center justify-center rounded-md bg-pm-accent text-sm font-bold text-pm-accentFg">P</div>
-          <span class="text-base font-semibold">Project Management</span>
+          <span class="text-base font-semibold">Myelin</span>
         </div>
         <div class="flex items-center gap-2">
           <a href="/login" class="rounded-lg px-3 py-1.5 text-sm text-pm-muted hover:text-pm-text">Login</a>
@@ -134,10 +134,10 @@ export default function FrontpageEditor() {
       <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_420px_at_20%_-10%,rgba(18,32,46,0.75),transparent_60%)]"></div>
       <div class="relative mx-auto w-full max-w-6xl px-4 pb-16 pt-16 sm:px-6 sm:pt-20">
         <p class="mb-3 text-xs font-medium uppercase tracking-wide text-pm-accentSoft">Self-hosted · Open source · Full control</p>
-        <h1 class="text-4xl font-semibold tracking-tight sm:text-5xl">Project Management</h1>
+        <h1 class="text-4xl font-semibold tracking-tight sm:text-5xl">Myelin</h1>
         <p class="mt-2 text-xl text-pm-muted sm:text-2xl">Your projects, your infrastructure.</p>
         <p class="mt-4 max-w-2xl text-sm leading-relaxed text-pm-muted sm:text-base">
-          A self-hosted project management platform. Deploy on your own servers, keep full control over your data, and tailor workflows to your team.
+          Myelin — a self-hosted project and delivery platform. Deploy on your own servers, keep full control over your data, and tailor workflows to your team.
         </p>
         <div class="mt-8 flex flex-wrap gap-2">
           <a href="/login" class="inline-flex h-10 items-center rounded-lg bg-pm-accent px-4 text-sm font-medium text-pm-accentFg hover:brightness-110">Access Dashboard</a>
@@ -184,9 +184,9 @@ export default function FrontpageEditor() {
         <div>
           <div class="mb-2 flex items-center gap-2">
             <div class="flex h-7 w-7 items-center justify-center rounded-md bg-pm-accent text-xs font-bold text-pm-accentFg">P</div>
-            <span class="text-sm font-semibold">Project Management</span>
+            <span class="text-sm font-semibold">Myelin</span>
           </div>
-          <p class="text-xs text-pm-muted">Self-hosted project management platform</p>
+          <p class="text-xs text-pm-muted">Self-hosted delivery platform · Myelin</p>
         </div>
         <div>
           <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-pm-muted">Getting started</p>
@@ -194,7 +194,7 @@ export default function FrontpageEditor() {
         </div>
       </div>
       <div class="mx-auto mt-8 w-full max-w-6xl border-t border-pm-border px-4 pt-6 text-center text-xs text-pm-muted sm:px-6">
-        &copy; 2026 Project Management. Self-hosted solution.
+        &copy; 2026 Myelin. Self-hosted solution.
       </div>
     </footer>
   </div>

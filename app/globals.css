@@ -245,7 +245,7 @@ body:has(.pm-app).nav-left-fixed-collapsed {
 
 /*
  * Synapse density remaps — page content only (.pm-density on AppShell main).
- * Brings legacy Tailwind spacing/type scale closer to pm-synapse controls.
+ * Brings legacy Tailwind spacing/type scale closer to synapse controls.
  * Shell rail/header stay outside .pm-density so their h-12 / icon sizes stay intact.
  */
 .pm-density {

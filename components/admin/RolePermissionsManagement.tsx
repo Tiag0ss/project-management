@@ -20,7 +20,7 @@ const PERMISSION_CATEGORIES = [
     ],
   },
   {
-    name: 'Project Management',
+    name: 'Myelin',
     permissions: ['CanManageProjects', 'CanCreateProjects', 'CanDeleteProjects'],
   },
   {

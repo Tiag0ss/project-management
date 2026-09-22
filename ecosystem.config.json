@@ -1,7 +1,7 @@
 # Production Server Configuration
 {
   "apps": [{
-    "name": "project-management",
+    "name": "myelin",
     "script": "./dist/server/index.js",
     "instances": 2,
     "exec_mode": "cluster",

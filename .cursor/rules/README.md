@@ -6,7 +6,7 @@ Rules in this folder guide Cursor agents. See [AGENTS.md](../../AGENTS.md).
 
 | Rule | Purpose |
 |------|---------|
-| [project-management.mdc](./project-management.mdc) | Master context: stack, file map, non-negotiables, skill index |
+| [myelin.mdc](./myelin.mdc) | Master context: stack, file map, non-negotiables, skill index |
 
 ## Scoped (auto-attach by glob)
 
@@ -26,5 +26,5 @@ Rules in this folder guide Cursor agents. See [AGENTS.md](../../AGENTS.md).
 When project conventions change (new pattern, Redis entity, validation rule):
 
 1. Update the relevant scoped `.mdc` file.
-2. If global, update `project-management.mdc` and [AGENTS.md](../AGENTS.md).
+2. If global, update `myelin.mdc` and [AGENTS.md](../AGENTS.md).
 3. Prefer `.cursor/skills/` for task templates. Do not maintain a parallel Copilot instructions file.

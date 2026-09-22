@@ -27,7 +27,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingSettings, setIsCheckingSettings] = useState(true);
-  const [companyName, setCompanyName] = useState('Project Management');
+  const [companyName, setCompanyName] = useState('Myelin');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const { register } = useAuth();
   const router = useRouter();
@@ -49,7 +49,7 @@ export default function RegisterPage() {
           router.replace('/login');
           return;
         }
-        setCompanyName(data.companyName || 'Project Management');
+        setCompanyName(data.companyName || 'Myelin');
         setCompanyLogoUrl(data.companyLogoUrl || '');
       }
     } catch {

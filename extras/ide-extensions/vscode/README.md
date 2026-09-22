@@ -1,11 +1,11 @@
-# Project Management — Kanban
+# Myelin — Kanban
 
 Project Kanban opens in an **editor tab** (full width). Works in **VS Code** and **Cursor**.
 
 ## Setup
 
 1. Profile → API Tokens → Create → copy `pt_…`.
-2. Activity Bar → **Project Management** → **Open Kanban Board** (or Command Palette → **Project Management: Open Kanban**).
+2. Activity Bar → **Myelin** → **Open Kanban Board** (or Command Palette → **Myelin: Open Kanban**).
 3. **Configure** on the board (Base URL + token).
 4. Search/pick a project.
 
@@ -16,7 +16,7 @@ Project Kanban opens in an **editor tab** (full width). Works in **VS Code** and
 | `kanbanLayout` | `horizontal` (columns) or `vertical` (stacked) |
 | `kanbanHiddenStatuses` | Status names to hide, separated by `;` (e.g. `Done; Cancelled`) |
 | `kanbanMaxVisibleCards` | Cards shown per status before **Show more** (`0` = all; default `2`) |
-| `aiInProgressStatusId` | Numeric task status Id for Send to AI (`0` = use org task status flagged **In Progress** under Organization → Statuses). Not in the Configure wizard — open **Cursor/VS Code Settings** and search “Project Management”. |
+| `aiInProgressStatusId` | Numeric task status Id for Send to AI (`0` = use org task status flagged **In Progress** under Organization → Statuses). Not in the Configure wizard — open **Cursor/VS Code Settings** and search “Myelin”. |
 | `baseUrl` / refresh / AI template | Connection and prompt defaults |
 
 ## Actions

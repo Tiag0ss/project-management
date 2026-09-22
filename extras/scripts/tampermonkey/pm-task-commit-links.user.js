@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Project Management — Task # commit links
-// @namespace    https://github.com/project-management
+// @name         Myelin — Task # commit links
+// @namespace    https://github.com/myelin
 // @version      1.0.0
 // @description  Turn "Task #123" in git commit history into links that open PM dashboard TaskDetailModal
-// @author       Project Management
+// @author       Myelin
 // @match        https://github.com/*
 // @match        https://bitbucket.org/*
 // @match        https://*.bitbucket.org/*
@@ -30,7 +30,7 @@
 (function () {
   'use strict';
 
-  // ── Config: map git hostname → Project Management base URL ───────────────
+  // ── Config: map git hostname → Myelin base URL ───────────────
   // Use the same base for GitHub + Gitea if they share one PM instance.
   const PM_BY_HOST = {
     'github.com': 'https://pm.example.com',
@@ -131,7 +131,7 @@
       a.href = taskHref(base, id);
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
-      a.title = `Open Task #${id} in Project Management`;
+      a.title = `Open Task #${id} in Myelin`;
       a.setAttribute(ATTR_MARK, '1');
       a.textContent = match[0];
       frag.appendChild(a);
@@ -237,7 +237,7 @@
       const host = normalizeHost(location.hostname);
       const current = getPmBaseUrl() || PM_BY_HOST[host] || '';
       const next = window.prompt(
-        `Project Management base URL for ${host}\n(leave empty to clear override)`,
+        `Myelin base URL for ${host}\n(leave empty to clear override)`,
         current
       );
       if (next === null) return;
