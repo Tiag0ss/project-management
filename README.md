@@ -7,6 +7,7 @@
 
 [![Docker Hub](https://img.shields.io/docker/pulls/tiag0ss/myelin?label=Docker%20Pulls&logo=docker)](https://hub.docker.com/r/tiag0ss/myelin)
 [![Docker Image](https://img.shields.io/badge/Docker%20Hub-tiag0ss%2Fmyelin-blue?logo=docker)](https://hub.docker.com/r/tiag0ss/myelin)
+[![status-badge](https://cd.tiag0ss.dev/api/badges/5/status.svg)](https://cd.tiag0ss.dev/repos/5)
 
 **Myelin** is a full-stack, self-hosted project and delivery platform with task tracking, resource planning, time tracking, and multi-tenant organization support.
 
